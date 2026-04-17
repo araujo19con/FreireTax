@@ -13,6 +13,7 @@ import {
   Calendar,
   Users,
   Scale3d,
+  Filter,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -49,6 +50,7 @@ const mainItems: ItemDef[] = [
   { title: "Ações Tributárias", url: "/acoes",         icon: Scale },
   { title: "Elegibilidade",     url: "/elegibilidade", icon: FileCheck },
   { title: "Prospecção",        url: "/prospeccao",    icon: Handshake, badgeKey: "prosp_parados" },
+  { title: "Análise RFB",       url: "/analise-rfb",   icon: Filter },
   { title: "Importação",        url: "/importacao",    icon: Upload },
 ];
 

@@ -23,6 +23,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const MinhasTarefas = lazy(() => import("./pages/MinhasTarefas"));
 const MinhaAgenda = lazy(() => import("./pages/MinhaAgenda"));
 const Usuarios = lazy(() => import("./pages/Usuarios"));
+const AnaliseRFB = lazy(() => import("./pages/AnaliseRFB"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,6 +113,7 @@ function AppRoutes() {
           />
           <Route path="/minhas-tarefas" element={<MinhasTarefas />} />
           <Route path="/minha-agenda" element={<MinhaAgenda />} />
+          <Route path="/analise-rfb" element={<AnaliseRFB />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/auth" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />
