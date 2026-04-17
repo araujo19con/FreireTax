@@ -48,6 +48,8 @@ export default function Importacao() {
   const [fileName, setFileName] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState({ done: 0, total: 0, errors: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
 
@@ -134,9 +136,56 @@ export default function Importacao() {
         obs: "",
         user_id: user?.id,
       }));
-      const { error } = await supabase.from("empresas").insert(insertData);
+      // Insert em batch e recupera IDs (pra enriquecer em seguida)
+      const { data: inserted, error } = await supabase
+        .from("empresas")
+        .insert(insertData)
+        .select("id, cnpj");
       if (error) throw error;
-      toast.success(`${validRows.length} empresas importadas com sucesso!`);
+      toast.success(`${validRows.length} empresas importadas!`);
+
+      // Enriquecimento automático via Receita Federal (paralelo, limitado a 3 concorrentes)
+      if (inserted && inserted.length > 0) {
+        setImporting(false);
+        setEnriching(true);
+        setEnrichProgress({ done: 0, total: inserted.length, errors: 0 });
+        const loadingId = toast.loading(
+          `Enriquecendo ${inserted.length} empresas com dados da Receita...`
+        );
+
+        // Processa em chunks de 3 em paralelo (BrasilAPI suporta bem)
+        const CHUNK = 3;
+        let done = 0;
+        let errors = 0;
+        for (let i = 0; i < inserted.length; i += CHUNK) {
+          const chunk = inserted.slice(i, i + CHUNK);
+          await Promise.all(
+            chunk.map(async (emp: any) => {
+              try {
+                const { data, error: enErr } = await supabase.functions.invoke(
+                  "enriquecer-cnpj",
+                  { body: { cnpj: emp.cnpj, empresa_id: emp.id } }
+                );
+                if (enErr || data?.error) errors += 1;
+              } catch {
+                errors += 1;
+              } finally {
+                done += 1;
+                setEnrichProgress({ done, total: inserted.length, errors });
+              }
+            })
+          );
+          // mini-pausa pra não bater no rate limit
+          await new Promise((r) => setTimeout(r, 300));
+        }
+
+        toast.success(
+          `Receita aplicada: ${done - errors}/${inserted.length} enriquecidas` +
+            (errors > 0 ? ` (${errors} falharam — aparecerão marcadas na lista)` : ""),
+          { id: loadingId, duration: 6000 }
+        );
+      }
+
       setRows([]);
       setFileName("");
     } catch (error: any) {
@@ -144,6 +193,8 @@ export default function Importacao() {
       console.error(error);
     } finally {
       setImporting(false);
+      setEnriching(false);
+      setEnrichProgress({ done: 0, total: 0, errors: 0 });
     }
   };
 
@@ -204,11 +255,48 @@ export default function Importacao() {
                 <Trash2 className="mr-2 h-4 w-4" />
                 Limpar
               </Button>
-              <Button onClick={handleImport} disabled={importing || validCount === 0}>
-                {importing ? "Importando..." : `Importar ${validCount} empresas`}
+              <Button onClick={handleImport} disabled={importing || enriching || validCount === 0}>
+                {importing
+                  ? "Importando..."
+                  : enriching
+                    ? `Enriquecendo ${enrichProgress.done}/${enrichProgress.total}...`
+                    : `Importar ${validCount} empresas`}
               </Button>
             </div>
           </div>
+
+          {/* Barra de progresso de enriquecimento (durante o fetch da Receita) */}
+          {enriching && enrichProgress.total > 0 && (
+            <div className="mt-3 p-3 rounded-md border border-primary/30 bg-primary/5">
+              <div className="flex items-center justify-between mb-1.5 text-xs">
+                <span className="font-medium flex items-center gap-1">
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  Consultando Receita Federal (BrasilAPI)
+                </span>
+                <span className="tabular-nums">
+                  {enrichProgress.done}/{enrichProgress.total}
+                  {enrichProgress.errors > 0 && (
+                    <span className="text-destructive ml-2">
+                      · {enrichProgress.errors} falha{enrichProgress.errors > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.round(
+                      (enrichProgress.done / Math.max(1, enrichProgress.total)) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Puxando razão social, porte, CNAE, endereço e quadro societário.
+              </p>
+            </div>
+          )}
 
           <Card className="shadow-card">
             <div className="overflow-x-auto">

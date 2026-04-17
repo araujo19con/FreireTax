@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Eye, Pencil, Trash2, FolderPlus, Folder, X, GripVertical, FolderOpen, Gavel, Users } from "lucide-react";
+import { Search, Eye, Pencil, Trash2, FolderPlus, Folder, X, GripVertical, FolderOpen, Gavel, Users, RefreshCw } from "lucide-react";
 import { EmpresaDialog } from "@/components/EmpresaDialog";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -126,20 +126,39 @@ export default function Empresas() {
     return matchesSearch && empresaIdsInPasta(selectedPasta).has(e.id);
   });
 
-  const handleCreate = async (data: { nome: string; cnpj: string; status: string; obs: string }) => {
-    const { error } = await supabase.from("empresas").insert({ ...data, user_id: user?.id });
-    if (error) { toast.error("Erro ao criar empresa"); } else {
+  const handleCreate = async (data: any) => {
+    // data pode incluir dados enriquecidos via EmpresaDialog (razao_social, porte, CNAE, QSA...)
+    const { error } = await (supabase.from("empresas") as any).insert({ ...data, user_id: user?.id });
+    if (error) { toast.error("Erro ao criar empresa: " + error.message); } else {
+      toast.success("Empresa criada!");
       logAudit({ tabela: "empresas", acao: "Criou empresa", detalhes: { nome: data.nome, cnpj: data.cnpj } });
       fetchAll();
     }
   };
 
-  const handleEdit = async (id: string, data: { nome: string; cnpj: string; status: string; obs: string }) => {
-    const { error } = await supabase.from("empresas").update(data).eq("id", id);
-    if (error) { toast.error("Erro ao atualizar empresa"); } else {
+  const handleEdit = async (id: string, data: any) => {
+    const { error } = await (supabase.from("empresas") as any).update(data).eq("id", id);
+    if (error) { toast.error("Erro ao atualizar empresa: " + error.message); } else {
       toast.success("Empresa atualizada!");
       logAudit({ tabela: "empresas", acao: "Editou empresa", registro_id: id, detalhes: { nome: data.nome } });
       fetchAll();
+    }
+  };
+
+  // Enriquece uma empresa específica via botão individual
+  const handleEnriquecer = async (empresaId: string, cnpj: string) => {
+    const loadingId = toast.loading(`Consultando Receita para ${cnpj}...`);
+    try {
+      const { data, error } = await supabase.functions.invoke("enriquecer-cnpj", {
+        body: { cnpj, empresa_id: empresaId, force: true },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Dados atualizados: ${data?.data?.razao_social || cnpj}`, { id: loadingId });
+      logAudit({ tabela: "empresas", acao: "Enriqueceu dados RFB", registro_id: empresaId, detalhes: { cnpj } });
+      fetchAll();
+    } catch (e: any) {
+      toast.error("Erro ao enriquecer: " + (e?.message ?? "falha"), { id: loadingId });
     }
   };
 
@@ -458,13 +477,14 @@ export default function Empresas() {
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Empresa</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">CNPJ</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Receita</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Pastas</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={6} className="py-10 text-center">
+                    <tr><td colSpan={7} className="py-10 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <Search className="h-6 w-6 opacity-50" aria-hidden="true" />
                         <p className="text-sm font-medium">
@@ -491,12 +511,61 @@ export default function Empresas() {
                       <td className="py-3 pl-2 pr-0">
                         <GripVertical className="h-4 w-4 text-muted-foreground/50 cursor-grab active:cursor-grabbing" />
                       </td>
-                      <td className="py-3 px-4 font-medium">{e.nome}</td>
+                      <td className="py-3 px-4 font-medium">
+                        <div className="flex flex-col">
+                          <span>{e.nome}</span>
+                          {(e as any).razao_social && (e as any).razao_social !== e.nome && (
+                            <span className="text-[10px] text-muted-foreground font-normal line-clamp-1">
+                              {(e as any).razao_social}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{e.cnpj}</td>
                       <td className="py-3 px-4">
                         <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[e.status] || ""}`}>
                           {e.status}
                         </span>
+                      </td>
+                      {/* Coluna Receita: porte + situação + UF */}
+                      <td className="py-3 px-4">
+                        {(() => {
+                          const any = e as any;
+                          if (!any.receita_atualizada_em) {
+                            return (
+                              <Badge variant="outline" className="text-[10px] text-muted-foreground" title="Sem dados da Receita — clique no botão de refresh para buscar">
+                                não enriquecida
+                              </Badge>
+                            );
+                          }
+                          if (any.receita_erro) {
+                            return (
+                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/30" title={any.receita_erro}>
+                                erro RFB
+                              </Badge>
+                            );
+                          }
+                          const sit = any.situacao_cadastral;
+                          const sitColor = sit === "ATIVA" ? "bg-success/10 text-success"
+                                         : sit === "BAIXADA" || sit === "INAPTA" || sit === "NULA" ? "bg-destructive/10 text-destructive"
+                                         : "bg-warning/10 text-warning";
+                          return (
+                            <div className="flex flex-wrap gap-1">
+                              {sit && (
+                                <Badge variant="secondary" className={`text-[10px] ${sitColor}`}>{sit}</Badge>
+                              )}
+                              {any.porte && any.porte !== "NAO_INFORMADO" && (
+                                <Badge variant="outline" className="text-[10px]">{any.porte}</Badge>
+                              )}
+                              {any.uf && (
+                                <Badge variant="outline" className="text-[10px]">{any.uf}</Badge>
+                              )}
+                              {any.opcao_simples && (
+                                <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Simples</Badge>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex gap-1 flex-wrap">
@@ -511,6 +580,14 @@ export default function Empresas() {
                         <div className="flex items-center gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailEmpresa(e)} aria-label={`Ver detalhes de ${e.nome}`}>
                             <Eye className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" className="h-8 w-8"
+                            onClick={() => handleEnriquecer(e.id, e.cnpj)}
+                            aria-label={`Atualizar dados da Receita de ${e.nome}`}
+                            title="Atualizar dados da Receita Federal"
+                          >
+                            <RefreshCw className="h-4 w-4" aria-hidden="true" />
                           </Button>
                           <EmpresaDialog
                             onSave={(data) => handleEdit(e.id, data)}

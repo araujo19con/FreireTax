@@ -145,44 +145,51 @@ export type Database = {
       }
       empresas: {
         Row: {
+          bairro: string | null
+          capital_social: number | null
+          cep: string | null
+          cnae_principal: string | null
+          cnae_principal_desc: string | null
+          cnaes_secundarios: Json
           cnpj: string
+          complemento: string | null
           created_at: string
+          data_abertura: string | null
+          data_opcao_simples: string | null
+          email_receita: string | null
           faturamento_estimado: number | null
           id: string
+          logradouro: string | null
+          motivo_situacao: string | null
+          municipio: string | null
+          natureza_juridica: string | null
           nome: string
+          nome_fantasia: string | null
+          numero_endereco: string | null
           obs: string | null
+          opcao_mei: boolean | null
+          opcao_simples: boolean | null
+          porte: Database["public"]["Enums"]["porte_rfb"] | null
+          qsa: Json
+          razao_social: string | null
+          receita_atualizada_em: string | null
+          receita_erro: string | null
           responsavel_id: string | null
+          situacao_cadastral: Database["public"]["Enums"]["situacao_cadastral_rfb"] | null
+          situacao_cadastral_data: string | null
           status: string
+          telefone_receita: string | null
+          uf: string | null
           updated_at: string
           user_id: string
           valor_potencial_total: number | null
         }
-        Insert: {
+        Insert: Partial<Database["public"]["Tables"]["empresas"]["Row"]> & {
           cnpj: string
-          created_at?: string
-          faturamento_estimado?: number | null
-          id?: string
           nome: string
-          obs?: string | null
-          responsavel_id?: string | null
-          status?: string
-          updated_at?: string
           user_id: string
-          valor_potencial_total?: number | null
         }
-        Update: {
-          cnpj?: string
-          created_at?: string
-          faturamento_estimado?: number | null
-          id?: string
-          nome?: string
-          obs?: string | null
-          responsavel_id?: string | null
-          status?: string
-          updated_at?: string
-          user_id?: string
-          valor_potencial_total?: number | null
-        }
+        Update: Partial<Database["public"]["Tables"]["empresas"]["Row"]>
         Relationships: []
       }
       pasta_empresa_items: {
@@ -810,6 +817,8 @@ export type Database = {
         | "objecao_preco"
         | "objecao_tese"
         | "objecao_timing"
+      situacao_cadastral_rfb: "NULA" | "ATIVA" | "SUSPENSA" | "INAPTA" | "BAIXADA"
+      porte_rfb: "MEI" | "ME" | "EPP" | "DEMAIS" | "NAO_INFORMADO"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -943,6 +952,8 @@ export const Constants = {
       reuniao_status: ["agendada", "realizada", "cancelada", "no_show", "reagendada"],
       cargo_categoria: ["ceo", "cfo", "socio", "diretor", "controller", "gerente_fiscal", "contador", "coordenador", "analista", "outros"],
       categoria_template: ["abertura", "follow_up", "proposta", "negociacao", "breakup", "pos_venda", "objecao_preco", "objecao_tese", "objecao_timing"],
+      situacao_cadastral_rfb: ["NULA", "ATIVA", "SUSPENSA", "INAPTA", "BAIXADA"],
+      porte_rfb: ["MEI", "ME", "EPP", "DEMAIS", "NAO_INFORMADO"],
     },
   },
 } as const
