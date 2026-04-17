@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-ssr
+bun.lock
+bun.lockb
+package-lock.json
+.env
+.env.*
+*.log
+supabase/migrations/*.sql

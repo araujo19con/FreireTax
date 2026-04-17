@@ -1,0 +1,81 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🌐 Chrome: localhost dev (8080)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:8080",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "userDataDir": "${workspaceFolder}/.vscode/chrome-profile",
+      "runtimeArgs": [
+        "--disable-features=VizDisplayCompositor",
+        "--no-first-run",
+        "--no-default-browser-check"
+      ],
+      "presentation": { "group": "debug", "order": 1 }
+    },
+    {
+      "name": "🌐 Edge: localhost dev (8080)",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:8080",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": true,
+      "userDataDir": "${workspaceFolder}/.vscode/edge-profile",
+      "presentation": { "group": "debug", "order": 2 }
+    },
+    {
+      "name": "🌐 Chrome: produção Vercel",
+      "type": "chrome",
+      "request": "launch",
+      "url": "https://freire-tax.vercel.app",
+      "webRoot": "${workspaceFolder}",
+      "sourceMaps": false,
+      "userDataDir": "${workspaceFolder}/.vscode/chrome-profile",
+      "presentation": { "group": "debug", "order": 3 }
+    },
+    {
+      "name": "⚡ Vite: npm run dev",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "group": "server", "order": 1 }
+    },
+    {
+      "name": "🧪 Vitest: run once",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "group": "server", "order": 2 }
+    },
+    {
+      "name": "🧪 Vitest: file atual",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "test", "--", "${relativeFile}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "group": "server", "order": 3 }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "🚀 Dev + Browser",
+      "configurations": ["⚡ Vite: npm run dev", "🌐 Chrome: localhost dev (8080)"],
+      "stopAll": true,
+      "presentation": { "group": "all", "order": 1 }
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+{
+  // ---- EDITOR ----
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "editor.rulers": [100],
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.inlineSuggest.enabled": true,
+  "editor.suggestSelection": "first",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+
+  // ---- FILES ----
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.DS_Store": true,
+    "**/bun.lockb": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/bun.lock": true,
+    "**/bun.lockb": true,
+    "**/package-lock.json": true
+  },
+
+  // ---- TYPESCRIPT ----
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.preferences.importModuleSpecifier": "shortest",
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "typescript.suggest.autoImports": true,
+  "typescript.inlayHints.parameterNames.enabled": "literals",
+  "typescript.inlayHints.variableTypes.enabled": false,
+  "typescript.inlayHints.functionLikeReturnTypes.enabled": false,
+
+  // ---- ESLINT ----
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "eslint.useFlatConfig": true,
+
+  // ---- TAILWIND ----
+  "tailwindCSS.experimental.classRegex": [
+    ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"],
+    ["cx\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+    ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"]
+  ],
+  "tailwindCSS.includeLanguages": {
+    "typescript": "typescript",
+    "typescriptreact": "typescriptreact"
+  },
+  "css.validate": false,
+  "scss.validate": false,
+  "less.validate": false,
+
+  // ---- FORMATTER POR LINGUAGEM ----
+  "[typescript]":      { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascript]":      { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]":            { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]":           { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[css]":             { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[html]":            { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[markdown]":        { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[sql]":             { "editor.formatOnSave": false },
+
+  // ---- SPELL CHECKER (usa pt-BR + en) ----
+  "cSpell.language": "en,pt,pt_BR",
+  "cSpell.words": [
+    "acao", "acoes", "advogado", "advogados", "agendada", "ajuizada",
+    "apollo", "assinada", "avinash", "bencivenga", "bunlock", "bunlockb",
+    "caio", "cancelada", "cadencia", "cargo", "cmo", "cnpj", "comercial",
+    "commercialfee", "contato", "contratacao", "contratada", "contratado",
+    "coo", "cto", "cumulativos", "decisor", "decadencial", "denomailer",
+    "desconfianca", "elegibilidade", "elegivel", "empresas", "enderecamento",
+    "Freire", "freirepignataro", "freiretributos", "gestor", "ghiorzi",
+    "Handshake", "honorario", "honorarios", "hormozi", "ICMS", "importacao",
+    "Jusbrasil", "justificativa", "Kapferer", "Kaushik", "Klapisch",
+    "Lampropoulos", "LATAM", "linkedin", "logAudit", "Lovable",
+    "midas", "multiparceria", "noshow", "offtempo", "onlyness", "outbound",
+    "Opus", "Pignataro", "PISCOFINS", "prescritas", "prescricional",
+    "prospeccoes", "prospeccao", "prospect", "PV", "RBAC",
+    "reagendada", "rescisoria", "responsavel", "ressarcimento", "RFB",
+    "rutz", "sabri", "suby", "Sonner", "STF", "STJ", "storybrand",
+    "Subagent", "supabase", "tanstack", "tarefa", "tarefas", "Tema",
+    "temas", "timbrado", "trakker", "tributaria", "tributarias", "tributario",
+    "tributarios", "upsell", "upsells", "vercel", "vitest", "xquads",
+    "Xquads"
+  ],
+  "cSpell.enableFiletypes": [
+    "typescript",
+    "typescriptreact",
+    "javascript",
+    "javascriptreact",
+    "markdown"
+  ],
+
+  // ---- ERROR LENS ----
+  "errorLens.enabledDiagnosticLevels": ["error", "warning"],
+  "errorLens.excludeBySource": ["cSpell"],
+
+  // ---- GIT / GITLENS ----
+  "git.autofetch": true,
+  "gitlens.codeLens.enabled": false,
+  "gitlens.currentLine.enabled": false,
+
+  // ---- WORKBENCH ----
+  "workbench.editor.labelFormat": "short",
+  "workbench.tree.indent": 16,
+  "explorer.compactFolders": false,
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "package.json": "package-lock.json, bun.lock, bun.lockb, yarn.lock, pnpm-lock.yaml, .npmrc",
+    "tsconfig.json": "tsconfig.*.json",
+    "tailwind.config.*": "postcss.config.*",
+    "vite.config.*": "vitest.config.*, eslint.config.*",
+    ".env": ".env.*",
+    "README.md": "LICENSE, CHANGELOG*, CONTRIBUTING*",
+    "*.ts": "${capture}.test.ts, ${capture}.spec.ts",
+    "*.tsx": "${capture}.test.tsx, ${capture}.spec.tsx, ${capture}.stories.tsx"
+  },
+
+  // ---- TERMINAL ----
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+
+  // ---- NPM ----
+  "npm.packageManager": "npm",
+
+  // ---- EMMET ----
+  "emmet.includeLanguages": {
+    "typescriptreact": "html",
+    "javascriptreact": "html"
+  }
+}

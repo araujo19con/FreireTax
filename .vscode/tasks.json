@@ -1,0 +1,93 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🚀 dev (Vite)",
+      "type": "npm",
+      "script": "dev",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": false,
+        "close": false
+      },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^\\s*(.+):(\\d+):(\\d+)\\s+(error|warning)\\s+(.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*VITE.*ready in",
+          "endsPattern": "^.*VITE.*ready in"
+        }
+      },
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "📦 build",
+      "type": "npm",
+      "script": "build",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": ["$tsc"],
+      "group": "build"
+    },
+    {
+      "label": "🔍 lint",
+      "type": "npm",
+      "script": "lint",
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": ["$eslint-stylish"]
+    },
+    {
+      "label": "🧪 test",
+      "type": "npm",
+      "script": "test",
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "🧪 test:watch",
+      "type": "npm",
+      "script": "test:watch",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "👀 build:preview (prod local)",
+      "dependsOn": ["📦 build", "🌐 preview"],
+      "dependsOrder": "sequence"
+    },
+    {
+      "label": "🌐 preview",
+      "type": "npm",
+      "script": "preview",
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "problemMatcher": []
+    },
+    {
+      "label": "📜 Supabase: aplicar migration atual (psql)",
+      "type": "shell",
+      "command": "echo",
+      "args": ["Use o painel Supabase SQL Editor ou copie o SQL do arquivo aberto"],
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔄 git: commit rápido",
+      "type": "shell",
+      "command": "git",
+      "args": ["add", "-A", "&&", "git", "commit"],
+      "presentation": { "reveal": "always", "panel": "shared" },
+      "problemMatcher": []
+    }
+  ]
+}
