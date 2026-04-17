@@ -306,6 +306,7 @@ export type Database = {
       }
       prospeccoes: {
         Row: {
+          cargo_categoria: Database["public"]["Enums"]["cargo_categoria"] | null
           contato_cargo: string | null
           contato_email: string | null
           contato_nome: string | null
@@ -313,23 +314,30 @@ export type Database = {
           created_at: string
           data_assinatura: string | null
           data_contrato: string | null
+          decisor_confirmado: boolean
+          dor_identificada: string | null
+          eh_decisor: boolean
           elegibilidade_id: string
           id: string
           motivo_perdido: Database["public"]["Enums"]["motivo_perdido"] | null
           motivo_perdido_detalhes: string | null
           notas_prospeccao: string | null
           numero_contatos: number
+          objecoes_principais: string[]
           observacoes_contrato: string | null
           proximo_contato_em: string | null
           responsavel_id: string | null
           status_prospeccao: string
+          tentativas_anteriores: string | null
           tipo_contrato: string | null
           ultimo_contato_em: string | null
           updated_at: string
           user_id: string
           valor_contrato: number | null
+          valor_emocional_articulado: string | null
         }
         Insert: {
+          cargo_categoria?: Database["public"]["Enums"]["cargo_categoria"] | null
           contato_cargo?: string | null
           contato_email?: string | null
           contato_nome?: string | null
@@ -337,23 +345,30 @@ export type Database = {
           created_at?: string
           data_assinatura?: string | null
           data_contrato?: string | null
+          decisor_confirmado?: boolean
+          dor_identificada?: string | null
+          eh_decisor?: boolean
           elegibilidade_id: string
           id?: string
           motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
           motivo_perdido_detalhes?: string | null
           notas_prospeccao?: string | null
           numero_contatos?: number
+          objecoes_principais?: string[]
           observacoes_contrato?: string | null
           proximo_contato_em?: string | null
           responsavel_id?: string | null
           status_prospeccao?: string
+          tentativas_anteriores?: string | null
           tipo_contrato?: string | null
           ultimo_contato_em?: string | null
           updated_at?: string
           user_id: string
           valor_contrato?: number | null
+          valor_emocional_articulado?: string | null
         }
         Update: {
+          cargo_categoria?: Database["public"]["Enums"]["cargo_categoria"] | null
           contato_cargo?: string | null
           contato_email?: string | null
           contato_nome?: string | null
@@ -361,21 +376,27 @@ export type Database = {
           created_at?: string
           data_assinatura?: string | null
           data_contrato?: string | null
+          decisor_confirmado?: boolean
+          dor_identificada?: string | null
+          eh_decisor?: boolean
           elegibilidade_id?: string
           id?: string
           motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
           motivo_perdido_detalhes?: string | null
           notas_prospeccao?: string | null
           numero_contatos?: number
+          objecoes_principais?: string[]
           observacoes_contrato?: string | null
           proximo_contato_em?: string | null
           responsavel_id?: string | null
           status_prospeccao?: string
+          tentativas_anteriores?: string | null
           tipo_contrato?: string | null
           ultimo_contato_em?: string | null
           updated_at?: string
           user_id?: string
           valor_contrato?: number | null
+          valor_emocional_articulado?: string | null
         }
         Relationships: [
           {
@@ -618,6 +639,48 @@ export type Database = {
         }
         Relationships: []
       }
+      templates_mensagem: {
+        Row: {
+          ativo: boolean
+          assunto: string | null
+          canal: Database["public"]["Enums"]["canal_contato"]
+          categoria: Database["public"]["Enums"]["categoria_template"]
+          corpo: string
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          assunto?: string | null
+          canal?: Database["public"]["Enums"]["canal_contato"]
+          categoria: Database["public"]["Enums"]["categoria_template"]
+          corpo: string
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          assunto?: string | null
+          canal?: Database["public"]["Enums"]["canal_contato"]
+          categoria?: Database["public"]["Enums"]["categoria_template"]
+          corpo?: string
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       reunioes: {
         Row: {
           advogado_id: string
@@ -726,6 +789,27 @@ export type Database = {
         | "prescricional_5a"
         | "decadencial_5a"
         | "personalizado"
+      cargo_categoria:
+        | "ceo"
+        | "cfo"
+        | "socio"
+        | "diretor"
+        | "controller"
+        | "gerente_fiscal"
+        | "contador"
+        | "coordenador"
+        | "analista"
+        | "outros"
+      categoria_template:
+        | "abertura"
+        | "follow_up"
+        | "proposta"
+        | "negociacao"
+        | "breakup"
+        | "pos_venda"
+        | "objecao_preco"
+        | "objecao_tese"
+        | "objecao_timing"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -857,6 +941,8 @@ export const Constants = {
       tarefa_prioridade: ["baixa", "media", "alta", "urgente"],
       tarefa_status: ["pendente", "em_andamento", "concluida", "cancelada"],
       reuniao_status: ["agendada", "realizada", "cancelada", "no_show", "reagendada"],
+      cargo_categoria: ["ceo", "cfo", "socio", "diretor", "controller", "gerente_fiscal", "contador", "coordenador", "analista", "outros"],
+      categoria_template: ["abertura", "follow_up", "proposta", "negociacao", "breakup", "pos_venda", "objecao_preco", "objecao_tese", "objecao_timing"],
     },
   },
 } as const

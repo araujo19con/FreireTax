@@ -21,6 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ProspeccaoContatosDialog } from "@/components/ProspeccaoContatosDialog";
+import { TemplateSelectorDialog } from "@/components/TemplateSelectorDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
@@ -28,6 +29,31 @@ import type { Database } from "@/integrations/supabase/types";
 import { differenceInDays, parseISO } from "date-fns";
 
 type MotivoPerdido = Database["public"]["Enums"]["motivo_perdido"];
+type CargoCategoria = Database["public"]["Enums"]["cargo_categoria"];
+
+const CARGO_CATEGORIAS: { value: CargoCategoria; label: string }[] = [
+  { value: "ceo",            label: "CEO / Presidente" },
+  { value: "cfo",            label: "CFO / Diretor Financeiro" },
+  { value: "socio",          label: "Sócio" },
+  { value: "diretor",        label: "Diretor (outros)" },
+  { value: "controller",     label: "Controller" },
+  { value: "gerente_fiscal", label: "Gerente Fiscal / Tributário" },
+  { value: "contador",       label: "Contador" },
+  { value: "coordenador",    label: "Coordenador" },
+  { value: "analista",       label: "Analista" },
+  { value: "outros",         label: "Outros" },
+];
+
+const OBJECOES_COMUNS = [
+  "Preço / success fee alto",
+  "Desconfia da tese",
+  "Timing ruim",
+  "Precisa autorização do sócio",
+  "Já está com outro escritório",
+  "Receia problema com a Receita",
+  "Burocracia interna",
+  "Não entendeu o valor",
+];
 
 interface Prospeccao {
   id: string;
@@ -48,6 +74,14 @@ interface Prospeccao {
   numero_contatos: number;
   ultimo_contato_em: string | null;
   proximo_contato_em: string | null;
+  // CLOSER framework — Sprint 2
+  dor_identificada: string | null;
+  tentativas_anteriores: string | null;
+  decisor_confirmado: boolean;
+  valor_emocional_articulado: string | null;
+  objecoes_principais: string[];
+  cargo_categoria: CargoCategoria | null;
+  eh_decisor: boolean;
 }
 
 interface ElegibilidadeRow {
@@ -156,10 +190,22 @@ export default function Prospeccao() {
   const [editMotivoPerdido, setEditMotivoPerdido] = useState<MotivoPerdido | "">("");
   const [editMotivoDetalhes, setEditMotivoDetalhes] = useState("");
 
+  // CLOSER — Sprint 2
+  const [editDor, setEditDor] = useState("");
+  const [editTentativas, setEditTentativas] = useState("");
+  const [editDecisorConfirmado, setEditDecisorConfirmado] = useState(false);
+  const [editValorEmocional, setEditValorEmocional] = useState("");
+  const [editObjecoes, setEditObjecoes] = useState<string[]>([]);
+  const [editCargoCat, setEditCargoCat] = useState<CargoCategoria | "">("");
+  const [editEhDecisor, setEditEhDecisor] = useState(false);
+
   // Contatos (cadência) dialog
   const [contatosOpen, setContatosOpen] = useState(false);
   const [contatosProspId, setContatosProspId] = useState<string | null>(null);
   const [contatosLabel, setContatosLabel] = useState<string>("");
+
+  // Templates dialog
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   const fetchAll = async () => {
     const [prospRes, elegRes, empRes, acoesRes] = await Promise.all([
@@ -234,6 +280,14 @@ export default function Prospeccao() {
     setEditObsContrato(p.observacoes_contrato || "");
     setEditMotivoPerdido(p.motivo_perdido ?? "");
     setEditMotivoDetalhes(p.motivo_perdido_detalhes ?? "");
+    // CLOSER — Sprint 2
+    setEditDor(p.dor_identificada ?? "");
+    setEditTentativas(p.tentativas_anteriores ?? "");
+    setEditDecisorConfirmado(p.decisor_confirmado ?? false);
+    setEditValorEmocional(p.valor_emocional_articulado ?? "");
+    setEditObjecoes(p.objecoes_principais ?? []);
+    setEditCargoCat(p.cargo_categoria ?? "");
+    setEditEhDecisor(p.eh_decisor ?? false);
     setEditOpen(true);
   };
 
@@ -268,6 +322,14 @@ export default function Prospeccao() {
       observacoes_contrato: editObsContrato,
       motivo_perdido: editStatus === "Perdido" ? editMotivoPerdido : null,
       motivo_perdido_detalhes: editStatus === "Perdido" ? (editMotivoDetalhes || null) : null,
+      // CLOSER — Sprint 2
+      dor_identificada: editDor.trim() || null,
+      tentativas_anteriores: editTentativas.trim() || null,
+      decisor_confirmado: editDecisorConfirmado,
+      valor_emocional_articulado: editValorEmocional.trim() || null,
+      objecoes_principais: editObjecoes,
+      cargo_categoria: editCargoCat || null,
+      eh_decisor: editEhDecisor,
     };
     const { error } = await (supabase.from("prospeccoes") as any).update(payload).eq("id", editProsp.id);
     if (error) { toast.error("Erro ao atualizar: " + error.message); return; }
@@ -627,6 +689,17 @@ export default function Prospeccao() {
                 Ver histórico de contatos e registrar novo toque
               </Button>
 
+              {/* Botão Templates — Sprint 2 */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => setTemplatesOpen(true)}
+                type="button"
+              >
+                📝 Abrir biblioteca de templates (email / WhatsApp / LinkedIn)
+              </Button>
+
               <div>
                 <Label>Etapa da Prospecção</Label>
                 <Select value={editStatus} onValueChange={setEditStatus}>
@@ -694,6 +767,139 @@ export default function Prospeccao() {
                 <Label>Notas de Prospecção</Label>
                 <Textarea value={editNotas} onChange={e => setEditNotas(e.target.value)} rows={2} />
               </div>
+
+              {/* ========= CLOSER FRAMEWORK — Sprint 2 ========= */}
+              <div className="space-y-3 p-3 rounded-md border border-primary/30 bg-primary/5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-primary flex items-center gap-1 font-semibold">
+                    🎯 CLOSER Framework
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground">
+                    Qualificação Hormozi para vender
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Preencha conforme for descobrindo na conversa. Sem estes dados, você está vendendo no escuro.
+                </p>
+
+                {/* Decisor */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Categoria do cargo</Label>
+                    <Select value={editCargoCat || "none"} onValueChange={(v) => setEditCargoCat(v === "none" ? "" : (v as CargoCategoria))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— não informado —</SelectItem>
+                        {CARGO_CATEGORIAS.map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs flex items-center gap-2">É decisor / tem poder de compra?</Label>
+                    <div className="flex items-center gap-4 h-10">
+                      <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <input type="checkbox" checked={editEhDecisor} onChange={(e) => setEditEhDecisor(e.target.checked)} className="h-4 w-4" />
+                        É decisor
+                      </label>
+                      <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                        <input type="checkbox" checked={editDecisorConfirmado} onChange={(e) => setEditDecisorConfirmado(e.target.checked)} className="h-4 w-4" />
+                        Confirmado (perguntou explicitamente)
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* C — Clarify */}
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    <span className="font-bold text-primary">C</span>larify — Qual é a DOR concreta do cliente?
+                  </Label>
+                  <Textarea
+                    rows={2}
+                    value={editDor}
+                    onChange={(e) => setEditDor(e.target.value)}
+                    placeholder="Ex: 'Pagamos R$ 80k/mês de PIS/COFINS e acho que boa parte é indevido. CFO ansioso com fiscalização recente.'"
+                  />
+                </div>
+
+                {/* O — Overview do passado */}
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    <span className="font-bold text-primary">O</span>verview — Tentaram algo antes? Por que não deu certo?
+                  </Label>
+                  <Textarea
+                    rows={2}
+                    value={editTentativas}
+                    onChange={(e) => setEditTentativas(e.target.value)}
+                    placeholder="Ex: 'Tentaram com outro escritório em 2022, perderam o prazo. Ou: nunca tentaram, nunca conversaram com advogado tributário.'"
+                  />
+                </div>
+
+                {/* S — Sell the vacation */}
+                <div className="space-y-1">
+                  <Label className="text-xs">
+                    <span className="font-bold text-primary">S</span>ell — Valor emocional articulado (o que MUDA com a recuperação?)
+                  </Label>
+                  <Textarea
+                    rows={2}
+                    value={editValorEmocional}
+                    onChange={(e) => setEditValorEmocional(e.target.value)}
+                    placeholder="Ex: 'Com R$ 500k de volta, consegue investir em nova filial que já está engavetada há 3 anos.'"
+                  />
+                </div>
+
+                {/* E — Explain away concerns */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    <span className="font-bold text-primary">E</span>xplain — Objeções levantadas (selecione todas que aplicam)
+                  </Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {OBJECOES_COMUNS.map((obj) => {
+                      const selected = editObjecoes.includes(obj);
+                      return (
+                        <button
+                          key={obj}
+                          type="button"
+                          onClick={() => {
+                            setEditObjecoes((curr) =>
+                              selected ? curr.filter((x) => x !== obj) : [...curr, obj]
+                            );
+                          }}
+                          className={`text-[11px] px-2 py-1 rounded-md border transition-colors ${
+                            selected
+                              ? "bg-primary/15 text-primary border-primary/30"
+                              : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                          }`}
+                        >
+                          {selected && "✓ "}{obj}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Sem categorizar objeções, a oferta não evolui. Use dados pra ajustar script, garantias e preço.
+                  </p>
+                </div>
+
+                {/* Indicadores visuais de completude */}
+                <div className="pt-2 border-t border-primary/20 flex items-center gap-3 flex-wrap text-[10px]">
+                  <span className={editEhDecisor ? "text-success font-medium" : "text-muted-foreground"}>
+                    {editEhDecisor ? "✓" : "○"} Decisor
+                  </span>
+                  <span className={editDor.length > 10 ? "text-success font-medium" : "text-muted-foreground"}>
+                    {editDor.length > 10 ? "✓" : "○"} Dor clara
+                  </span>
+                  <span className={editValorEmocional.length > 10 ? "text-success font-medium" : "text-muted-foreground"}>
+                    {editValorEmocional.length > 10 ? "✓" : "○"} Valor articulado
+                  </span>
+                  <span className={editObjecoes.length > 0 ? "text-success font-medium" : "text-muted-foreground"}>
+                    {editObjecoes.length > 0 ? "✓" : "○"} Objeções mapeadas
+                  </span>
+                </div>
+              </div>
+              {/* ========= FIM CLOSER ========= */}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -811,6 +1017,30 @@ export default function Prospeccao() {
         prospeccaoLabel={contatosLabel}
         onSaved={fetchAll}
       />
+
+      {/* Sprint 2: Templates de mensagem */}
+      {editProsp && (() => {
+        const emp = getEmpresa(editProsp.elegibilidade_id);
+        const acao = getAcao(editProsp.elegibilidade_id);
+        const valorPot = getValorPotencial(editProsp.elegibilidade_id);
+        const dias = acao?.data_limite_prescricao
+          ? differenceInDays(parseISO(acao.data_limite_prescricao), new Date())
+          : null;
+        return (
+          <TemplateSelectorDialog
+            open={templatesOpen}
+            onOpenChange={setTemplatesOpen}
+            vars={{
+              empresa: emp?.nome,
+              cnpj: emp?.cnpj,
+              contato_nome: editContatoNome || editProsp.contato_nome,
+              tese: acao?.nome,
+              valor_potencial: valorPot,
+              dias_prescricao: dias,
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

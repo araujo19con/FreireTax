@@ -6,109 +6,100 @@
 
 /* ============================================================
    FREIRE PIGNATARO — TAX TRAKKER DESIGN SYSTEM
-   Identidade: escritório tributário sério, confiante, premium.
-   Paleta: navy profundo (autoridade) + bronze/ouro fosco (sofisticação)
-           + cinzas quentes (conforto de leitura em sessões longas)
+   Identidade: preto/grafite + cinza quente + bege — sobriedade
+   jurídica clássica do escritório.
    Tipografia: Playfair Display (peso jurídico) + Inter (legibilidade densa)
    ============================================================ */
 
 @layer base {
   :root {
-    /* ─── Neutros quentes (papel / tinta) ─────────────────── */
-    --background: 36 20% 97%;          /* off-white bege quente */
-    --foreground: 222 25% 14%;         /* navy-ink 92 % preto */
+    /* ─── Neutros quentes ─────────────────────────────────── */
+    --background: 30 14% 95%;
+    --foreground: 0 0% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 25% 14%;
+    --card-foreground: 0 0% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 25% 14%;
+    --popover-foreground: 0 0% 11%;
 
-    /* ─── Primary: Navy FP ───────────────────────────────── */
-    /* Azul-marinho profundo — autoridade, confiança, tradição */
-    --primary: 219 45% 22%;
-    --primary-foreground: 36 20% 97%;
+    /* ─── Primary: preto pleno ───────────────────────────── */
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
 
-    /* ─── Secondary: Bronze fosco ────────────────────────── */
-    /* Dourado envelhecido — peso institucional sem brilho */
-    --secondary: 35 35% 48%;
-    --secondary-foreground: 222 25% 14%;
+    /* ─── Secondary: cinza médio ─────────────────────────── */
+    --secondary: 0 0% 43%;
+    --secondary-foreground: 0 0% 100%;
 
     /* ─── Muted / Accent — tons suporte ──────────────────── */
-    --muted: 36 15% 92%;
-    --muted-foreground: 222 10% 42%;
+    --muted: 30 10% 90%;
+    --muted-foreground: 0 0% 43%;
 
-    --accent: 219 40% 92%;             /* navy-soft — highlight suave */
-    --accent-foreground: 219 45% 22%;
+    --accent: 28 16% 82%;              /* bege clara — highlight suave */
+    --accent-foreground: 0 0% 11%;
 
     /* ─── Semantic — status ──────────────────────────────── */
-    --destructive: 0 65% 48%;
-    --destructive-foreground: 36 20% 97%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --success: 152 52% 34%;            /* verde oliva escuro */
-    --success-foreground: 36 20% 97%;
+    --success: 152 56% 39%;
+    --success-foreground: 0 0% 100%;
 
-    --warning: 32 92% 44%;             /* âmbar intenso (visível sobre branco) */
-    --warning-foreground: 36 20% 97%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
 
-    --info: 210 72% 42%;               /* azul institucional */
-    --info-foreground: 36 20% 97%;
+    --info: 214 60% 50%;
+    --info-foreground: 0 0% 100%;
 
     /* ─── Borders / Inputs ───────────────────────────────── */
-    --border: 36 15% 86%;
-    --input: 36 15% 86%;
-    --ring: 219 45% 22%;
+    --border: 30 10% 85%;
+    --input: 30 10% 85%;
+    --ring: 0 0% 0%;
 
     /* ─── Shape tokens ───────────────────────────────────── */
     --radius: 0.5rem;
 
-    /* ─── Sidebar — navy profundo ────────────────────────── */
-    --sidebar-background: 222 32% 12%;
-    --sidebar-foreground: 36 18% 88%;
-    --sidebar-primary: 35 38% 62%;               /* bronze destacado */
-    --sidebar-primary-foreground: 222 32% 12%;
-    --sidebar-accent: 222 28% 18%;
-    --sidebar-accent-foreground: 36 18% 92%;
-    --sidebar-border: 222 25% 20%;
-    --sidebar-ring: 35 38% 62%;
+    /* ─── Sidebar — grafite profundo ─────────────────────── */
+    --sidebar-background: 0 0% 7%;
+    --sidebar-foreground: 30 10% 90%;
+    --sidebar-primary: 28 16% 82%;               /* bege destacado */
+    --sidebar-primary-foreground: 0 0% 7%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 30 10% 90%;
+    --sidebar-border: 0 0% 20%;
+    --sidebar-ring: 28 16% 82%;
 
     /* ─── Tipografia (vars) ──────────────────────────────── */
     --font-heading: 'Playfair Display', Georgia, serif;
     --font-body: 'Inter', system-ui, sans-serif;
 
     /* ─── Shadow system (escala 4 níveis) ────────────────── */
-    --shadow-xs:       0 1px 2px 0 hsl(222 25% 14% / 0.04);
-    --shadow-card:     0 1px 3px 0 hsl(222 25% 14% / 0.06), 0 1px 2px -1px hsl(222 25% 14% / 0.04);
-    --shadow-elevated: 0 4px 12px -2px hsl(222 25% 14% / 0.10), 0 2px 4px -2px hsl(222 25% 14% / 0.06);
-    --shadow-overlay:  0 16px 40px -8px hsl(222 25% 14% / 0.20), 0 8px 16px -4px hsl(222 25% 14% / 0.08);
+    --shadow-xs:       0 1px 2px 0 hsl(0 0% 0% / 0.04);
+    --shadow-card:     0 1px 3px 0 hsl(0 0% 0% / 0.04), 0 1px 2px -1px hsl(0 0% 0% / 0.04);
+    --shadow-elevated: 0 4px 16px -2px hsl(0 0% 0% / 0.08);
+    --shadow-overlay:  0 16px 40px -8px hsl(0 0% 0% / 0.18), 0 8px 16px -4px hsl(0 0% 0% / 0.08);
   }
 
   .dark {
-    --background: 222 32% 10%;
-    --foreground: 36 18% 92%;
-    --card: 222 28% 14%;
-    --card-foreground: 36 18% 92%;
-    --popover: 222 28% 14%;
-    --popover-foreground: 36 18% 92%;
-    --primary: 35 38% 62%;
-    --primary-foreground: 222 32% 12%;
-    --secondary: 222 18% 30%;
-    --secondary-foreground: 36 18% 92%;
-    --muted: 222 20% 20%;
-    --muted-foreground: 36 10% 66%;
-    --accent: 222 28% 22%;
-    --accent-foreground: 36 18% 92%;
-    --destructive: 0 60% 42%;
-    --destructive-foreground: 36 18% 92%;
-    --success: 152 48% 42%;
-    --success-foreground: 36 18% 92%;
-    --warning: 32 85% 52%;
-    --warning-foreground: 222 32% 12%;
-    --info: 210 70% 55%;
-    --info-foreground: 36 18% 92%;
-    --border: 222 20% 22%;
-    --input: 222 20% 22%;
-    --ring: 35 38% 62%;
+    --background: 0 0% 7%;
+    --foreground: 30 10% 90%;
+    --card: 0 0% 11%;
+    --card-foreground: 30 10% 90%;
+    --popover: 0 0% 11%;
+    --popover-foreground: 30 10% 90%;
+    --primary: 30 10% 90%;
+    --primary-foreground: 0 0% 7%;
+    --secondary: 0 0% 43%;
+    --secondary-foreground: 30 10% 90%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 28 16% 30%;
+    --accent-foreground: 30 10% 90%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 30 10% 90%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 30 10% 90%;
   }
 }
 

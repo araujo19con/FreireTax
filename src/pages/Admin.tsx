@@ -12,6 +12,7 @@ import { logAudit } from "@/lib/audit";
 import { Settings } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
+import { TemplatesAdmin } from "@/components/TemplatesAdmin";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -177,10 +178,16 @@ export default function Admin() {
       <Tabs defaultValue="acoes">
         <TabsList>
           <TabsTrigger value="acoes">Ações</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
           <TabsTrigger value="status">Status</TabsTrigger>
           <TabsTrigger value="usuarios">Usuários</TabsTrigger>
           <TabsTrigger value="criterios">Critérios</TabsTrigger>
         </TabsList>
+
+        {/* === TEMPLATES TAB === */}
+        <TabsContent value="templates" className="mt-4">
+          <TemplatesAdmin />
+        </TabsContent>
 
         {/* === AÇÕES TAB === */}
         <TabsContent value="acoes" className="mt-4">

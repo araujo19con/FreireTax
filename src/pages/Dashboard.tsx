@@ -16,6 +16,7 @@ import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
+import { FunilHormozi } from "@/components/FunilHormozi";
 
 interface Acao { id: string; nome: string; tipo: string; status: string; }
 interface ElegibilidadeRow { id: string; empresa_id: string; acao_id: string; elegivel: boolean; }
@@ -422,6 +423,9 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {/* Funil Hormozi — Sprint 2 */}
+      <FunilHormozi />
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
