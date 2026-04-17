@@ -21,6 +21,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { ProspeccaoContatosDialog } from "@/components/ProspeccaoContatosDialog";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
+import { LoadingState } from "@/components/LoadingState";
 import type { Database } from "@/integrations/supabase/types";
 import { differenceInDays, parseISO } from "date-fns";
 
@@ -354,47 +357,52 @@ export default function Prospeccao() {
   }).length;
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
+    return (
+      <div className="space-y-6">
+        <LoadingState variant="kpi-grid" count={5} />
+        <LoadingState variant="kanban" count={5} />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight">Prospecção</h1>
-          <p className="text-muted-foreground mt-1">Pipeline comercial — cadência 7 toques, foco em alto valor</p>
-        </div>
-        <Button onClick={openCreateDialog}>
-          <Plus className="mr-2 h-4 w-4" />Nova Prospecção
-        </Button>
-      </div>
+      <PageHeader
+        title="Prospecção"
+        description="Pipeline comercial — cadência 7 toques, foco em alto valor"
+        icon={<Handshake className="h-7 w-7" />}
+        actions={
+          <Button onClick={openCreateDialog}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Prospecção
+          </Button>
+        }
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card className="shadow-card p-4">
+        <Card className="shadow-card p-4 hover:shadow-elevated transition-shadow">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-          <p className="text-2xl font-heading font-bold mt-1">{filteredProspeccoes.length}</p>
+          <p className="text-2xl font-heading font-bold mt-1 tabular-nums">{filteredProspeccoes.length}</p>
         </Card>
-        <Card className="shadow-card p-4">
+        <Card className="shadow-card p-4 hover:shadow-elevated transition-shadow">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-            <TrendingUp className="h-3 w-3" />Valor Potencial
+            <TrendingUp className="h-3 w-3" aria-hidden="true" />Valor Potencial
           </p>
-          <p className="text-2xl font-heading font-bold text-primary mt-1">{formatCompactCurrency(valorPotencialPipeline)}</p>
+          <p className="text-2xl font-heading font-bold text-primary mt-1 tabular-nums">{formatCompactCurrency(valorPotencialPipeline)}</p>
         </Card>
-        <Card className="shadow-card p-4">
+        <Card className="shadow-card p-4 hover:shadow-elevated transition-shadow">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Valor Contrato</p>
-          <p className="text-2xl font-heading font-bold mt-1">{formatCompactCurrency(totalValor)}</p>
+          <p className="text-2xl font-heading font-bold mt-1 tabular-nums">{formatCompactCurrency(totalValor)}</p>
         </Card>
-        <Card className="shadow-card p-4">
+        <Card className="shadow-card p-4 hover:shadow-elevated transition-shadow">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Assinados</p>
-          <p className="text-2xl font-heading font-bold text-success mt-1">{assinados.length} <span className="text-xs text-muted-foreground">· {formatCompactCurrency(valorAssinado)}</span></p>
+          <p className="text-2xl font-heading font-bold text-success mt-1 tabular-nums">{assinados.length} <span className="text-xs text-muted-foreground">· {formatCompactCurrency(valorAssinado)}</span></p>
         </Card>
-        <Card className="shadow-card p-4">
+        <Card className="shadow-card p-4 hover:shadow-elevated transition-shadow">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-            <Clock className="h-3 w-3" />Parados 7+ dias
+            <Clock className="h-3 w-3" aria-hidden="true" />Parados 7+ dias
           </p>
-          <p className={`text-2xl font-heading font-bold mt-1 ${semContato7d > 0 ? "text-destructive" : "text-success"}`}>{semContato7d}</p>
+          <p className={`text-2xl font-heading font-bold mt-1 tabular-nums ${semContato7d > 0 ? "text-destructive" : "text-success"}`}>{semContato7d}</p>
         </Card>
       </div>
 
@@ -423,21 +431,29 @@ export default function Prospeccao() {
         </Select>
       </div>
 
-      {/* Kanban Board */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      {filteredProspeccoes.length === 0 && !search && filterAcao === "all" ? (
+        <EmptyState
+          icon={Handshake}
+          title="Nenhuma prospecção cadastrada"
+          description="Comece criando uma prospecção a partir das empresas elegíveis. As empresas com maior valor potencial aparecem primeiro."
+          action={{ label: "Nova Prospecção", onClick: openCreateDialog, icon: Plus }}
+        />
+      ) : (
+      /* Kanban Board */
+      <div className="flex gap-4 overflow-x-auto pb-4 snap-kanban scrollbar-thin" role="list" aria-label="Pipeline de prospecção por etapa">
         {statusColumns.map(col => {
           const items = filteredProspeccoes.filter(p => p.status_prospeccao === col.key);
           return (
-            <div key={col.key} className="flex-shrink-0 w-[300px]">
+            <div key={col.key} className="flex-shrink-0 w-[300px]" role="listitem" aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}>
               <div className="flex items-center gap-2 mb-3 px-1">
-                <div className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} />
-                <h3 className="text-sm font-medium">{col.label}</h3>
-                <Badge variant="outline" className="text-[10px] ml-auto">{items.length}</Badge>
+                <div className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} aria-hidden="true" />
+                <h3 className="text-sm font-semibold">{col.label}</h3>
+                <Badge variant="outline" className="text-[10px] ml-auto tabular-nums">{items.length}</Badge>
               </div>
 
               <div className="space-y-3 min-h-[120px]">
                 {items.length === 0 && (
-                  <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                  <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-4 text-center text-xs text-muted-foreground">
                     Nenhuma prospecção
                   </div>
                 )}
@@ -561,8 +577,9 @@ export default function Prospeccao() {
                             variant="ghost" size="icon"
                             className="h-7 w-7"
                             onClick={() => openEdit(p)}
+                            aria-label={`Editar prospecção ${emp?.nome ?? ""}`}
                           >
-                            <Pencil className="h-3 w-3" />
+                            <Pencil className="h-3 w-3" aria-hidden="true" />
                           </Button>
                         </div>
                       </div>
@@ -574,6 +591,7 @@ export default function Prospeccao() {
           );
         })}
       </div>
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

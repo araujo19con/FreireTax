@@ -14,6 +14,8 @@ import {
 import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import * as XLSX from "xlsx";
+import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 
 interface Acao { id: string; nome: string; tipo: string; status: string; }
 interface ElegibilidadeRow { id: string; empresa_id: string; acao_id: string; elegivel: boolean; }
@@ -323,7 +325,7 @@ export default function Dashboard() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
+    return <LoadingState variant="page" />;
   }
 
   const kpis = [
@@ -344,50 +346,49 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Visão geral do acompanhamento tributário</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={exportExcel}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" />Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={exportPDF}>
-            <Download className="mr-2 h-4 w-4" />PDF
-          </Button>
-          <div className="w-64">
-            <Select value={selectedAcao} onValueChange={setSelectedAcao}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filtrar por ação..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as ações</SelectItem>
-                {acoes.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>{a.nome} ({a.tipo})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="w-52">
-            <Select value={selectedTribunal} onValueChange={setSelectedTribunal}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filtrar por tribunal..." />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                <SelectItem value="all">Todos os tribunais</SelectItem>
-                {(() => {
-                  const tribunais = new Set(processos.map((p) => p.tribunal || "Não informado"));
-                  return Array.from(tribunais).sort().map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ));
-                })()}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description="Visão geral do acompanhamento tributário"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={exportExcel} aria-label="Exportar dashboard para Excel">
+              <FileSpreadsheet className="mr-2 h-4 w-4" aria-hidden="true" />Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportPDF} aria-label="Exportar dashboard para PDF">
+              <Download className="mr-2 h-4 w-4" aria-hidden="true" />PDF
+            </Button>
+            <div className="w-56">
+              <Select value={selectedAcao} onValueChange={setSelectedAcao}>
+                <SelectTrigger aria-label="Filtrar por ação">
+                  <SelectValue placeholder="Filtrar por ação..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as ações</SelectItem>
+                  {acoes.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.nome} ({a.tipo})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="w-48">
+              <Select value={selectedTribunal} onValueChange={setSelectedTribunal}>
+                <SelectTrigger aria-label="Filtrar por tribunal">
+                  <SelectValue placeholder="Filtrar por tribunal..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  <SelectItem value="all">Todos os tribunais</SelectItem>
+                  {(() => {
+                    const tribunais = new Set(processos.map((p) => p.tribunal || "Não informado"));
+                    return Array.from(tribunais).sort().map((t) => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    ));
+                  })()}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        }
+      />
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -398,7 +399,7 @@ export default function Dashboard() {
               <m.icon className="h-3.5 w-3.5 text-muted-foreground" />
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-2xl font-heading font-bold">{m.value}</div>
+              <div className="text-2xl font-heading font-bold tabular-nums">{m.value}</div>
               <p className="text-[10px] text-muted-foreground mt-0.5">{m.sub}</p>
             </CardContent>
           </Card>
@@ -415,7 +416,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{m.label}</p>
-                <p className={`text-xl font-heading font-bold ${m.color}`}>{m.value}</p>
+                <p className={`text-xl font-heading font-bold tabular-nums ${m.color}`}>{m.value}</p>
               </div>
             </CardContent>
           </Card>

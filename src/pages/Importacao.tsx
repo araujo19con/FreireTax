@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { PageHeader } from "@/components/PageHeader";
 
 interface ImportRow {
   nome: string;
@@ -157,10 +158,11 @@ export default function Importacao() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-heading font-bold tracking-tight">Importação em Massa</h1>
-        <p className="text-muted-foreground mt-1">Importe empresas via planilhas CSV ou XLSX</p>
-      </div>
+      <PageHeader
+        title="Importação em Massa"
+        description="Importe empresas via planilhas CSV ou XLSX"
+        icon={<Upload className="h-7 w-7" />}
+      />
 
       <Card className="shadow-card p-8">
         <div

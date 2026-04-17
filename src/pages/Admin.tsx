@@ -9,6 +9,9 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
+import { Settings } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -160,15 +163,16 @@ export default function Admin() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
+    return <LoadingState variant="page" />;
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-heading font-bold tracking-tight">Administração</h1>
-        <p className="text-muted-foreground mt-1">Configurações do sistema e gerenciamento</p>
-      </div>
+      <PageHeader
+        title="Administração"
+        description="Configurações do sistema e gerenciamento"
+        icon={<Settings className="h-7 w-7" />}
+      />
 
       <Tabs defaultValue="acoes">
         <TabsList>

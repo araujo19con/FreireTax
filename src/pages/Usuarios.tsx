@@ -16,6 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import type { Database } from "@/integrations/supabase/types";
+import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -241,27 +243,26 @@ export default function Usuarios() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight flex items-center gap-2">
-            <Users className="h-7 w-7" />Usuários
-          </h1>
-          <p className="text-muted-foreground mt-1">Gerencie acessos, papéis e responsabilidades</p>
-        </div>
-        <Button onClick={() => setInviteOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />Novo Usuário
-        </Button>
-      </div>
+      <PageHeader
+        title="Usuários"
+        description="Gerencie acessos, papéis e responsabilidades"
+        icon={<Users className="h-7 w-7" />}
+        actions={
+          <Button onClick={() => setInviteOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Novo Usuário
+          </Button>
+        }
+      />
 
       <Card className="p-4 shadow-card">
         <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Buscar por nome, email ou cargo..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+          <Input className="pl-9" placeholder="Buscar por nome, email ou cargo..." value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Buscar usuários" />
         </div>
       </Card>
 
       {loading ? (
-        <div className="py-12 text-center text-muted-foreground">Carregando...</div>
+        <LoadingState variant="table" count={5} />
       ) : filtered.length === 0 ? (
         <Card className="p-8 text-center text-muted-foreground shadow-card">
           Nenhum usuário encontrado.

@@ -37,8 +37,16 @@ const queryClient = new QueryClient({
 
 function PageFallback() {
   return (
-    <div className="min-h-[40vh] flex items-center justify-center">
-      <p className="text-muted-foreground">Carregando...</p>
+    <div
+      className="min-h-[40vh] flex items-center justify-center"
+      role="status"
+      aria-live="polite"
+      aria-label="Carregando página"
+    >
+      <div className="flex items-center gap-3 text-muted-foreground text-sm">
+        <span className="h-2 w-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+        <span>Preparando a interface…</span>
+      </div>
     </div>
   );
 }
@@ -59,8 +67,15 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">Carregando...</p>
+      <div
+        className="min-h-screen flex flex-col items-center justify-center bg-background gap-4"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="h-11 w-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center" aria-hidden="true">
+          <span className="h-5 w-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        </div>
+        <p className="font-heading text-sm text-muted-foreground">Carregando Tax Trakker…</p>
       </div>
     );
   }

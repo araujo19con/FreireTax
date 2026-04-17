@@ -16,6 +16,8 @@ import {
   addMonths, subMonths, startOfWeek, endOfWeek, isToday, parseISO, isAfter, subDays, addDays,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 
 type Reuniao = Database["public"]["Tables"]["reunioes"]["Row"];
 type ReuniaoStatus = Database["public"]["Enums"]["reuniao_status"];
@@ -139,20 +141,27 @@ export default function MinhaAgenda() {
     setDialogOpen(true);
   };
 
+  if (loading && reunioes.length === 0) {
+    return (
+      <div className="space-y-6">
+        <LoadingState variant="kpi-grid" count={4} />
+        <LoadingState variant="cards" count={1} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight flex items-center gap-2">
-            <Calendar className="h-7 w-7" aria-hidden="true" />
-            Minha Agenda
-          </h1>
-          <p className="text-muted-foreground mt-1">Reuniões comerciais — convites por email automático</p>
-        </div>
-        <Button onClick={openNew}>
-          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Agendar Reunião
-        </Button>
-      </div>
+      <PageHeader
+        title="Minha Agenda"
+        description="Reuniões comerciais — convites por email automático"
+        icon={<Calendar className="h-7 w-7" />}
+        actions={
+          <Button onClick={openNew}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Agendar Reunião
+          </Button>
+        }
+      />
 
       {/* Resumo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -161,7 +170,7 @@ export default function MinhaAgenda() {
             <div className="p-2 rounded-md bg-primary/10"><CalendarCheck className="h-4 w-4 text-primary" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Total</p>
-              <p className="text-xl font-heading font-bold">{contadores.total}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{contadores.total}</p>
             </div>
           </div>
         </Card>
@@ -170,7 +179,7 @@ export default function MinhaAgenda() {
             <div className="p-2 rounded-md bg-warning/10"><Clock className="h-4 w-4 text-warning" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Hoje</p>
-              <p className="text-xl font-heading font-bold">{contadores.hoje}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{contadores.hoje}</p>
             </div>
           </div>
         </Card>
@@ -179,7 +188,7 @@ export default function MinhaAgenda() {
             <div className="p-2 rounded-md bg-info/10"><Calendar className="h-4 w-4 text-info" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Agendadas</p>
-              <p className="text-xl font-heading font-bold">{contadores.agendadas}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{contadores.agendadas}</p>
             </div>
           </div>
         </Card>
@@ -188,7 +197,7 @@ export default function MinhaAgenda() {
             <div className="p-2 rounded-md bg-success/10"><CalendarCheck className="h-4 w-4 text-success" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Realizadas</p>
-              <p className="text-xl font-heading font-bold">{contadores.realizadas}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{contadores.realizadas}</p>
             </div>
           </div>
         </Card>
@@ -230,9 +239,7 @@ export default function MinhaAgenda() {
       </Card>
 
       {loading ? (
-        <div className="py-12 text-center text-muted-foreground" role="status" aria-live="polite">
-          Carregando...
-        </div>
+        <LoadingState variant="cards" count={1} />
       ) : view === "mes" ? (
         <Card className="p-4 shadow-card">
           <div className="grid grid-cols-7 gap-1 mb-2">

@@ -7,6 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake } from "lucide-react";
 import { AcaoDialog } from "@/components/AcaoDialog";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
+import { LoadingState } from "@/components/LoadingState";
+import { Scale } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -382,23 +386,24 @@ export default function Acoes() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
+    return <LoadingState variant="page" />;
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight">Ações Tributárias</h1>
-          <p className="text-muted-foreground mt-1">Gestão de ações iniciais e rescisórias</p>
-        </div>
-        <AcaoDialog onSave={handleCreate} acoesIniciais={acoesIniciais} />
-      </div>
+      <PageHeader
+        title="Ações Tributárias"
+        description="Gestão de ações iniciais e rescisórias"
+        icon={<Scale className="h-7 w-7" />}
+        actions={<AcaoDialog onSave={handleCreate} acoesIniciais={acoesIniciais} />}
+      />
 
       {acoes.length === 0 && (
-        <Card className="shadow-card p-8 text-center text-muted-foreground">
-          Nenhuma ação cadastrada. Clique em "Nova Ação" para começar.
-        </Card>
+        <EmptyState
+          icon={Scale}
+          title="Nenhuma ação cadastrada"
+          description="Cadastre ações tributárias (iniciais e rescisórias) para começar a vincular empresas via elegibilidade."
+        />
       )}
 
       <div className="grid gap-4">

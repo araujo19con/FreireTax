@@ -260,7 +260,10 @@ export function ProspeccaoContatosDialog({ open, onOpenChange, prospeccaoId, pro
           <p className="text-sm font-medium">Histórico ({total})</p>
 
           {loading ? (
-            <p className="text-sm text-muted-foreground text-center py-4">Carregando...</p>
+            <div className="space-y-2 py-2" aria-busy="true" aria-label="Carregando histórico">
+              <div className="h-10 rounded-md bg-muted animate-pulse" />
+              <div className="h-10 rounded-md bg-muted animate-pulse" />
+            </div>
           ) : contatos.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
               Nenhum contato ainda. Registre o primeiro toque acima.

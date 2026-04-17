@@ -6,6 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 
 interface AuditLog {
   id: string;
@@ -64,18 +66,16 @@ export default function Auditoria() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
+    return <LoadingState variant="table" count={8} />;
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <Shield className="h-8 w-8 text-muted-foreground" />
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight">Auditoria</h1>
-          <p className="text-muted-foreground mt-1">Log completo de alterações do sistema</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Auditoria"
+        description="Log completo de alterações do sistema"
+        icon={<Shield className="h-7 w-7" />}
+      />
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

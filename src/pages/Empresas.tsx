@@ -20,6 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
+import { LoadingState } from "@/components/LoadingState";
 
 interface Empresa {
   id: string;
@@ -301,23 +304,28 @@ export default function Empresas() {
   const getEmpresaNome = (id: string) => empresas.find((e) => e.id === id)?.nome || "—";
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
+    return (
+      <div className="space-y-6">
+        <LoadingState variant="kpi-grid" count={3} />
+        <LoadingState variant="table" count={8} />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight">Empresas</h1>
-          <p className="text-muted-foreground mt-1">Arraste empresas para pastas ou ações</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setPastaDialogOpen(true)}>
-            <FolderPlus className="mr-2 h-4 w-4" />Nova Pasta
-          </Button>
-          <EmpresaDialog onSave={handleCreate} />
-        </div>
-      </div>
+      <PageHeader
+        title="Empresas"
+        description="Arraste empresas para pastas ou ações tributárias"
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setPastaDialogOpen(true)}>
+              <FolderPlus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Pasta
+            </Button>
+            <EmpresaDialog onSave={handleCreate} />
+          </>
+        }
+      />
 
       {/* Three-column layout: Pastas | Table | Ações */}
       <div className="flex gap-5 items-start">
@@ -456,12 +464,24 @@ export default function Empresas() {
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">Nenhuma empresa encontrada</td></tr>
+                    <tr><td colSpan={6} className="py-10 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <Search className="h-6 w-6 opacity-50" aria-hidden="true" />
+                        <p className="text-sm font-medium">
+                          {empresas.length === 0 ? "Nenhuma empresa cadastrada" : "Nenhuma empresa encontrada"}
+                        </p>
+                        {empresas.length === 0 ? (
+                          <p className="text-xs">Clique em "Nova Empresa" para começar.</p>
+                        ) : (
+                          <p className="text-xs">Tente outro termo de busca ou remova filtros.</p>
+                        )}
+                      </div>
+                    </td></tr>
                   )}
-                  {filtered.map((e) => (
+                  {filtered.map((e, idx) => (
                     <tr
                       key={e.id}
-                      className={`border-b border-border last:border-0 hover:bg-muted/50 transition-colors ${
+                      className={`border-b border-border last:border-0 hover:bg-muted/40 transition-colors ${idx % 2 === 1 ? "bg-muted/[0.15]" : ""} ${
                         draggingEmpresaId === e.id ? "opacity-50" : ""
                       }`}
                       draggable
@@ -489,23 +509,23 @@ export default function Empresas() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailEmpresa(e)}>
-                            <Eye className="h-4 w-4" />
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailEmpresa(e)} aria-label={`Ver detalhes de ${e.nome}`}>
+                            <Eye className="h-4 w-4" aria-hidden="true" />
                           </Button>
                           <EmpresaDialog
                             onSave={(data) => handleEdit(e.id, data)}
                             initialData={e}
                             title="Editar Empresa"
                             trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <Pencil className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Editar ${e.nome}`}>
+                                <Pencil className="h-4 w-4" aria-hidden="true" />
                               </Button>
                             }
                           />
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
-                                <Trash2 className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" aria-label={`Excluir ${e.nome}`}>
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>

@@ -15,6 +15,8 @@ import { TarefaDialog } from "@/components/TarefaDialog";
 import type { Database } from "@/integrations/supabase/types";
 import { format, isPast, isToday, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { PageHeader } from "@/components/PageHeader";
+import { LoadingState } from "@/components/LoadingState";
 
 type Tarefa = Database["public"]["Tables"]["tarefas"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -179,18 +181,16 @@ export default function MinhasTarefas() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-heading font-bold tracking-tight flex items-center gap-2">
-            <ClipboardList className="h-7 w-7" aria-hidden="true" />
-            Minhas Tarefas
-          </h1>
-          <p className="text-muted-foreground mt-1">Kanban das tarefas atribuídas a você</p>
-        </div>
-        <Button onClick={openNew}>
-          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Tarefa
-        </Button>
-      </div>
+      <PageHeader
+        title="Minhas Tarefas"
+        description="Kanban das tarefas atribuídas a você"
+        icon={<ClipboardList className="h-7 w-7" />}
+        actions={
+          <Button onClick={openNew}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Tarefa
+          </Button>
+        }
+      />
 
       {/* Resumo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -199,7 +199,7 @@ export default function MinhasTarefas() {
             <div className="p-2 rounded-md bg-primary/10"><ClipboardList className="h-4 w-4 text-primary" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Total</p>
-              <p className="text-xl font-heading font-bold">{filtered.length}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{filtered.length}</p>
             </div>
           </div>
         </Card>
@@ -208,7 +208,7 @@ export default function MinhasTarefas() {
             <div className="p-2 rounded-md bg-destructive/10"><AlertCircle className="h-4 w-4 text-destructive" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Atrasadas</p>
-              <p className="text-xl font-heading font-bold">{resumo.atrasadas}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{resumo.atrasadas}</p>
             </div>
           </div>
         </Card>
@@ -217,7 +217,7 @@ export default function MinhasTarefas() {
             <div className="p-2 rounded-md bg-warning/10"><Clock className="h-4 w-4 text-warning" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Para hoje</p>
-              <p className="text-xl font-heading font-bold">{resumo.hoje}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{resumo.hoje}</p>
             </div>
           </div>
         </Card>
@@ -226,7 +226,7 @@ export default function MinhasTarefas() {
             <div className="p-2 rounded-md bg-success/10"><CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" /></div>
             <div>
               <p className="text-xs text-muted-foreground">Concluídas</p>
-              <p className="text-xl font-heading font-bold">{resumo.concluidas}</p>
+              <p className="text-xl font-heading font-bold tabular-nums">{resumo.concluidas}</p>
             </div>
           </div>
         </Card>
@@ -268,9 +268,7 @@ export default function MinhasTarefas() {
 
       {/* Kanban */}
       {loading ? (
-        <div className="py-12 text-center text-muted-foreground" role="status" aria-live="polite">
-          Carregando...
-        </div>
+        <LoadingState variant="kanban" count={4} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {statusColumns.map((col) => {
