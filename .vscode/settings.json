@@ -144,6 +144,12 @@
   // ---- TERMINAL ----
   "terminal.integrated.defaultProfile.windows": "PowerShell",
   "terminal.integrated.cwd": "${workspaceFolder}",
+  // Gambiarra enquanto Node.js nao esta no PATH do Windows.
+  // Idealmente, adicione "C:\\Program Files\\nodejs\\" ao PATH via
+  // "Variaveis de Ambiente" do Windows e esta injecao deixa de ser necessaria.
+  "terminal.integrated.env.windows": {
+    "PATH": "C:\\Program Files\\nodejs;${env:PATH}"
+  },
 
   // ---- NPM ----
   "npm.packageManager": "npm",

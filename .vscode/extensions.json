@@ -4,7 +4,6 @@
     "dbaeumer.vscode-eslint",
     "esbenp.prettier-vscode",
     "usernamehw.errorlens",
-    "formulahendry.auto-rename-tag",
     "christian-kohler.path-intellisense",
     "christian-kohler.npm-intellisense",
     "naumovs.color-highlight",
@@ -15,12 +14,11 @@
     "ms-ossdata.vscode-postgresql",
     "yoavbls.pretty-ts-errors",
     "vitest.explorer",
-    "antfu.vite",
-    "github.copilot",
-    "github.copilot-chat"
+    "antfu.vite"
   ],
   "unwantedRecommendations": [
     "hookyqr.beautify",
-    "dbaeumer.jshint"
+    "dbaeumer.jshint",
+    "formulahendry.auto-rename-tag"
   ]
 }
