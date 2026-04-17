@@ -38,6 +38,8 @@ interface ElegibilidadeRow {
   acao_id: string;
   elegivel: boolean;
   justificativa: string | null;
+  valor_potencial_estimado: number | null;
+  observacao_valor: string | null;
   empresa_nome?: string;
   acao_nome?: string;
 }
@@ -46,6 +48,13 @@ const statusColors: Record<string, string> = {
   "Elegível": "bg-success/10 text-success",
   "Não elegível": "bg-destructive/10 text-destructive",
 };
+
+function formatCompactCurrency(value: number) {
+  if (!value) return "—";
+  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
 
 export default function Elegibilidade() {
   const { user } = useAuth();
@@ -62,10 +71,12 @@ export default function Elegibilidade() {
   const [formAcao, setFormAcao] = useState("");
   const [formElegivel, setFormElegivel] = useState("true");
   const [formJustificativa, setFormJustificativa] = useState("");
+  const [formValorPotencial, setFormValorPotencial] = useState("");
+  const [formObservacaoValor, setFormObservacaoValor] = useState("");
 
   const fetchAll = async () => {
     const [elegRes, empRes, acaoRes] = await Promise.all([
-      supabase.from("elegibilidade").select("*").order("created_at", { ascending: false }),
+      supabase.from("elegibilidade").select("*"),
       supabase.from("empresas").select("id, nome, cnpj"),
       supabase.from("acoes_tributarias").select("id, nome"),
     ]);
@@ -78,13 +89,19 @@ export default function Elegibilidade() {
     const empMap = Object.fromEntries(emps.map((e) => [e.id, e.nome]));
     const acaoMap = Object.fromEntries(acs.map((a) => [a.id, a.nome]));
 
-    setElegibilidades(
-      (elegRes.data || []).map((e) => ({
-        ...e,
-        empresa_nome: empMap[e.empresa_id] || "Desconhecida",
-        acao_nome: acaoMap[e.acao_id] || "Desconhecida",
-      }))
-    );
+    // QW2: ordena por valor_potencial DESC — empresas grandes no topo
+    const rows = (elegRes.data || []).map((e) => ({
+      ...e,
+      empresa_nome: empMap[e.empresa_id] || "Desconhecida",
+      acao_nome: acaoMap[e.acao_id] || "Desconhecida",
+    }));
+    rows.sort((a, b) => {
+      const va = Number(a.valor_potencial_estimado ?? 0);
+      const vb = Number(b.valor_potencial_estimado ?? 0);
+      if (vb !== va) return vb - va;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+    setElegibilidades(rows);
     setLoading(false);
   };
 
@@ -98,6 +115,8 @@ export default function Elegibilidade() {
     setFormAcao("");
     setFormElegivel("true");
     setFormJustificativa("");
+    setFormValorPotencial("");
+    setFormObservacaoValor("");
     setDialogOpen(true);
   };
 
@@ -107,6 +126,8 @@ export default function Elegibilidade() {
     setFormAcao(row.acao_id);
     setFormElegivel(row.elegivel ? "true" : "false");
     setFormJustificativa(row.justificativa || "");
+    setFormValorPotencial(row.valor_potencial_estimado ? String(row.valor_potencial_estimado) : "");
+    setFormObservacaoValor(row.observacao_valor || "");
     setDialogOpen(true);
   };
 
@@ -116,12 +137,16 @@ export default function Elegibilidade() {
       return;
     }
 
+    const valorNum = parseFloat(formValorPotencial.replace(",", ".")) || 0;
+
     if (editing) {
       const { error } = await supabase.from("elegibilidade").update({
         empresa_id: formEmpresa,
         acao_id: formAcao,
         elegivel: formElegivel === "true",
         justificativa: formJustificativa || "",
+        valor_potencial_estimado: valorNum,
+        observacao_valor: formObservacaoValor || null,
       }).eq("id", editing.id);
       if (error) {
         toast.error("Erro ao atualizar");
@@ -138,6 +163,8 @@ export default function Elegibilidade() {
         acao_id: formAcao,
         elegivel: formElegivel === "true",
         justificativa: formJustificativa || "",
+        valor_potencial_estimado: valorNum,
+        observacao_valor: formObservacaoValor || null,
         user_id: user!.id,
       });
       if (error) {
@@ -201,24 +228,33 @@ export default function Elegibilidade() {
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground">Empresa</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground">Ação</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground">Valor Potencial</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground">Justificativa</th>
                 <th className="text-left py-3 px-4 font-medium text-muted-foreground">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">
+                <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">
                   {elegibilidades.length === 0 ? 'Nenhuma elegibilidade registrada. Clique em "Nova Elegibilidade".' : "Nenhum resultado encontrado."}
                 </td></tr>
               )}
               {filtered.map((d) => {
                 const statusLabel = d.elegivel ? "Elegível" : "Não elegível";
+                const valorPot = Number(d.valor_potencial_estimado ?? 0);
                 return (
                   <tr key={d.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 font-medium">{d.empresa_nome}</td>
                     <td className="py-3 px-4 text-muted-foreground">{d.acao_nome}</td>
                     <td className="py-3 px-4">
                       <Badge variant="outline" className={`${statusColors[statusLabel] || ""} border-0`}>{statusLabel}</Badge>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      {valorPot > 0 ? (
+                        <span className="font-medium text-primary">{formatCompactCurrency(valorPot)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-muted-foreground max-w-[200px] truncate">{d.justificativa || "—"}</td>
                     <td className="py-3 px-4">
@@ -296,6 +332,38 @@ export default function Elegibilidade() {
               <Label>Justificativa</Label>
               <Textarea value={formJustificativa} onChange={(e) => setFormJustificativa(e.target.value)} placeholder="Motivo da decisão (opcional)" rows={3} />
             </div>
+
+            {/* QW2 — Valor potencial */}
+            {formElegivel === "true" && (
+              <div className="space-y-2 p-3 rounded-md border border-primary/30 bg-primary/5">
+                <Label className="text-primary">
+                  Valor potencial estimado (R$)
+                </Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Hormozi: sem priorizar por valor, o time queima tempo em leads pequenos. Empresas grandes valem 50× mais no mesmo esforço.
+                </p>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formValorPotencial}
+                  onChange={(e) => setFormValorPotencial(e.target.value)}
+                  placeholder="Ex: 250000.00"
+                />
+                {formValorPotencial && Number(formValorPotencial) > 0 && (
+                  <p className="text-xs text-primary font-medium">
+                    = {formatCompactCurrency(Number(formValorPotencial))}
+                  </p>
+                )}
+                <Label className="text-xs mt-2">Como estimou? (opcional)</Label>
+                <Textarea
+                  rows={2}
+                  placeholder="Ex: baseado em faturamento de R$ 80M × 3% típico da tese × 5 anos = ~R$ 250k honorário"
+                  value={formObservacaoValor}
+                  onChange={(e) => setFormObservacaoValor(e.target.value)}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>

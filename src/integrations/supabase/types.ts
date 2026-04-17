@@ -17,33 +17,42 @@ export type Database = {
       acoes_tributarias: {
         Row: {
           created_at: string
+          data_limite_prescricao: string | null
           id: string
           nome: string
+          observacao_prazo: string | null
           responsavel_id: string | null
           status: string
           tipo: string
+          tipo_prazo: Database["public"]["Enums"]["tipo_prazo"] | null
           updated_at: string
           user_id: string
           vinculo: string | null
         }
         Insert: {
           created_at?: string
+          data_limite_prescricao?: string | null
           id?: string
           nome: string
+          observacao_prazo?: string | null
           responsavel_id?: string | null
           status?: string
           tipo?: string
+          tipo_prazo?: Database["public"]["Enums"]["tipo_prazo"] | null
           updated_at?: string
           user_id: string
           vinculo?: string | null
         }
         Update: {
           created_at?: string
+          data_limite_prescricao?: string | null
           id?: string
           nome?: string
+          observacao_prazo?: string | null
           responsavel_id?: string | null
           status?: string
           tipo?: string
+          tipo_prazo?: Database["public"]["Enums"]["tipo_prazo"] | null
           updated_at?: string
           user_id?: string
           vinculo?: string | null
@@ -88,8 +97,10 @@ export type Database = {
           empresa_id: string
           id: string
           justificativa: string | null
+          observacao_valor: string | null
           updated_at: string
           user_id: string
+          valor_potencial_estimado: number | null
         }
         Insert: {
           acao_id: string
@@ -98,8 +109,10 @@ export type Database = {
           empresa_id: string
           id?: string
           justificativa?: string | null
+          observacao_valor?: string | null
           updated_at?: string
           user_id: string
+          valor_potencial_estimado?: number | null
         }
         Update: {
           acao_id?: string
@@ -108,8 +121,10 @@ export type Database = {
           empresa_id?: string
           id?: string
           justificativa?: string | null
+          observacao_valor?: string | null
           updated_at?: string
           user_id?: string
+          valor_potencial_estimado?: number | null
         }
         Relationships: [
           {
@@ -132,6 +147,7 @@ export type Database = {
         Row: {
           cnpj: string
           created_at: string
+          faturamento_estimado: number | null
           id: string
           nome: string
           obs: string | null
@@ -139,10 +155,12 @@ export type Database = {
           status: string
           updated_at: string
           user_id: string
+          valor_potencial_total: number | null
         }
         Insert: {
           cnpj: string
           created_at?: string
+          faturamento_estimado?: number | null
           id?: string
           nome: string
           obs?: string | null
@@ -150,10 +168,12 @@ export type Database = {
           status?: string
           updated_at?: string
           user_id: string
+          valor_potencial_total?: number | null
         }
         Update: {
           cnpj?: string
           created_at?: string
+          faturamento_estimado?: number | null
           id?: string
           nome?: string
           obs?: string | null
@@ -161,6 +181,7 @@ export type Database = {
           status?: string
           updated_at?: string
           user_id?: string
+          valor_potencial_total?: number | null
         }
         Relationships: []
       }
@@ -294,11 +315,16 @@ export type Database = {
           data_contrato: string | null
           elegibilidade_id: string
           id: string
+          motivo_perdido: Database["public"]["Enums"]["motivo_perdido"] | null
+          motivo_perdido_detalhes: string | null
           notas_prospeccao: string | null
+          numero_contatos: number
           observacoes_contrato: string | null
+          proximo_contato_em: string | null
           responsavel_id: string | null
           status_prospeccao: string
           tipo_contrato: string | null
+          ultimo_contato_em: string | null
           updated_at: string
           user_id: string
           valor_contrato: number | null
@@ -313,11 +339,16 @@ export type Database = {
           data_contrato?: string | null
           elegibilidade_id: string
           id?: string
+          motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
+          motivo_perdido_detalhes?: string | null
           notas_prospeccao?: string | null
+          numero_contatos?: number
           observacoes_contrato?: string | null
+          proximo_contato_em?: string | null
           responsavel_id?: string | null
           status_prospeccao?: string
           tipo_contrato?: string | null
+          ultimo_contato_em?: string | null
           updated_at?: string
           user_id: string
           valor_contrato?: number | null
@@ -332,11 +363,16 @@ export type Database = {
           data_contrato?: string | null
           elegibilidade_id?: string
           id?: string
+          motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
+          motivo_perdido_detalhes?: string | null
           notas_prospeccao?: string | null
+          numero_contatos?: number
           observacoes_contrato?: string | null
+          proximo_contato_em?: string | null
           responsavel_id?: string | null
           status_prospeccao?: string
           tipo_contrato?: string | null
+          ultimo_contato_em?: string | null
           updated_at?: string
           user_id?: string
           valor_contrato?: number | null
@@ -350,6 +386,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      prospeccao_contatos: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_contato"]
+          created_at: string
+          data_contato: string
+          id: string
+          notas: string | null
+          prospeccao_id: string
+          proximo_contato_em: string | null
+          resultado: string | null
+          tipo: Database["public"]["Enums"]["tipo_contato"]
+          user_id: string | null
+        }
+        Insert: {
+          canal: Database["public"]["Enums"]["canal_contato"]
+          created_at?: string
+          data_contato?: string
+          id?: string
+          notas?: string | null
+          prospeccao_id: string
+          proximo_contato_em?: string | null
+          resultado?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_contato"]
+          user_id?: string | null
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_contato"]
+          created_at?: string
+          data_contato?: string
+          id?: string
+          notas?: string | null
+          prospeccao_id?: string
+          proximo_contato_em?: string | null
+          resultado?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_contato"]
+          user_id?: string | null
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -628,6 +703,29 @@ export type Database = {
       tarefa_prioridade: "baixa" | "media" | "alta" | "urgente"
       tarefa_status: "pendente" | "em_andamento" | "concluida" | "cancelada"
       reuniao_status: "agendada" | "realizada" | "cancelada" | "no_show" | "reagendada"
+      motivo_perdido:
+        | "preco"
+        | "desconfianca_tese"
+        | "timing"
+        | "concorrente"
+        | "decisor_errado"
+        | "sem_interesse"
+        | "sem_resposta"
+        | "outros"
+      canal_contato:
+        | "email"
+        | "telefone"
+        | "whatsapp"
+        | "linkedin"
+        | "reuniao_presencial"
+        | "reuniao_online"
+        | "outro"
+      tipo_contato: "outbound" | "resposta_lead" | "reuniao" | "breakup"
+      tipo_prazo:
+        | "rescisoria_24m"
+        | "prescricional_5a"
+        | "decadencial_5a"
+        | "personalizado"
     }
     CompositeTypes: {
       [_ in never]: never

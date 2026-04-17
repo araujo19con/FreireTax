@@ -26,7 +26,17 @@ interface Acao {
   tipo: string;
   status: string;
   vinculo: string | null;
+  data_limite_prescricao: string | null;
+  tipo_prazo: string | null;
+  observacao_prazo: string | null;
 }
+
+const TIPOS_PRAZO: { value: string; label: string }[] = [
+  { value: "rescisoria_24m",   label: "Rescisória — 24 meses (CPC 975)" },
+  { value: "prescricional_5a", label: "Prescricional — 5 anos" },
+  { value: "decadencial_5a",   label: "Decadencial — 5 anos" },
+  { value: "personalizado",    label: "Personalizado" },
+];
 
 export default function Admin() {
   const { user } = useAuth();
@@ -40,6 +50,9 @@ export default function Admin() {
   const [acaoTipo, setAcaoTipo] = useState("INICIAL");
   const [acaoStatus, setAcaoStatus] = useState("Ativa");
   const [acaoVinculo, setAcaoVinculo] = useState("");
+  const [acaoDataPrescricao, setAcaoDataPrescricao] = useState("");
+  const [acaoTipoPrazo, setAcaoTipoPrazo] = useState("");
+  const [acaoObsPrazo, setAcaoObsPrazo] = useState("");
 
   const fetchAcoes = async () => {
     const { data, error } = await supabase
@@ -49,7 +62,7 @@ export default function Admin() {
     if (error) {
       toast.error("Erro ao carregar ações");
     } else {
-      setAcoes(data || []);
+      setAcoes((data as Acao[]) || []);
     }
     setLoading(false);
   };
@@ -66,6 +79,9 @@ export default function Admin() {
     setAcaoTipo("INICIAL");
     setAcaoStatus("Ativa");
     setAcaoVinculo("");
+    setAcaoDataPrescricao("");
+    setAcaoTipoPrazo("");
+    setAcaoObsPrazo("");
     setAcaoDialogOpen(true);
   };
 
@@ -75,6 +91,9 @@ export default function Admin() {
     setAcaoTipo(acao.tipo);
     setAcaoStatus(acao.status);
     setAcaoVinculo(acao.vinculo || "");
+    setAcaoDataPrescricao(acao.data_limite_prescricao || "");
+    setAcaoTipoPrazo(acao.tipo_prazo || "");
+    setAcaoObsPrazo(acao.observacao_prazo || "");
     setAcaoDialogOpen(true);
   };
 
@@ -88,26 +107,34 @@ export default function Admin() {
       return;
     }
 
+    const prazoPayload = {
+      data_limite_prescricao: acaoDataPrescricao || null,
+      tipo_prazo: (acaoTipoPrazo || null) as any,
+      observacao_prazo: acaoObsPrazo || null,
+    };
+
     if (editingAcao) {
-      const { error } = await supabase.from("acoes_tributarias").update({
+      const { error } = await (supabase.from("acoes_tributarias") as any).update({
         nome: acaoNome,
         tipo: acaoTipo,
         status: acaoStatus,
         vinculo: acaoTipo === "RESCISÓRIA" ? acaoVinculo : "",
+        ...prazoPayload,
       }).eq("id", editingAcao.id);
       if (error) {
         toast.error("Erro ao atualizar ação");
       } else {
         toast.success("Ação atualizada!");
-        logAudit({ tabela: "acoes_tributarias", acao: "Editou ação", registro_id: editingAcao.id, detalhes: { nome: acaoNome, tipo: acaoTipo } });
+        logAudit({ tabela: "acoes_tributarias", acao: "Editou ação", registro_id: editingAcao.id, detalhes: { nome: acaoNome, tipo: acaoTipo, data_prescricao: acaoDataPrescricao } });
       }
     } else {
-      const { error } = await supabase.from("acoes_tributarias").insert({
+      const { error } = await (supabase.from("acoes_tributarias") as any).insert({
         nome: acaoNome,
         tipo: acaoTipo,
         status: acaoStatus,
         vinculo: acaoTipo === "RESCISÓRIA" ? acaoVinculo : "",
         user_id: user!.id,
+        ...prazoPayload,
       });
       if (error) {
         toast.error("Erro ao criar ação");
@@ -168,7 +195,7 @@ export default function Admin() {
                 {acoes.map((a) => (
                   <div key={a.id} className="flex items-center justify-between p-3 rounded-md border border-border hover:bg-muted/50 transition-colors">
                     <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sm">{a.nome}</span>
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
                           a.tipo === "INICIAL" ? "bg-primary/10 text-primary" : "bg-secondary text-secondary-foreground"
@@ -176,6 +203,18 @@ export default function Admin() {
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
                           a.status === "Ativa" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
                         }`}>{a.status}</span>
+                        {a.data_limite_prescricao && (() => {
+                          const dias = Math.floor((new Date(a.data_limite_prescricao).getTime() - Date.now()) / 86400000);
+                          const cor = dias < 0 ? "bg-destructive/20 text-destructive"
+                                   : dias <= 30 ? "bg-destructive/15 text-destructive"
+                                   : dias <= 90 ? "bg-warning/15 text-warning"
+                                   : "bg-info/15 text-info";
+                          return (
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${cor}`}>
+                              {dias < 0 ? `Prescrita há ${Math.abs(dias)}d` : `${dias}d p/ prescrever`}
+                            </span>
+                          );
+                        })()}
                       </div>
                       {a.tipo === "RESCISÓRIA" && a.vinculo && (
                         <p className="text-xs text-muted-foreground">Vinculada a: {a.vinculo}</p>
@@ -310,6 +349,47 @@ export default function Admin() {
                   <SelectItem value="Suspensa">Suspensa</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* QW4 — Prescrição como motor de urgência */}
+            <div className="space-y-2 p-3 rounded-md border border-warning/30 bg-warning/5">
+              <Label className="text-warning flex items-center gap-1">
+                ⚠ Prazo / Prescrição
+              </Label>
+              <p className="text-[10px] text-muted-foreground">
+                Hormozi: urgência REAL vende. Preencher isso dispara contador regressivo nas prospecções.
+              </p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Tipo de prazo</Label>
+                <Select value={acaoTipoPrazo || "none"} onValueChange={(v) => setAcaoTipoPrazo(v === "none" ? "" : v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— nenhum —</SelectItem>
+                    {TIPOS_PRAZO.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Data limite (prescrição / decadência)</Label>
+                <Input
+                  type="date"
+                  value={acaoDataPrescricao}
+                  onChange={(e) => setAcaoDataPrescricao(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Observações sobre o prazo</Label>
+                <Input
+                  value={acaoObsPrazo}
+                  onChange={(e) => setAcaoObsPrazo(e.target.value)}
+                  placeholder="Ex: a contar da decisão do STF de 12/08/2020"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>

@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Handshake, Phone, Mail, Building2, Scale, Pencil, DollarSign,
-  ChevronRight, ArrowRight, Search, Filter, Plus,
+  ArrowRight, Search, Filter, Plus, MessageSquare, AlertTriangle,
+  TrendingUp, Clock, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +20,11 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { ProspeccaoContatosDialog } from "@/components/ProspeccaoContatosDialog";
+import type { Database } from "@/integrations/supabase/types";
+import { differenceInDays, parseISO } from "date-fns";
+
+type MotivoPerdido = Database["public"]["Enums"]["motivo_perdido"];
 
 interface Prospeccao {
   id: string;
@@ -34,6 +40,11 @@ interface Prospeccao {
   data_contrato: string | null;
   data_assinatura: string | null;
   observacoes_contrato: string;
+  motivo_perdido: MotivoPerdido | null;
+  motivo_perdido_detalhes: string | null;
+  numero_contatos: number;
+  ultimo_contato_em: string | null;
+  proximo_contato_em: string | null;
 }
 
 interface ElegibilidadeRow {
@@ -41,6 +52,7 @@ interface ElegibilidadeRow {
   empresa_id: string;
   acao_id: string;
   elegivel: boolean;
+  valor_potencial_estimado: number | null;
 }
 
 interface Empresa {
@@ -52,6 +64,8 @@ interface Empresa {
 interface Acao {
   id: string;
   nome: string;
+  data_limite_prescricao: string | null;
+  tipo_prazo: string | null;
 }
 
 const statusColumns = [
@@ -63,8 +77,44 @@ const statusColumns = [
   { key: "Perdido", label: "Perdido", color: "bg-destructive/10 text-destructive", dotColor: "bg-destructive" },
 ];
 
+const MOTIVOS_PERDIDO: { value: MotivoPerdido; label: string }[] = [
+  { value: "preco", label: "Preço / success fee alto" },
+  { value: "desconfianca_tese", label: "Desconfiança da tese jurídica" },
+  { value: "timing", label: "Timing — cliente não prioriza agora" },
+  { value: "concorrente", label: "Foi para concorrente" },
+  { value: "decisor_errado", label: "Falamos com decisor errado" },
+  { value: "sem_interesse", label: "Sem interesse real" },
+  { value: "sem_resposta", label: "Sem resposta após insistir" },
+  { value: "outros", label: "Outros (descrever)" },
+];
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
+
+function formatCompactCurrency(value: number) {
+  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
+  return formatCurrency(value);
+}
+
+// Cadência Hormozi: 5-8 toques em B2B. <5 é desperdício.
+function cadenciaStatus(n: number): { color: string; label: string } {
+  if (n === 0) return { color: "bg-muted text-muted-foreground", label: "0/7" };
+  if (n < 5)  return { color: "bg-warning/15 text-warning", label: `${n}/7` };
+  if (n < 7)  return { color: "bg-info/15 text-info", label: `${n}/7` };
+  return { color: "bg-success/15 text-success", label: `${n}/7 ✓` };
+}
+
+// Urgência de prescrição — quanto tempo falta até a data limite
+function prescricaoInfo(dataLimite: string | null): { cor: string; texto: string; emoji: string } | null {
+  if (!dataLimite) return null;
+  const dias = differenceInDays(parseISO(dataLimite), new Date());
+  if (dias < 0) return { cor: "bg-destructive/20 text-destructive", texto: `PRESCRITA há ${Math.abs(dias)}d`, emoji: "⛔" };
+  if (dias <= 30) return { cor: "bg-destructive/15 text-destructive", texto: `${dias}d p/ prescrever`, emoji: "🔥" };
+  if (dias <= 90) return { cor: "bg-warning/15 text-warning", texto: `${dias}d p/ prescrever`, emoji: "⚠" };
+  if (dias <= 180) return { cor: "bg-info/15 text-info", texto: `${dias}d p/ prescrever`, emoji: "⏳" };
+  return null;
 }
 
 export default function Prospeccao() {
@@ -100,18 +150,25 @@ export default function Prospeccao() {
   const [editDataContrato, setEditDataContrato] = useState("");
   const [editDataAssinatura, setEditDataAssinatura] = useState("");
   const [editObsContrato, setEditObsContrato] = useState("");
+  const [editMotivoPerdido, setEditMotivoPerdido] = useState<MotivoPerdido | "">("");
+  const [editMotivoDetalhes, setEditMotivoDetalhes] = useState("");
+
+  // Contatos (cadência) dialog
+  const [contatosOpen, setContatosOpen] = useState(false);
+  const [contatosProspId, setContatosProspId] = useState<string | null>(null);
+  const [contatosLabel, setContatosLabel] = useState<string>("");
 
   const fetchAll = async () => {
     const [prospRes, elegRes, empRes, acoesRes] = await Promise.all([
-      supabase.from("prospeccoes").select("*") as any,
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel"),
+      (supabase.from("prospeccoes").select("*") as any),
+      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado"),
       supabase.from("empresas").select("id, nome, cnpj"),
-      supabase.from("acoes_tributarias").select("id, nome"),
+      supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
     ]);
     setProspeccoes(prospRes.data || []);
     setElegibilidades(elegRes.data || []);
     setEmpresas(empRes.data || []);
-    setAcoes(acoesRes.data || []);
+    setAcoes((acoesRes.data as Acao[]) || []);
     setLoading(false);
   };
 
@@ -128,6 +185,10 @@ export default function Prospeccao() {
     if (!eleg) return null;
     return acoes.find(a => a.id === eleg.acao_id);
   };
+
+  const getElegibilidade = (elegId: string) => elegibilidades.find(e => e.id === elegId);
+  const getValorPotencial = (elegId: string) =>
+    Number(getElegibilidade(elegId)?.valor_potencial_estimado ?? 0);
 
   const filteredProspeccoes = useMemo(() => {
     let items = prospeccoes;
@@ -147,7 +208,12 @@ export default function Prospeccao() {
         );
       });
     }
-    return items;
+    // QW2: ordena por valor_potencial DESC (empresas grandes no topo)
+    return [...items].sort((a, b) => {
+      const va = getValorPotencial(a.elegibilidade_id);
+      const vb = getValorPotencial(b.elegibilidade_id);
+      return vb - va;
+    });
   }, [prospeccoes, elegibilidades, empresas, acoes, filterAcao, search]);
 
   const openEdit = (p: Prospeccao) => {
@@ -163,12 +229,29 @@ export default function Prospeccao() {
     setEditDataContrato(p.data_contrato || "");
     setEditDataAssinatura(p.data_assinatura || "");
     setEditObsContrato(p.observacoes_contrato || "");
+    setEditMotivoPerdido(p.motivo_perdido ?? "");
+    setEditMotivoDetalhes(p.motivo_perdido_detalhes ?? "");
     setEditOpen(true);
+  };
+
+  const openContatos = (p: Prospeccao) => {
+    const emp = getEmpresa(p.elegibilidade_id);
+    const acao = getAcao(p.elegibilidade_id);
+    setContatosProspId(p.id);
+    setContatosLabel(`${emp?.nome ?? "—"} — ${acao?.nome ?? "—"}`);
+    setContatosOpen(true);
   };
 
   const handleSave = async () => {
     if (!editProsp) return;
-    const payload = {
+
+    // QW1: obriga motivo ao salvar como Perdido
+    if (editStatus === "Perdido" && !editMotivoPerdido) {
+      toast.error("Ao marcar como Perdido, selecione o MOTIVO. Sem isso, o escritório não aprende com o que não fecha.");
+      return;
+    }
+
+    const payload: any = {
       status_prospeccao: editStatus,
       contato_nome: editContatoNome,
       contato_telefone: editContatoTel,
@@ -180,22 +263,41 @@ export default function Prospeccao() {
       data_contrato: editDataContrato || null,
       data_assinatura: editDataAssinatura || null,
       observacoes_contrato: editObsContrato,
+      motivo_perdido: editStatus === "Perdido" ? editMotivoPerdido : null,
+      motivo_perdido_detalhes: editStatus === "Perdido" ? (editMotivoDetalhes || null) : null,
     };
     const { error } = await (supabase.from("prospeccoes") as any).update(payload).eq("id", editProsp.id);
-    if (error) { toast.error("Erro ao atualizar prospecção"); return; }
+    if (error) { toast.error("Erro ao atualizar: " + error.message); return; }
     toast.success("Prospecção atualizada!");
-    logAudit({ tabela: "prospeccoes", acao: "Editou prospecção", registro_id: editProsp.id, detalhes: { status: editStatus } });
+    logAudit({ tabela: "prospeccoes", acao: "Editou prospecção", registro_id: editProsp.id, detalhes: { status: editStatus, motivo: editMotivoPerdido } });
+
+    // QW5: avisa sobre trigger de upsell se fechou contrato
+    if (editStatus === "Contrato assinado" && editProsp.status_prospeccao !== "Contrato assinado") {
+      toast.success("🎯 Upsell: tarefa automática criada para avaliar outras teses desta empresa!", { duration: 5000 });
+    }
+
     setEditOpen(false);
     fetchAll();
   };
 
+  // QW1: bloqueia quick-move para Perdido (obriga passar pelo dialog)
   const handleQuickStatusChange = async (prosp: Prospeccao, newStatus: string) => {
+    if (newStatus === "Perdido") {
+      openEdit({ ...prosp, status_prospeccao: "Perdido" });
+      toast.info("Para marcar como Perdido, preencha o motivo no formulário.");
+      return;
+    }
     const { error } = await (supabase.from("prospeccoes") as any)
       .update({ status_prospeccao: newStatus })
       .eq("id", prosp.id);
     if (error) { toast.error("Erro ao atualizar status"); return; }
     toast.success(`Status atualizado para "${newStatus}"`);
     logAudit({ tabela: "prospeccoes", acao: "Alterou status prospecção", registro_id: prosp.id, detalhes: { de: prosp.status_prospeccao, para: newStatus } });
+
+    // QW5: avisa sobre upsell quando fechou contrato
+    if (newStatus === "Contrato assinado") {
+      toast.success("🎯 Upsell: tarefa automática criada para avaliar outras teses desta empresa!", { duration: 5000 });
+    }
     fetchAll();
   };
 
@@ -214,7 +316,8 @@ export default function Prospeccao() {
     if (!createAcaoId) return [];
     const prospElegIds = new Set(prospeccoes.map(p => p.elegibilidade_id));
     return elegibilidades
-      .filter(e => e.acao_id === createAcaoId && e.elegivel && !prospElegIds.has(e.id));
+      .filter(e => e.acao_id === createAcaoId && e.elegivel && !prospElegIds.has(e.id))
+      .sort((a, b) => Number(b.valor_potencial_estimado ?? 0) - Number(a.valor_potencial_estimado ?? 0));
   }, [createAcaoId, elegibilidades, prospeccoes]);
 
   const handleCreate = async () => {
@@ -236,10 +339,19 @@ export default function Prospeccao() {
     fetchAll();
   };
 
-  // Stats
+  // KPIs
   const totalValor = filteredProspeccoes.reduce((s, p) => s + (Number(p.valor_contrato) || 0), 0);
   const assinados = filteredProspeccoes.filter(p => p.status_prospeccao === "Contrato assinado");
   const valorAssinado = assinados.reduce((s, p) => s + (Number(p.valor_contrato) || 0), 0);
+  const valorPotencialPipeline = useMemo(() =>
+    filteredProspeccoes.reduce((s, p) => s + getValorPotencial(p.elegibilidade_id), 0),
+    [filteredProspeccoes, elegibilidades]
+  );
+  const semContato7d = filteredProspeccoes.filter(p => {
+    if (p.status_prospeccao === "Contrato assinado" || p.status_prospeccao === "Perdido") return false;
+    if (!p.ultimo_contato_em) return p.numero_contatos === 0;
+    return differenceInDays(new Date(), parseISO(p.ultimo_contato_em)) >= 7;
+  }).length;
 
   if (loading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground">Carregando...</div>;
@@ -251,7 +363,7 @@ export default function Prospeccao() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-heading font-bold tracking-tight">Prospecção</h1>
-          <p className="text-muted-foreground mt-1">Visão Kanban do pipeline de prospecção</p>
+          <p className="text-muted-foreground mt-1">Pipeline comercial — cadência 7 toques, foco em alto valor</p>
         </div>
         <Button onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />Nova Prospecção
@@ -259,22 +371,30 @@ export default function Prospeccao() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Card className="shadow-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Prospecções</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
           <p className="text-2xl font-heading font-bold mt-1">{filteredProspeccoes.length}</p>
         </Card>
         <Card className="shadow-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Valor Total Pipeline</p>
-          <p className="text-2xl font-heading font-bold mt-1">{formatCurrency(totalValor)}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <TrendingUp className="h-3 w-3" />Valor Potencial
+          </p>
+          <p className="text-2xl font-heading font-bold text-primary mt-1">{formatCompactCurrency(valorPotencialPipeline)}</p>
         </Card>
         <Card className="shadow-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Contratos Assinados</p>
-          <p className="text-2xl font-heading font-bold text-success mt-1">{assinados.length}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Valor Contrato</p>
+          <p className="text-2xl font-heading font-bold mt-1">{formatCompactCurrency(totalValor)}</p>
         </Card>
         <Card className="shadow-card p-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Valor Assinado</p>
-          <p className="text-2xl font-heading font-bold text-success mt-1">{formatCurrency(valorAssinado)}</p>
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Assinados</p>
+          <p className="text-2xl font-heading font-bold text-success mt-1">{assinados.length} <span className="text-xs text-muted-foreground">· {formatCompactCurrency(valorAssinado)}</span></p>
+        </Card>
+        <Card className="shadow-card p-4">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <Clock className="h-3 w-3" />Parados 7+ dias
+          </p>
+          <p className={`text-2xl font-heading font-bold mt-1 ${semContato7d > 0 ? "text-destructive" : "text-success"}`}>{semContato7d}</p>
         </Card>
       </div>
 
@@ -308,15 +428,13 @@ export default function Prospeccao() {
         {statusColumns.map(col => {
           const items = filteredProspeccoes.filter(p => p.status_prospeccao === col.key);
           return (
-            <div key={col.key} className="flex-shrink-0 w-[280px]">
-              {/* Column Header */}
+            <div key={col.key} className="flex-shrink-0 w-[300px]">
               <div className="flex items-center gap-2 mb-3 px-1">
                 <div className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} />
                 <h3 className="text-sm font-medium">{col.label}</h3>
                 <Badge variant="outline" className="text-[10px] ml-auto">{items.length}</Badge>
               </div>
 
-              {/* Cards */}
               <div className="space-y-3 min-h-[120px]">
                 {items.length === 0 && (
                   <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
@@ -326,9 +444,15 @@ export default function Prospeccao() {
                 {items.map(p => {
                   const emp = getEmpresa(p.elegibilidade_id);
                   const acao = getAcao(p.elegibilidade_id);
+                  const valorPot = getValorPotencial(p.elegibilidade_id);
+                  const prescricao = prescricaoInfo(acao?.data_limite_prescricao ?? null);
+                  const cadencia = cadenciaStatus(p.numero_contatos);
                   const colIdx = statusColumns.findIndex(c => c.key === p.status_prospeccao);
                   const nextCol = colIdx < statusColumns.length - 2 ? statusColumns[colIdx + 1] : null;
-                  
+                  const diasSemContato = p.ultimo_contato_em
+                    ? differenceInDays(new Date(), parseISO(p.ultimo_contato_em))
+                    : null;
+
                   return (
                     <Card
                       key={p.id}
@@ -336,20 +460,26 @@ export default function Prospeccao() {
                       onClick={() => openEdit(p)}
                     >
                       <div className="p-3 space-y-2.5">
-                        {/* Company */}
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-1.5 text-sm font-medium truncate">
+                        {/* QW4: banner de prescrição no topo se urgente */}
+                        {prescricao && (
+                          <div className={`text-[10px] px-2 py-1 rounded flex items-center gap-1 font-medium ${prescricao.cor}`}>
+                            <AlertTriangle className="h-3 w-3" />
+                            <span>{prescricao.emoji} {prescricao.texto}</span>
+                          </div>
+                        )}
+
+                        {/* Company + value */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-sm font-medium truncate min-w-0">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                             <span className="truncate">{emp?.nome || "—"}</span>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => { e.stopPropagation(); openEdit(p); }}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </Button>
+                          {/* QW2: valor potencial em destaque */}
+                          {valorPot > 0 && (
+                            <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary flex-shrink-0" title="Valor potencial estimado">
+                              {formatCompactCurrency(valorPot)}
+                            </Badge>
+                          )}
                         </div>
 
                         {/* Ação */}
@@ -369,7 +499,7 @@ export default function Prospeccao() {
                         )}
 
                         {/* Contact info */}
-                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                           {p.contato_telefone && (
                             <span className="flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{p.contato_telefone}</span>
                           )}
@@ -378,7 +508,27 @@ export default function Prospeccao() {
                           )}
                         </div>
 
-                        {/* Value */}
+                        {/* QW3: badge cadência + último contato */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="secondary" className={`text-[10px] flex items-center gap-1 ${cadencia.color}`}>
+                            <Zap className="h-2.5 w-2.5" />Toque {cadencia.label}
+                          </Badge>
+                          {diasSemContato !== null && diasSemContato >= 7 &&
+                           p.status_prospeccao !== "Contrato assinado" && p.status_prospeccao !== "Perdido" && (
+                            <span className="text-[10px] text-destructive flex items-center gap-1">
+                              <Clock className="h-2.5 w-2.5" />parado {diasSemContato}d
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Motivo perda se Perdido */}
+                        {p.status_prospeccao === "Perdido" && p.motivo_perdido && (
+                          <div className="text-[10px] text-destructive">
+                            Motivo: {MOTIVOS_PERDIDO.find(m => m.value === p.motivo_perdido)?.label ?? p.motivo_perdido}
+                          </div>
+                        )}
+
+                        {/* Valor contrato (só depois de fechar) */}
                         {Number(p.valor_contrato) > 0 && (
                           <div className="flex items-center gap-1.5 text-xs">
                             <DollarSign className="h-3 w-3 text-success" />
@@ -386,21 +536,35 @@ export default function Prospeccao() {
                           </div>
                         )}
 
-                        {/* Quick advance button */}
-                        {nextCol && (
+                        {/* Action row */}
+                        <div className="flex gap-1 pt-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                           <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full h-7 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleQuickStatusChange(p, nextCol.key);
-                            }}
+                            variant="outline" size="sm"
+                            className="h-7 text-[11px] flex-1"
+                            onClick={() => openContatos(p)}
+                            title="Registrar toque de contato"
                           >
-                            <ArrowRight className="mr-1 h-3 w-3" />
-                            Mover para {nextCol.label}
+                            <MessageSquare className="mr-1 h-3 w-3" />
+                            Contato
                           </Button>
-                        )}
+                          {nextCol && (
+                            <Button
+                              variant="outline" size="sm"
+                              className="h-7 text-[11px] flex-1"
+                              onClick={() => handleQuickStatusChange(p, nextCol.key)}
+                            >
+                              <ArrowRight className="mr-1 h-3 w-3" />
+                              {nextCol.label.split(" ")[0]}
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-7 w-7"
+                            onClick={() => openEdit(p)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
                     </Card>
                   );
@@ -426,14 +590,29 @@ export default function Prospeccao() {
               <div className="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
                 <p className="font-medium">{getEmpresa(editProsp.elegibilidade_id)?.nome}</p>
                 <p className="text-xs text-muted-foreground">{getAcao(editProsp.elegibilidade_id)?.nome}</p>
+                <div className="flex items-center gap-3 text-[10px] text-muted-foreground pt-1">
+                  <span>Toques: <strong className="text-foreground">{editProsp.numero_contatos}/7</strong></span>
+                  {getValorPotencial(editProsp.elegibilidade_id) > 0 && (
+                    <span>Potencial: <strong className="text-primary">{formatCompactCurrency(getValorPotencial(editProsp.elegibilidade_id))}</strong></span>
+                  )}
+                </div>
               </div>
+
+              {/* Botão de cadência */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => openContatos(editProsp)}
+              >
+                <MessageSquare className="mr-2 h-3.5 w-3.5" />
+                Ver histórico de contatos e registrar novo toque
+              </Button>
 
               <div>
                 <Label>Etapa da Prospecção</Label>
                 <Select value={editStatus} onValueChange={setEditStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {statusColumns.map(s => (
                       <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
@@ -441,6 +620,38 @@ export default function Prospeccao() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* QW1: motivo perdido quando status = Perdido */}
+              {editStatus === "Perdido" && (
+                <div className="space-y-3 p-3 rounded-md border border-destructive/30 bg-destructive/5">
+                  <div>
+                    <Label className="text-destructive flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Motivo da perda * (obrigatório)
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground mb-1.5">
+                      Hormozi: sem categorizar por que perdemos, o escritório fica cego e a oferta não evolui.
+                    </p>
+                    <Select value={editMotivoPerdido} onValueChange={(v) => setEditMotivoPerdido(v as MotivoPerdido)}>
+                      <SelectTrigger><SelectValue placeholder="Selecione o motivo..." /></SelectTrigger>
+                      <SelectContent>
+                        {MOTIVOS_PERDIDO.map(m => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Detalhes (opcional mas recomendado)</Label>
+                    <Textarea
+                      rows={2}
+                      value={editMotivoDetalhes}
+                      onChange={(e) => setEditMotivoDetalhes(e.target.value)}
+                      placeholder="Ex: 'Acha 20% caro, queria 15%' — detalhe específico vira input pra ajustar oferta"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -524,7 +735,7 @@ export default function Prospeccao() {
 
             {createAcaoId && (
               <div>
-                <Label>Empresa Elegível</Label>
+                <Label>Empresa Elegível <span className="text-[10px] text-muted-foreground">(ordenadas por valor potencial)</span></Label>
                 {elegiveisForCreate.length === 0 ? (
                   <p className="text-sm text-muted-foreground mt-1">Nenhuma empresa elegível disponível nesta ação (todas já possuem prospecção).</p>
                 ) : (
@@ -535,8 +746,11 @@ export default function Prospeccao() {
                     <SelectContent>
                       {elegiveisForCreate.map(e => {
                         const emp = empresas.find(emp => emp.id === e.empresa_id);
+                        const v = Number(e.valor_potencial_estimado ?? 0);
                         return (
-                          <SelectItem key={e.id} value={e.id}>{emp?.nome || "—"} ({emp?.cnpj})</SelectItem>
+                          <SelectItem key={e.id} value={e.id}>
+                            {emp?.nome || "—"} ({emp?.cnpj}){v > 0 ? ` — ${formatCompactCurrency(v)}` : ""}
+                          </SelectItem>
                         );
                       })}
                     </SelectContent>
@@ -570,6 +784,15 @@ export default function Prospeccao() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* QW3: Dialog de cadência / contatos */}
+      <ProspeccaoContatosDialog
+        open={contatosOpen}
+        onOpenChange={setContatosOpen}
+        prospeccaoId={contatosProspId}
+        prospeccaoLabel={contatosLabel}
+        onSaved={fetchAll}
+      />
     </div>
   );
 }
