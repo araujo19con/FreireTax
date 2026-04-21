@@ -11,9 +11,12 @@ import {
   LogOut,
   ClipboardList,
   Calendar,
+  CalendarDays,
   Users,
+  UsersRound,
   Scale3d,
   Filter,
+  FileStack,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -55,8 +58,11 @@ const mainItems: ItemDef[] = [
 ];
 
 const workspaceItems: ItemDef[] = [
-  { title: "Minhas Tarefas", url: "/minhas-tarefas", icon: ClipboardList, badgeKey: "tarefas_atrasadas" },
-  { title: "Minha Agenda",   url: "/minha-agenda",   icon: Calendar,      badgeKey: "agenda_hoje" },
+  { title: "Minha Semana",    url: "/minha-semana",     icon: CalendarDays },
+  { title: "Minhas Tarefas",  url: "/minhas-tarefas",   icon: ClipboardList, badgeKey: "tarefas_atrasadas" },
+  { title: "Minha Agenda",    url: "/minha-agenda",     icon: Calendar,      badgeKey: "agenda_hoje" },
+  { title: "Equipe (Tarefas)", url: "/tarefas/equipe",  icon: UsersRound },
+  { title: "Templates",       url: "/tarefas/templates", icon: FileStack },
 ];
 
 const adminItems: ItemDef[] = [
