@@ -1,0 +1,14 @@
+{
+  "name": "xquads-installer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Convert xquads-squads agents to Claude Code subagent format and install globally",
+  "scripts": {
+    "install-agents": "node install.mjs",
+    "dry-run": "node install.mjs --dry-run"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}
