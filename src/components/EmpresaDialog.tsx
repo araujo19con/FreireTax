@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Search, CheckCircle2, MapPin, Users, FileText, Calendar, Building2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { validateCNPJ as validateCNPJReal, validateCNPJMessage, maskCNPJ } from "@/lib/cnpj";
 
 // Payload que vai pro banco — inclui campos RFB (todos opcionais)
 export interface EmpresaFormData {
@@ -50,29 +51,31 @@ interface EmpresaDialogProps {
   trigger?: React.ReactNode;
   initialData?: Partial<EmpresaFormData>;
   title?: string;
+  /** Modo controlado — quando `open` é fornecido, o componente delega abertura ao pai. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-function formatCNPJ(value: string) {
-  const digits = value.replace(/\D/g, "").slice(0, 14);
-  return digits
-    .replace(/^(\d{2})(\d)/, "$1.$2")
-    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1/$2")
-    .replace(/(\d{4})(\d)/, "$1-$2");
-}
-
-function validateCNPJ(cnpj: string): boolean {
-  const digits = cnpj.replace(/\D/g, "");
-  return digits.length === 14;
-}
+// formatCNPJ e validateCNPJ agora vêm de @/lib/cnpj (módulo 11 real)
+const formatCNPJ = maskCNPJ;
+const validateCNPJ = validateCNPJReal;
 
 function formatBRL(v: number | null | undefined) {
   if (!v || v <= 0) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(v);
 }
 
-export function EmpresaDialog({ onSave, trigger, initialData, title = "Nova Empresa" }: EmpresaDialogProps) {
-  const [open, setOpen] = useState(false);
+export function EmpresaDialog({
+  onSave, trigger, initialData, title = "Nova Empresa",
+  open: openProp, onOpenChange,
+}: EmpresaDialogProps) {
+  const [openState, setOpenState] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : openState;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setOpenState(v);
+    onOpenChange?.(v);
+  };
   const [form, setForm] = useState<EmpresaFormData>({
     nome: initialData?.nome || "",
     cnpj: initialData?.cnpj || "",
@@ -145,7 +148,8 @@ export function EmpresaDialog({ onSave, trigger, initialData, title = "Nova Empr
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.nome.trim()) { toast.error("Nome empresarial é obrigatório"); return; }
-    if (!validateCNPJ(form.cnpj)) { toast.error("CNPJ inválido – deve conter 14 dígitos"); return; }
+    const cnpjErr = validateCNPJMessage(form.cnpj);
+    if (cnpjErr) { toast.error(cnpjErr); return; }
     onSave(form);
     toast.success(`Empresa "${form.nome}" salva com sucesso!`);
     setOpen(false);
@@ -161,14 +165,16 @@ export function EmpresaDialog({ onSave, trigger, initialData, title = "Nova Empr
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger || (
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Nova Empresa
-          </Button>
-        )}
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          {trigger || (
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Nova Empresa
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-heading">{title}</DialogTitle>

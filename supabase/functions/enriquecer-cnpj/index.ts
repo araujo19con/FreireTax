@@ -10,8 +10,7 @@
 //
 // Return: { ok: true, data: {...}, cached: boolean }
 
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "*")
   .split(",").map((s) => s.trim()).filter(Boolean);
@@ -155,31 +154,45 @@ function normalizeForDB(raw: BrasilAPICNPJ) {
   };
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const cors = corsFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405, cors);
 
+  let step = "init";
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "missing auth" }, 401, cors);
+    step = "read-env";
+    // Supabase Edge Runtime auto-popula estas vars. Se alguma estiver undefined,
+    // falha cedo com mensagem clara (em vez de propagar "undefined" pra createClient).
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
+    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    if (!SUPABASE_URL || !ANON_KEY || !SERVICE_ROLE) {
+      return json({
+        error: "env vars missing",
+        detail: { SUPABASE_URL: !!SUPABASE_URL, ANON_KEY: !!ANON_KEY, SERVICE_ROLE: !!SERVICE_ROLE },
+      }, 500, cors);
+    }
 
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    step = "auth";
+    const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
+    if (!authHeader) return json({ error: "missing auth", step }, 401, cors);
 
     const asUser = createClient(SUPABASE_URL, ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user: caller }, error: errAuth } = await asUser.auth.getUser();
-    if (errAuth || !caller) return json({ error: "invalid token" }, 401, cors);
+    if (errAuth || !caller) {
+      return json({ error: "invalid token", step, detail: errAuth?.message }, 401, cors);
+    }
 
+    step = "parse-body";
     const body = (await req.json().catch(() => null)) as {
       cnpj?: string; force?: boolean; empresa_id?: string;
     } | null;
 
     if (!body?.cnpj || !validCNPJ(body.cnpj)) {
-      return json({ error: "cnpj inválido (precisa 14 dígitos)" }, 400, cors);
+      return json({ error: "cnpj inválido (precisa 14 dígitos)", step }, 400, cors);
     }
 
     const cnpj = normalizeCNPJ(body.cnpj);
@@ -193,11 +206,15 @@ serve(async (req) => {
     let erroApi: string | null = null;
 
     if (!force) {
-      const { data: cacheRow } = await admin
+      step = "read-cache";
+      const { data: cacheRow, error: cacheErr } = await admin
         .from("cnpj_cache")
         .select("*")
         .eq("cnpj", cnpj)
         .maybeSingle();
+      if (cacheErr) {
+        return json({ error: "falha ao ler cache", step, detail: cacheErr.message }, 500, cors);
+      }
 
       if (cacheRow && cacheRow.sucesso) {
         const ageMs = Date.now() - new Date(cacheRow.consultado_em).getTime();
@@ -211,11 +228,12 @@ serve(async (req) => {
 
     // 2) Se não tem cache válido, consulta BrasilAPI
     if (!raw) {
+      step = "fetch-brasilapi";
       const result = await fetchBrasilAPI(cnpj);
       if (result.ok) {
         raw = result.data;
-        // cacheia
-        await admin.from("cnpj_cache").upsert({
+        step = "upsert-cache-success";
+        const { error: cacheUpErr } = await admin.from("cnpj_cache").upsert({
           cnpj,
           payload: raw,
           fonte: "brasilapi",
@@ -223,9 +241,13 @@ serve(async (req) => {
           sucesso: true,
           erro: null,
         });
+        if (cacheUpErr) {
+          // Não bloqueia — só loga. Cache é opcional.
+          console.warn("upsert cache failed:", cacheUpErr.message);
+        }
       } else {
         erroApi = result.error;
-        // cacheia o erro também (evita martelar API com CNPJs inválidos)
+        step = "upsert-cache-error";
         await admin.from("cnpj_cache").upsert({
           cnpj,
           payload: {},
@@ -240,32 +262,37 @@ serve(async (req) => {
     // 3) Se houve erro, atualiza empresa com o erro (se empresa_id fornecido)
     if (erroApi) {
       if (body.empresa_id) {
+        step = "mark-empresa-error";
         await admin.from("empresas")
           .update({ receita_erro: erroApi, receita_atualizada_em: new Date().toISOString() })
           .eq("id", body.empresa_id);
       }
-      return json({ ok: false, error: erroApi, cnpj }, 400, cors);
+      return json({ ok: false, error: erroApi, cnpj, step }, 400, cors);
     }
 
     if (!raw) {
-      return json({ ok: false, error: "sem dados" }, 500, cors);
+      return json({ ok: false, error: "sem dados", step }, 500, cors);
     }
 
+    step = "normalize";
     const normalized = normalizeForDB(raw);
 
     // 4) Se empresa_id fornecido, atualiza diretamente
     if (body.empresa_id) {
+      step = "update-empresa";
       const { error: upErr } = await admin
         .from("empresas")
         .update(normalized)
         .eq("id", body.empresa_id);
       if (upErr) {
-        return json({ ok: false, error: "erro ao gravar empresa", detail: upErr.message }, 500, cors);
+        return json({ ok: false, error: "erro ao gravar empresa", step, detail: upErr.message }, 500, cors);
       }
     }
 
     return json({ ok: true, cached, data: normalized, raw }, 200, cors);
   } catch (e) {
-    return json({ error: (e as Error).message }, 500, cors);
+    const err = e as Error;
+    console.error(`[enriquecer-cnpj] step=${step} error=${err.message}\n${err.stack}`);
+    return json({ error: err.message, step, stack: err.stack?.split("\n").slice(0, 5) }, 500, cors);
   }
 });

@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake } from "lucide-react";
+import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks } from "lucide-react";
+import { CriteriosAdmin } from "./elegibilidade/CriteriosAdmin";
 import { AcaoDialog } from "@/components/AcaoDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -108,6 +109,7 @@ export default function Acoes() {
   const [prospeccoes, setProspeccoes] = useState<Prospeccao[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
+  const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
   const { user } = useAuth();
 
   // Elegibilidade dialog
@@ -450,6 +452,9 @@ export default function Acoes() {
                     )}
                     <Button variant="ghost" size="sm" onClick={() => openElegDialog(a.id)}>
                       <Plus className="mr-1 h-3 w-3" />Elegibilidade
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setCriteriosAcaoId(a.id)}>
+                      <ListChecks className="mr-1 h-3 w-3" />Critérios
                     </Button>
                     <AcaoDialog
                       onSave={(data) => handleEdit(a.id, data)}
@@ -894,6 +899,23 @@ export default function Acoes() {
             <Button variant="outline" onClick={() => setProspDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleSaveProsp}>{editingProsp ? "Salvar" : "Criar"}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Critérios de Elegibilidade Dialog */}
+      <Dialog open={!!criteriosAcaoId} onOpenChange={(v) => !v && setCriteriosAcaoId(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">
+              Critérios de Elegibilidade
+            </DialogTitle>
+          </DialogHeader>
+          {criteriosAcaoId && (
+            <CriteriosAdmin
+              acaoId={criteriosAcaoId}
+              acaoNome={acoes.find((a) => a.id === criteriosAcaoId)?.nome}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

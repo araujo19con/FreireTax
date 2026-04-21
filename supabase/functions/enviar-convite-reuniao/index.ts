@@ -12,8 +12,7 @@
 //   2. https://myaccount.google.com/apppasswords
 //   3. Criar senha → copiar os 16 caracteres
 
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 // CORS — restrito ao(s) frontend(s) conhecido(s). Para testes locais, o
@@ -171,7 +170,7 @@ function buildEmailBody(r: ReuniaoData, metodo: "REQUEST" | "CANCEL") {
   };
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const cors = corsFor(req);
 
   if (req.method === "OPTIONS") {

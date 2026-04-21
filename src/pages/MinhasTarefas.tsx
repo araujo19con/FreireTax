@@ -5,9 +5,16 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Kanban as KanbanIcon, List, GanttChart } from "lucide-react";
+import { TarefasListaView } from "./tarefas/TarefasListaView";
+import { TarefasTimelineView } from "./tarefas/TarefasTimelineView";
+import { SavedViewsBar, type TarefasFiltros } from "./tarefas/SavedViewsBar";
 import {
   Plus, Search, ClipboardList, AlertCircle, Calendar, Clock, CheckCircle2, User,
+  Users, FileText,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,6 +59,7 @@ export default function MinhasTarefas() {
   const [search, setSearch] = useState("");
   const [filterPrioridade, setFilterPrioridade] = useState<string>("all");
   const [escopo, setEscopo] = useState<"minhas" | "todas">("minhas");
+  const [view, setView] = useState<"kanban" | "lista" | "timeline">("kanban");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTarefa, setEditingTarefa] = useState<Tarefa | null>(null);
@@ -186,9 +194,21 @@ export default function MinhasTarefas() {
         description="Kanban das tarefas atribuídas a você"
         icon={<ClipboardList className="h-7 w-7" />}
         actions={
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Tarefa
-          </Button>
+          <>
+            <Button asChild variant="outline">
+              <Link to="/tarefas/templates">
+                <FileText className="mr-2 h-4 w-4" aria-hidden="true" />Templates
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/tarefas/equipe">
+                <Users className="mr-2 h-4 w-4" aria-hidden="true" />Equipe
+              </Link>
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Tarefa
+            </Button>
+          </>
         }
       />
 
@@ -263,12 +283,42 @@ export default function MinhasTarefas() {
               </TabsList>
             </Tabs>
           )}
+          <ToggleGroup
+            type="single"
+            value={view}
+            onValueChange={(v) => v && setView(v as "kanban" | "lista" | "timeline")}
+            className="border border-input rounded-md"
+            aria-label="Modo de visualização"
+          >
+            <ToggleGroupItem value="kanban" aria-label="Kanban" className="data-[state=on]:bg-muted h-9 w-9">
+              <KanbanIcon className="h-4 w-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="lista" aria-label="Lista" className="data-[state=on]:bg-muted h-9 w-9">
+              <List className="h-4 w-4" />
+            </ToggleGroupItem>
+            <ToggleGroupItem value="timeline" aria-label="Timeline" className="data-[state=on]:bg-muted h-9 w-9">
+              <GanttChart className="h-4 w-4" />
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <SavedViewsBar
+            currentFilters={{ search, prioridade: filterPrioridade, escopo, view } as TarefasFiltros}
+            onApply={(f) => {
+              setSearch(f.search ?? "");
+              setFilterPrioridade(f.prioridade ?? "all");
+              setEscopo(f.escopo ?? "minhas");
+              setView(f.view ?? "kanban");
+            }}
+          />
         </div>
       </Card>
 
-      {/* Kanban */}
+      {/* Render por view */}
       {loading ? (
         <LoadingState variant="kanban" count={4} />
+      ) : view === "lista" ? (
+        <TarefasListaView tarefas={filtered} openEdit={openEdit} />
+      ) : view === "timeline" ? (
+        <TarefasTimelineView tarefas={filtered} openEdit={openEdit} />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {statusColumns.map((col) => {

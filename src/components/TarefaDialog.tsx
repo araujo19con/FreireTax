@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TarefaExtras } from "@/components/TarefaExtras";
+import { TemplatePicker } from "@/components/TemplatePicker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -72,6 +74,8 @@ export function TarefaDialog({
   const [empresaId, setEmpresaId] = useState<string>("");
   const [prospeccaoId, setProspeccaoId] = useState<string>("");
   const [acaoId, setAcaoId] = useState<string>("");
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [pendingSubtarefas, setPendingSubtarefas] = useState<string[]>([]);
 
   const [profiles, setProfiles] = useState<ProfileSlim[]>([]);
   const [empresas, setEmpresas] = useState<{ id: string; nome: string }[]>([]);
@@ -142,6 +146,8 @@ export function TarefaDialog({
     setEmpresaId(tarefa?.empresa_id ?? defaultEmpresaId ?? "");
     setProspeccaoId(tarefa?.prospeccao_id ?? defaultProspeccaoId ?? "");
     setAcaoId(tarefa?.acao_id ?? defaultAcaoId ?? "");
+    setTemplateId(null);
+    setPendingSubtarefas([]);
     setNovoComentario("");
     setNovaSubtarefa("");
 
@@ -192,16 +198,32 @@ export function TarefaDialog({
         }
         logAudit({ tabela: "tarefas", acao: "Editou tarefa", registro_id: tarefaId, detalhes: { titulo } });
       } else {
-        const { data, error } = await supabase
-          .from("tarefas")
-          .insert({ ...payload, created_by: user.id })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const insertPayload: any = { ...payload, created_by: user.id };
+        if (templateId) insertPayload.template_id = templateId;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error } = await (supabase.from("tarefas") as any)
+          .insert(insertPayload)
           .select()
           .single();
         if (error) {
           toast.error("Erro ao criar tarefa: " + error.message);
           return;
         }
-        logAudit({ tabela: "tarefas", acao: "Criou tarefa", registro_id: data.id, detalhes: { titulo } });
+        logAudit({ tabela: "tarefas", acao: "Criou tarefa", registro_id: data.id, detalhes: { titulo, template_id: templateId } });
+
+        // Cria subtarefas pendentes do template
+        if (pendingSubtarefas.length > 0 && data?.id) {
+          const subsPayload = pendingSubtarefas.map((titulo, i) => ({
+            tarefa_id: data.id,
+            titulo,
+            ordem: i,
+            concluida: false,
+          }));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from("subtarefas") as any).insert(subsPayload);
+          setPendingSubtarefas([]);
+        }
       }
       ok = true;
     } finally {
@@ -318,7 +340,30 @@ export function TarefaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-heading">{tarefaId ? "Editar Tarefa" : "Nova Tarefa"}</DialogTitle>
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle className="font-heading">{tarefaId ? "Editar Tarefa" : "Nova Tarefa"}</DialogTitle>
+            {!tarefaId && (
+              <TemplatePicker
+                acaoId={defaultAcaoId ?? null}
+                onPick={(t) => {
+                  setTitulo(t.titulo_padrao);
+                  if (t.descricao_padrao) setDescricao(t.descricao_padrao);
+                  if (t.prioridade_padrao) setPrioridade(t.prioridade_padrao as Prioridade);
+                  if (t.prazo_relativo_dias != null) {
+                    const d = new Date();
+                    d.setDate(d.getDate() + t.prazo_relativo_dias);
+                    setPrazo(d.toISOString().slice(0, 10));
+                  }
+                  if (t.acao_id && !defaultAcaoId) setAcaoId(t.acao_id);
+                  const subs = Array.isArray(t.subtarefas_padrao) ? t.subtarefas_padrao : [];
+                  if (subs.length > 0) {
+                    setPendingSubtarefas(subs.map((s) => s.titulo));
+                  }
+                  setTemplateId(t.id);
+                }}
+              />
+            )}
+          </div>
         </DialogHeader>
 
         <Tabs defaultValue="dados" className="w-full">
@@ -332,6 +377,9 @@ export function TarefaDialog({
             </TabsTrigger>
             <TabsTrigger value="anexos" className="flex-1" disabled={!tarefaId}>
               Anexos {anexos.length > 0 && `(${anexos.length})`}
+            </TabsTrigger>
+            <TabsTrigger value="extras" className="flex-1" disabled={!tarefaId}>
+              Mais
             </TabsTrigger>
           </TabsList>
 
@@ -527,6 +575,10 @@ export function TarefaDialog({
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="extras" className="space-y-4 mt-4">
+            <TarefaExtras tarefaId={tarefaId} />
           </TabsContent>
         </Tabs>
 

@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -57,7 +57,15 @@ export type Database = {
           user_id?: string
           vinculo?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "acoes_tributarias_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       audit_logs: {
         Row: {
@@ -89,6 +97,89 @@ export type Database = {
         }
         Relationships: []
       }
+      cnpj_cache: {
+        Row: {
+          cnpj: string
+          consultado_em: string
+          erro: string | null
+          fonte: string
+          payload: Json
+          sucesso: boolean
+        }
+        Insert: {
+          cnpj: string
+          consultado_em?: string
+          erro?: string | null
+          fonte?: string
+          payload: Json
+          sucesso?: boolean
+        }
+        Update: {
+          cnpj?: string
+          consultado_em?: string
+          erro?: string | null
+          fonte?: string
+          payload?: Json
+          sucesso?: boolean
+        }
+        Relationships: []
+      }
+      criterios_elegibilidade: {
+        Row: {
+          acao_id: string
+          created_at: string
+          descricao: string | null
+          eh_excludente: boolean
+          formula_valor: string | null
+          id: string
+          opcoes: Json | null
+          ordem: number
+          pergunta: string
+          peso: number
+          tipo_resposta: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          acao_id: string
+          created_at?: string
+          descricao?: string | null
+          eh_excludente?: boolean
+          formula_valor?: string | null
+          id?: string
+          opcoes?: Json | null
+          ordem?: number
+          pergunta: string
+          peso?: number
+          tipo_resposta: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          acao_id?: string
+          created_at?: string
+          descricao?: string | null
+          eh_excludente?: boolean
+          formula_valor?: string | null
+          id?: string
+          opcoes?: Json | null
+          ordem?: number
+          pergunta?: string
+          peso?: number
+          tipo_resposta?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "criterios_elegibilidade_acao_id_fkey"
+            columns: ["acao_id"]
+            isOneToOne: false
+            referencedRelation: "acoes_tributarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       elegibilidade: {
         Row: {
           acao_id: string
@@ -98,8 +189,13 @@ export type Database = {
           id: string
           justificativa: string | null
           observacao_valor: string | null
+          qualificada_em: string | null
+          qualificada_por: string | null
+          score_elegibilidade: number | null
+          status_qualificacao: string | null
           updated_at: string
           user_id: string
+          valor_calculado: number | null
           valor_potencial_estimado: number | null
         }
         Insert: {
@@ -110,8 +206,13 @@ export type Database = {
           id?: string
           justificativa?: string | null
           observacao_valor?: string | null
+          qualificada_em?: string | null
+          qualificada_por?: string | null
+          score_elegibilidade?: number | null
+          status_qualificacao?: string | null
           updated_at?: string
           user_id: string
+          valor_calculado?: number | null
           valor_potencial_estimado?: number | null
         }
         Update: {
@@ -122,8 +223,13 @@ export type Database = {
           id?: string
           justificativa?: string | null
           observacao_valor?: string | null
+          qualificada_em?: string | null
+          qualificada_por?: string | null
+          score_elegibilidade?: number | null
+          status_qualificacao?: string | null
           updated_at?: string
           user_id?: string
+          valor_calculado?: number | null
           valor_potencial_estimado?: number | null
         }
         Relationships: [
@@ -143,6 +249,60 @@ export type Database = {
           },
         ]
       }
+      elegibilidade_respostas: {
+        Row: {
+          answered_at: string
+          criterio_id: string
+          elegibilidade_id: string
+          id: string
+          resposta_bool: boolean | null
+          resposta_date: string | null
+          resposta_number: number | null
+          resposta_select: string | null
+          resposta_text: string | null
+          user_id: string
+        }
+        Insert: {
+          answered_at?: string
+          criterio_id: string
+          elegibilidade_id: string
+          id?: string
+          resposta_bool?: boolean | null
+          resposta_date?: string | null
+          resposta_number?: number | null
+          resposta_select?: string | null
+          resposta_text?: string | null
+          user_id: string
+        }
+        Update: {
+          answered_at?: string
+          criterio_id?: string
+          elegibilidade_id?: string
+          id?: string
+          resposta_bool?: boolean | null
+          resposta_date?: string | null
+          resposta_number?: number | null
+          resposta_select?: string | null
+          resposta_text?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "elegibilidade_respostas_criterio_id_fkey"
+            columns: ["criterio_id"]
+            isOneToOne: false
+            referencedRelation: "criterios_elegibilidade"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elegibilidade_respostas_elegibilidade_id_fkey"
+            columns: ["elegibilidade_id"]
+            isOneToOne: false
+            referencedRelation: "elegibilidade"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           bairro: string | null
@@ -150,7 +310,7 @@ export type Database = {
           cep: string | null
           cnae_principal: string | null
           cnae_principal_desc: string | null
-          cnaes_secundarios: Json
+          cnaes_secundarios: Json | null
           cnpj: string
           complemento: string | null
           created_at: string
@@ -170,12 +330,14 @@ export type Database = {
           opcao_mei: boolean | null
           opcao_simples: boolean | null
           porte: Database["public"]["Enums"]["porte_rfb"] | null
-          qsa: Json
+          qsa: Json | null
           razao_social: string | null
           receita_atualizada_em: string | null
           receita_erro: string | null
           responsavel_id: string | null
-          situacao_cadastral: Database["public"]["Enums"]["situacao_cadastral_rfb"] | null
+          situacao_cadastral:
+            | Database["public"]["Enums"]["situacao_cadastral_rfb"]
+            | null
           situacao_cadastral_data: string | null
           status: string
           telefone_receita: string | null
@@ -184,13 +346,99 @@ export type Database = {
           user_id: string
           valor_potencial_total: number | null
         }
-        Insert: Partial<Database["public"]["Tables"]["empresas"]["Row"]> & {
+        Insert: {
+          bairro?: string | null
+          capital_social?: number | null
+          cep?: string | null
+          cnae_principal?: string | null
+          cnae_principal_desc?: string | null
+          cnaes_secundarios?: Json | null
           cnpj: string
+          complemento?: string | null
+          created_at?: string
+          data_abertura?: string | null
+          data_opcao_simples?: string | null
+          email_receita?: string | null
+          faturamento_estimado?: number | null
+          id?: string
+          logradouro?: string | null
+          motivo_situacao?: string | null
+          municipio?: string | null
+          natureza_juridica?: string | null
           nome: string
+          nome_fantasia?: string | null
+          numero_endereco?: string | null
+          obs?: string | null
+          opcao_mei?: boolean | null
+          opcao_simples?: boolean | null
+          porte?: Database["public"]["Enums"]["porte_rfb"] | null
+          qsa?: Json | null
+          razao_social?: string | null
+          receita_atualizada_em?: string | null
+          receita_erro?: string | null
+          responsavel_id?: string | null
+          situacao_cadastral?:
+            | Database["public"]["Enums"]["situacao_cadastral_rfb"]
+            | null
+          situacao_cadastral_data?: string | null
+          status?: string
+          telefone_receita?: string | null
+          uf?: string | null
+          updated_at?: string
           user_id: string
+          valor_potencial_total?: number | null
         }
-        Update: Partial<Database["public"]["Tables"]["empresas"]["Row"]>
-        Relationships: []
+        Update: {
+          bairro?: string | null
+          capital_social?: number | null
+          cep?: string | null
+          cnae_principal?: string | null
+          cnae_principal_desc?: string | null
+          cnaes_secundarios?: Json | null
+          cnpj?: string
+          complemento?: string | null
+          created_at?: string
+          data_abertura?: string | null
+          data_opcao_simples?: string | null
+          email_receita?: string | null
+          faturamento_estimado?: number | null
+          id?: string
+          logradouro?: string | null
+          motivo_situacao?: string | null
+          municipio?: string | null
+          natureza_juridica?: string | null
+          nome?: string
+          nome_fantasia?: string | null
+          numero_endereco?: string | null
+          obs?: string | null
+          opcao_mei?: boolean | null
+          opcao_simples?: boolean | null
+          porte?: Database["public"]["Enums"]["porte_rfb"] | null
+          qsa?: Json | null
+          razao_social?: string | null
+          receita_atualizada_em?: string | null
+          receita_erro?: string | null
+          responsavel_id?: string | null
+          situacao_cadastral?:
+            | Database["public"]["Enums"]["situacao_cadastral_rfb"]
+            | null
+          situacao_cadastral_data?: string | null
+          status?: string
+          telefone_receita?: string | null
+          uf?: string | null
+          updated_at?: string
+          user_id?: string
+          valor_potencial_total?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "empresas_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pasta_empresa_items: {
         Row: {
@@ -311,109 +559,41 @@ export type Database = {
           },
         ]
       }
-      prospeccoes: {
+      profiles: {
         Row: {
-          cargo_categoria: Database["public"]["Enums"]["cargo_categoria"] | null
-          contato_cargo: string | null
-          contato_email: string | null
-          contato_nome: string | null
-          contato_telefone: string | null
+          ativo: boolean
+          avatar_url: string | null
+          cargo: string | null
           created_at: string
-          data_assinatura: string | null
-          data_contrato: string | null
-          decisor_confirmado: boolean
-          dor_identificada: string | null
-          eh_decisor: boolean
-          elegibilidade_id: string
+          email: string
           id: string
-          motivo_perdido: Database["public"]["Enums"]["motivo_perdido"] | null
-          motivo_perdido_detalhes: string | null
-          notas_prospeccao: string | null
-          numero_contatos: number
-          objecoes_principais: string[]
-          observacoes_contrato: string | null
-          proximo_contato_em: string | null
-          responsavel_id: string | null
-          status_prospeccao: string
-          tentativas_anteriores: string | null
-          tipo_contrato: string | null
-          ultimo_contato_em: string | null
+          nome: string
+          telefone: string | null
           updated_at: string
-          user_id: string
-          valor_contrato: number | null
-          valor_emocional_articulado: string | null
         }
         Insert: {
-          cargo_categoria?: Database["public"]["Enums"]["cargo_categoria"] | null
-          contato_cargo?: string | null
-          contato_email?: string | null
-          contato_nome?: string | null
-          contato_telefone?: string | null
+          ativo?: boolean
+          avatar_url?: string | null
+          cargo?: string | null
           created_at?: string
-          data_assinatura?: string | null
-          data_contrato?: string | null
-          decisor_confirmado?: boolean
-          dor_identificada?: string | null
-          eh_decisor?: boolean
-          elegibilidade_id: string
-          id?: string
-          motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
-          motivo_perdido_detalhes?: string | null
-          notas_prospeccao?: string | null
-          numero_contatos?: number
-          objecoes_principais?: string[]
-          observacoes_contrato?: string | null
-          proximo_contato_em?: string | null
-          responsavel_id?: string | null
-          status_prospeccao?: string
-          tentativas_anteriores?: string | null
-          tipo_contrato?: string | null
-          ultimo_contato_em?: string | null
+          email: string
+          id: string
+          nome?: string
+          telefone?: string | null
           updated_at?: string
-          user_id: string
-          valor_contrato?: number | null
-          valor_emocional_articulado?: string | null
         }
         Update: {
-          cargo_categoria?: Database["public"]["Enums"]["cargo_categoria"] | null
-          contato_cargo?: string | null
-          contato_email?: string | null
-          contato_nome?: string | null
-          contato_telefone?: string | null
+          ativo?: boolean
+          avatar_url?: string | null
+          cargo?: string | null
           created_at?: string
-          data_assinatura?: string | null
-          data_contrato?: string | null
-          decisor_confirmado?: boolean
-          dor_identificada?: string | null
-          eh_decisor?: boolean
-          elegibilidade_id?: string
+          email?: string
           id?: string
-          motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
-          motivo_perdido_detalhes?: string | null
-          notas_prospeccao?: string | null
-          numero_contatos?: number
-          objecoes_principais?: string[]
-          observacoes_contrato?: string | null
-          proximo_contato_em?: string | null
-          responsavel_id?: string | null
-          status_prospeccao?: string
-          tentativas_anteriores?: string | null
-          tipo_contrato?: string | null
-          ultimo_contato_em?: string | null
+          nome?: string
+          telefone?: string | null
           updated_at?: string
-          user_id?: string
-          valor_contrato?: number | null
-          valor_emocional_articulado?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "prospeccoes_elegibilidade_id_fkey"
-            columns: ["elegibilidade_id"]
-            isOneToOne: false
-            referencedRelation: "elegibilidade"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       prospeccao_contatos: {
         Row: {
@@ -452,241 +632,130 @@ export type Database = {
           tipo?: Database["public"]["Enums"]["tipo_contato"]
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "prospeccao_contatos_prospeccao_id_fkey"
+            columns: ["prospeccao_id"]
+            isOneToOne: false
+            referencedRelation: "prospeccoes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
-      profiles: {
+      prospeccoes: {
         Row: {
-          ativo: boolean
-          avatar_url: string | null
-          cargo: string | null
+          cargo_categoria: Database["public"]["Enums"]["cargo_categoria"] | null
+          contato_cargo: string | null
+          contato_email: string | null
+          contato_nome: string | null
+          contato_telefone: string | null
           created_at: string
-          email: string
+          data_assinatura: string | null
+          data_contrato: string | null
+          decisor_confirmado: boolean
+          dor_identificada: string | null
+          eh_decisor: boolean
+          elegibilidade_id: string
           id: string
-          nome: string
-          telefone: string | null
+          motivo_perdido: Database["public"]["Enums"]["motivo_perdido"] | null
+          motivo_perdido_detalhes: string | null
+          notas_prospeccao: string | null
+          numero_contatos: number
+          objecoes_principais: string[]
+          observacoes_contrato: string | null
+          proximo_contato_em: string | null
+          responsavel_id: string | null
+          status_prospeccao: string
+          tentativas_anteriores: string | null
+          tipo_contrato: string | null
+          ultimo_contato_em: string | null
           updated_at: string
+          user_id: string
+          valor_contrato: number | null
+          valor_emocional_articulado: string | null
         }
         Insert: {
-          ativo?: boolean
-          avatar_url?: string | null
-          cargo?: string | null
+          cargo_categoria?:
+            | Database["public"]["Enums"]["cargo_categoria"]
+            | null
+          contato_cargo?: string | null
+          contato_email?: string | null
+          contato_nome?: string | null
+          contato_telefone?: string | null
           created_at?: string
-          email: string
-          id: string
-          nome?: string
-          telefone?: string | null
+          data_assinatura?: string | null
+          data_contrato?: string | null
+          decisor_confirmado?: boolean
+          dor_identificada?: string | null
+          eh_decisor?: boolean
+          elegibilidade_id: string
+          id?: string
+          motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
+          motivo_perdido_detalhes?: string | null
+          notas_prospeccao?: string | null
+          numero_contatos?: number
+          objecoes_principais?: string[]
+          observacoes_contrato?: string | null
+          proximo_contato_em?: string | null
+          responsavel_id?: string | null
+          status_prospeccao?: string
+          tentativas_anteriores?: string | null
+          tipo_contrato?: string | null
+          ultimo_contato_em?: string | null
           updated_at?: string
+          user_id: string
+          valor_contrato?: number | null
+          valor_emocional_articulado?: string | null
         }
         Update: {
-          ativo?: boolean
-          avatar_url?: string | null
-          cargo?: string | null
+          cargo_categoria?:
+            | Database["public"]["Enums"]["cargo_categoria"]
+            | null
+          contato_cargo?: string | null
+          contato_email?: string | null
+          contato_nome?: string | null
+          contato_telefone?: string | null
           created_at?: string
-          email?: string
+          data_assinatura?: string | null
+          data_contrato?: string | null
+          decisor_confirmado?: boolean
+          dor_identificada?: string | null
+          eh_decisor?: boolean
+          elegibilidade_id?: string
           id?: string
-          nome?: string
-          telefone?: string | null
+          motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null
+          motivo_perdido_detalhes?: string | null
+          notas_prospeccao?: string | null
+          numero_contatos?: number
+          objecoes_principais?: string[]
+          observacoes_contrato?: string | null
+          proximo_contato_em?: string | null
+          responsavel_id?: string | null
+          status_prospeccao?: string
+          tentativas_anteriores?: string | null
+          tipo_contrato?: string | null
+          ultimo_contato_em?: string | null
           updated_at?: string
-        }
-        Relationships: []
-      }
-      user_roles: {
-        Row: {
-          created_at: string
-          id: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+          valor_contrato?: number | null
+          valor_emocional_articulado?: string | null
         }
-        Relationships: []
-      }
-      tarefas: {
-        Row: {
-          acao_id: string | null
-          assigned_to: string | null
-          concluida_em: string | null
-          created_at: string
-          created_by: string
-          descricao: string | null
-          empresa_id: string | null
-          id: string
-          prazo: string | null
-          prioridade: Database["public"]["Enums"]["tarefa_prioridade"]
-          prospeccao_id: string | null
-          status: Database["public"]["Enums"]["tarefa_status"]
-          titulo: string
-          updated_at: string
-        }
-        Insert: {
-          acao_id?: string | null
-          assigned_to?: string | null
-          concluida_em?: string | null
-          created_at?: string
-          created_by: string
-          descricao?: string | null
-          empresa_id?: string | null
-          id?: string
-          prazo?: string | null
-          prioridade?: Database["public"]["Enums"]["tarefa_prioridade"]
-          prospeccao_id?: string | null
-          status?: Database["public"]["Enums"]["tarefa_status"]
-          titulo: string
-          updated_at?: string
-        }
-        Update: {
-          acao_id?: string | null
-          assigned_to?: string | null
-          concluida_em?: string | null
-          created_at?: string
-          created_by?: string
-          descricao?: string | null
-          empresa_id?: string | null
-          id?: string
-          prazo?: string | null
-          prioridade?: Database["public"]["Enums"]["tarefa_prioridade"]
-          prospeccao_id?: string | null
-          status?: Database["public"]["Enums"]["tarefa_status"]
-          titulo?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      subtarefas: {
-        Row: {
-          concluida: boolean
-          created_at: string
-          id: string
-          ordem: number
-          tarefa_id: string
-          titulo: string
-        }
-        Insert: {
-          concluida?: boolean
-          created_at?: string
-          id?: string
-          ordem?: number
-          tarefa_id: string
-          titulo: string
-        }
-        Update: {
-          concluida?: boolean
-          created_at?: string
-          id?: string
-          ordem?: number
-          tarefa_id?: string
-          titulo?: string
-        }
-        Relationships: []
-      }
-      tarefa_comentarios: {
-        Row: {
-          created_at: string
-          id: string
-          tarefa_id: string
-          texto: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          tarefa_id: string
-          texto: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          tarefa_id?: string
-          texto?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      tarefa_anexos: {
-        Row: {
-          created_at: string
-          id: string
-          mime_type: string | null
-          nome: string
-          storage_path: string
-          tamanho_bytes: number | null
-          tarefa_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          mime_type?: string | null
-          nome: string
-          storage_path: string
-          tamanho_bytes?: number | null
-          tarefa_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          mime_type?: string | null
-          nome?: string
-          storage_path?: string
-          tamanho_bytes?: number | null
-          tarefa_id?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      templates_mensagem: {
-        Row: {
-          ativo: boolean
-          assunto: string | null
-          canal: Database["public"]["Enums"]["canal_contato"]
-          categoria: Database["public"]["Enums"]["categoria_template"]
-          corpo: string
-          created_at: string
-          created_by: string | null
-          descricao: string | null
-          id: string
-          nome: string
-          updated_at: string
-        }
-        Insert: {
-          ativo?: boolean
-          assunto?: string | null
-          canal?: Database["public"]["Enums"]["canal_contato"]
-          categoria: Database["public"]["Enums"]["categoria_template"]
-          corpo: string
-          created_at?: string
-          created_by?: string | null
-          descricao?: string | null
-          id?: string
-          nome: string
-          updated_at?: string
-        }
-        Update: {
-          ativo?: boolean
-          assunto?: string | null
-          canal?: Database["public"]["Enums"]["canal_contato"]
-          categoria?: Database["public"]["Enums"]["categoria_template"]
-          corpo?: string
-          created_at?: string
-          created_by?: string | null
-          descricao?: string | null
-          id?: string
-          nome?: string
-          updated_at?: string
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "prospeccoes_elegibilidade_id_fkey"
+            columns: ["elegibilidade_id"]
+            isOneToOne: false
+            referencedRelation: "elegibilidade"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prospeccoes_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reunioes: {
         Row: {
@@ -752,36 +821,551 @@ export type Database = {
           titulo?: string
           updated_at?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: "reunioes_advogado_id_fkey"
+            columns: ["advogado_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reunioes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reunioes_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reunioes_prospeccao_id_fkey"
+            columns: ["prospeccao_id"]
+            isOneToOne: false
+            referencedRelation: "prospeccoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subtarefas: {
+        Row: {
+          concluida: boolean
+          created_at: string
+          id: string
+          ordem: number
+          tarefa_id: string
+          titulo: string
+        }
+        Insert: {
+          concluida?: boolean
+          created_at?: string
+          id?: string
+          ordem?: number
+          tarefa_id: string
+          titulo: string
+        }
+        Update: {
+          concluida?: boolean
+          created_at?: string
+          id?: string
+          ordem?: number
+          tarefa_id?: string
+          titulo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subtarefas_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefa_anexos: {
+        Row: {
+          created_at: string
+          id: string
+          mime_type: string | null
+          nome: string
+          storage_path: string
+          tamanho_bytes: number | null
+          tarefa_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          nome: string
+          storage_path: string
+          tamanho_bytes?: number | null
+          tarefa_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          nome?: string
+          storage_path?: string
+          tamanho_bytes?: number | null
+          tarefa_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefa_anexos_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefa_anexos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefa_comentarios: {
+        Row: {
+          created_at: string
+          id: string
+          tarefa_id: string
+          texto: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          tarefa_id: string
+          texto: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          tarefa_id?: string
+          texto?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefa_comentarios_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefa_comentarios_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefas: {
+        Row: {
+          acao_id: string | null
+          assigned_to: string | null
+          concluida_em: string | null
+          created_at: string
+          created_by: string
+          descricao: string | null
+          empresa_id: string | null
+          id: string
+          prazo: string | null
+          prioridade: Database["public"]["Enums"]["tarefa_prioridade"]
+          prospeccao_id: string | null
+          recurrence_next_run: string | null
+          recurrence_parent_id: string | null
+          recurrence_rule: string | null
+          status: Database["public"]["Enums"]["tarefa_status"]
+          template_id: string | null
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          acao_id?: string | null
+          assigned_to?: string | null
+          concluida_em?: string | null
+          created_at?: string
+          created_by: string
+          descricao?: string | null
+          empresa_id?: string | null
+          id?: string
+          prazo?: string | null
+          prioridade?: Database["public"]["Enums"]["tarefa_prioridade"]
+          prospeccao_id?: string | null
+          recurrence_next_run?: string | null
+          recurrence_parent_id?: string | null
+          recurrence_rule?: string | null
+          status?: Database["public"]["Enums"]["tarefa_status"]
+          template_id?: string | null
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          acao_id?: string | null
+          assigned_to?: string | null
+          concluida_em?: string | null
+          created_at?: string
+          created_by?: string
+          descricao?: string | null
+          empresa_id?: string | null
+          id?: string
+          prazo?: string | null
+          prioridade?: Database["public"]["Enums"]["tarefa_prioridade"]
+          prospeccao_id?: string | null
+          recurrence_next_run?: string | null
+          recurrence_parent_id?: string | null
+          recurrence_rule?: string | null
+          status?: Database["public"]["Enums"]["tarefa_status"]
+          template_id?: string | null
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_acao_id_fkey"
+            columns: ["acao_id"]
+            isOneToOne: false
+            referencedRelation: "acoes_tributarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_assigned_to_fkey"
+            columns: ["assigned_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_empresa_id_fkey"
+            columns: ["empresa_id"]
+            isOneToOne: false
+            referencedRelation: "empresas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_prospeccao_id_fkey"
+            columns: ["prospeccao_id"]
+            isOneToOne: false
+            referencedRelation: "prospeccoes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_recurrence_parent_id_fkey"
+            columns: ["recurrence_parent_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefas_dependencias: {
+        Row: {
+          created_at: string
+          depende_de_id: string
+          id: string
+          tarefa_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          depende_de_id: string
+          id?: string
+          tarefa_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          depende_de_id?: string
+          id?: string
+          tarefa_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_dependencias_depende_de_id_fkey"
+            columns: ["depende_de_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tarefas_dependencias_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefas_templates: {
+        Row: {
+          acao_id: string | null
+          categoria: string | null
+          created_at: string
+          descricao_padrao: string | null
+          id: string
+          nome: string
+          prazo_relativo_dias: number | null
+          prioridade_padrao: string | null
+          subtarefas_padrao: Json | null
+          titulo_padrao: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          acao_id?: string | null
+          categoria?: string | null
+          created_at?: string
+          descricao_padrao?: string | null
+          id?: string
+          nome: string
+          prazo_relativo_dias?: number | null
+          prioridade_padrao?: string | null
+          subtarefas_padrao?: Json | null
+          titulo_padrao: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          acao_id?: string | null
+          categoria?: string | null
+          created_at?: string
+          descricao_padrao?: string | null
+          id?: string
+          nome?: string
+          prazo_relativo_dias?: number | null
+          prioridade_padrao?: string | null
+          subtarefas_padrao?: Json | null
+          titulo_padrao?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_templates_acao_id_fkey"
+            columns: ["acao_id"]
+            isOneToOne: false
+            referencedRelation: "acoes_tributarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefas_tempo: {
+        Row: {
+          created_at: string
+          duration_sec: number | null
+          id: string
+          nota: string | null
+          started_at: string
+          stopped_at: string | null
+          tarefa_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          duration_sec?: number | null
+          id?: string
+          nota?: string | null
+          started_at: string
+          stopped_at?: string | null
+          tarefa_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          duration_sec?: number | null
+          id?: string
+          nota?: string | null
+          started_at?: string
+          stopped_at?: string | null
+          tarefa_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tarefas_tempo_tarefa_id_fkey"
+            columns: ["tarefa_id"]
+            isOneToOne: false
+            referencedRelation: "tarefas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tarefas_views_salvas: {
+        Row: {
+          created_at: string
+          eh_padrao: boolean
+          filtros: Json
+          id: string
+          nome: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          eh_padrao?: boolean
+          filtros?: Json
+          id?: string
+          nome: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          eh_padrao?: boolean
+          filtros?: Json
+          id?: string
+          nome?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      templates_mensagem: {
+        Row: {
+          assunto: string | null
+          ativo: boolean
+          canal: Database["public"]["Enums"]["canal_contato"]
+          categoria: Database["public"]["Enums"]["categoria_template"]
+          corpo: string
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          assunto?: string | null
+          ativo?: boolean
+          canal?: Database["public"]["Enums"]["canal_contato"]
+          categoria: Database["public"]["Enums"]["categoria_template"]
+          corpo: string
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          assunto?: string | null
+          ativo?: boolean
+          canal?: Database["public"]["Enums"]["canal_contato"]
+          categoria?: Database["public"]["Enums"]["categoria_template"]
+          corpo?: string
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "templates_mensagem_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
         Relationships: []
       }
     }
     Views: {
-      [_ in never]: never
+      v_empresas_enriquecidas: {
+        Row: {
+          ativas_rfb: number | null
+          baixadas_rfb: number | null
+          enriquecidas: number | null
+          epp: number | null
+          me: number | null
+          medio_grande: number | null
+          mei: number | null
+          simples: number | null
+          total: number | null
+        }
+        Relationships: []
+      }
+      v_funil_conversao: {
+        Row: {
+          dias_medios_na_etapa: number | null
+          etapa: string | null
+          qtd: number | null
+          valor_contrato_total: number | null
+        }
+        Relationships: []
+      }
+      v_funil_valor_potencial: {
+        Row: {
+          etapa: string | null
+          qtd: number | null
+          valor_potencial_total: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
-        Args: { _user_id: string; _role: Database["public"]["Enums"]["app_role"] }
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
         Returns: boolean
       }
-      is_admin: {
-        Args: { _user_id: string }
-        Returns: boolean
-      }
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
+      normaliza_cnpj: { Args: { txt: string }; Returns: string }
+      pode_iniciar_tarefa: { Args: { tarefa_uuid: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "advogado" | "comercial" | "gestor"
-      tarefa_prioridade: "baixa" | "media" | "alta" | "urgente"
-      tarefa_status: "pendente" | "em_andamento" | "concluida" | "cancelada"
-      reuniao_status: "agendada" | "realizada" | "cancelada" | "no_show" | "reagendada"
-      motivo_perdido:
-        | "preco"
-        | "desconfianca_tese"
-        | "timing"
-        | "concorrente"
-        | "decisor_errado"
-        | "sem_interesse"
-        | "sem_resposta"
-        | "outros"
       canal_contato:
         | "email"
         | "telefone"
@@ -790,12 +1374,6 @@ export type Database = {
         | "reuniao_presencial"
         | "reuniao_online"
         | "outro"
-      tipo_contato: "outbound" | "resposta_lead" | "reuniao" | "breakup"
-      tipo_prazo:
-        | "rescisoria_24m"
-        | "prescricional_5a"
-        | "decadencial_5a"
-        | "personalizado"
       cargo_categoria:
         | "ceo"
         | "cfo"
@@ -817,8 +1395,36 @@ export type Database = {
         | "objecao_preco"
         | "objecao_tese"
         | "objecao_timing"
-      situacao_cadastral_rfb: "NULA" | "ATIVA" | "SUSPENSA" | "INAPTA" | "BAIXADA"
+      motivo_perdido:
+        | "preco"
+        | "desconfianca_tese"
+        | "timing"
+        | "concorrente"
+        | "decisor_errado"
+        | "sem_interesse"
+        | "sem_resposta"
+        | "outros"
       porte_rfb: "MEI" | "ME" | "EPP" | "DEMAIS" | "NAO_INFORMADO"
+      reuniao_status:
+        | "agendada"
+        | "realizada"
+        | "cancelada"
+        | "no_show"
+        | "reagendada"
+      situacao_cadastral_rfb:
+        | "NULA"
+        | "ATIVA"
+        | "SUSPENSA"
+        | "INAPTA"
+        | "BAIXADA"
+      tarefa_prioridade: "baixa" | "media" | "alta" | "urgente"
+      tarefa_status: "pendente" | "em_andamento" | "concluida" | "cancelada"
+      tipo_contato: "outbound" | "resposta_lead" | "reuniao" | "breakup"
+      tipo_prazo:
+        | "rescisoria_24m"
+        | "prescricional_5a"
+        | "decadencial_5a"
+        | "personalizado"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -947,13 +1553,72 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "advogado", "comercial", "gestor"],
+      canal_contato: [
+        "email",
+        "telefone",
+        "whatsapp",
+        "linkedin",
+        "reuniao_presencial",
+        "reuniao_online",
+        "outro",
+      ],
+      cargo_categoria: [
+        "ceo",
+        "cfo",
+        "socio",
+        "diretor",
+        "controller",
+        "gerente_fiscal",
+        "contador",
+        "coordenador",
+        "analista",
+        "outros",
+      ],
+      categoria_template: [
+        "abertura",
+        "follow_up",
+        "proposta",
+        "negociacao",
+        "breakup",
+        "pos_venda",
+        "objecao_preco",
+        "objecao_tese",
+        "objecao_timing",
+      ],
+      motivo_perdido: [
+        "preco",
+        "desconfianca_tese",
+        "timing",
+        "concorrente",
+        "decisor_errado",
+        "sem_interesse",
+        "sem_resposta",
+        "outros",
+      ],
+      porte_rfb: ["MEI", "ME", "EPP", "DEMAIS", "NAO_INFORMADO"],
+      reuniao_status: [
+        "agendada",
+        "realizada",
+        "cancelada",
+        "no_show",
+        "reagendada",
+      ],
+      situacao_cadastral_rfb: [
+        "NULA",
+        "ATIVA",
+        "SUSPENSA",
+        "INAPTA",
+        "BAIXADA",
+      ],
       tarefa_prioridade: ["baixa", "media", "alta", "urgente"],
       tarefa_status: ["pendente", "em_andamento", "concluida", "cancelada"],
-      reuniao_status: ["agendada", "realizada", "cancelada", "no_show", "reagendada"],
-      cargo_categoria: ["ceo", "cfo", "socio", "diretor", "controller", "gerente_fiscal", "contador", "coordenador", "analista", "outros"],
-      categoria_template: ["abertura", "follow_up", "proposta", "negociacao", "breakup", "pos_venda", "objecao_preco", "objecao_tese", "objecao_timing"],
-      situacao_cadastral_rfb: ["NULA", "ATIVA", "SUSPENSA", "INAPTA", "BAIXADA"],
-      porte_rfb: ["MEI", "ME", "EPP", "DEMAIS", "NAO_INFORMADO"],
+      tipo_contato: ["outbound", "resposta_lead", "reuniao", "breakup"],
+      tipo_prazo: [
+        "rescisoria_24m",
+        "prescricional_5a",
+        "decadencial_5a",
+        "personalizado",
+      ],
     },
   },
 } as const

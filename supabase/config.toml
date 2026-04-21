@@ -1,1 +1,15 @@
 project_id = "fxsuwvgcybjbuqqcuskt"
+
+# Edge functions validam JWT internamente via auth.getUser(), então
+# desabilitamos a verificação no gateway (que está com bug no ES256).
+[functions.enriquecer-cnpj]
+verify_jwt = false
+
+[functions.criar-usuario]
+verify_jwt = false
+
+[functions.enviar-convite-reuniao]
+verify_jwt = false
+
+[functions.gerar-tarefas-recorrentes]
+verify_jwt = false

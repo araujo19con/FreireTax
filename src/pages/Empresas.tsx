@@ -1,355 +1,355 @@
-import { useState, useEffect, DragEvent } from "react";
-import { Card } from "@/components/ui/card";
+import { useEffect, useMemo, useState, DragEvent } from "react";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Eye, Pencil, Trash2, FolderPlus, Folder, X, GripVertical, FolderOpen, Gavel, Users, RefreshCw } from "lucide-react";
-import { EmpresaDialog } from "@/components/EmpresaDialog";
-import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { logAudit } from "@/lib/audit";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { FolderPlus, Folder, FolderOpen, X, Gavel, Users, Sparkles } from "lucide-react";
+import { BulkEnrichDialog } from "./empresas/BulkEnrichDialog";
+
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState } from "@/components/EmptyState";
-import { LoadingState } from "@/components/LoadingState";
+import { EmpresaDialog } from "@/components/EmpresaDialog";
 
-interface Empresa {
-  id: string;
-  nome: string;
-  cnpj: string;
-  status: string;
-  obs: string;
-  created_at: string;
-}
+import { EmpresasHeader } from "./empresas/EmpresasHeader";
+import { EmpresasToolbar, type EmpresasView } from "./empresas/EmpresasToolbar";
+import { EmpresasTableView } from "./empresas/EmpresasTableView";
+import { EmpresasCardView } from "./empresas/EmpresasCardView";
+import { EmpresasKanbanView } from "./empresas/EmpresasKanbanView";
+import { EmpresaDetailSheet } from "./empresas/EmpresaDetailSheet";
 
-interface Pasta {
-  id: string;
-  nome: string;
-}
-
-interface PastaItem {
-  pasta_id: string;
-  empresa_id: string;
-}
-
-interface Acao {
-  id: string;
-  nome: string;
-  tipo: string;
-  status: string;
-}
-
-interface ElegibilidadeRow {
-  id: string;
-  empresa_id: string;
-  acao_id: string;
-  elegivel: boolean;
-  justificativa: string | null;
-}
-
-const statusColors: Record<string, string> = {
-  prospect: "bg-info/10 text-info",
-  cliente: "bg-success/10 text-success",
-  inativo: "bg-muted text-muted-foreground",
-};
+import {
+  useEmpresas, useCreateEmpresa, useUpdateEmpresa, useDeleteEmpresa,
+  useBulkDeleteEmpresas, useEnrichEmpresa, type Empresa, type EmpresaFilters, type EmpresaSort,
+} from "@/hooks/useEmpresas";
+import {
+  usePastas, usePastaItems, useCreatePasta, useDeletePasta,
+  useAddEmpresaToPasta, useRemoveEmpresaFromPasta, useBulkAddEmpresasToPasta,
+} from "@/hooks/usePastas";
+import { useAcoes } from "@/hooks/useAcoes";
+import { useElegibilidades, useCreateElegibilidade, useDeleteElegibilidade } from "@/hooks/useElegibilidades";
+import { formatCNPJ } from "@/lib/format";
 
 export default function Empresas() {
+  // --- Filters, search, sort, view, paging
   const [search, setSearch] = useState("");
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [detailEmpresa, setDetailEmpresa] = useState<Empresa | null>(null);
-  const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filters, setFilters] = useState<EmpresaFilters>({});
+  const [sort, setSort] = useState<EmpresaSort>("recent");
+  const [view, setView] = useState<EmpresasView>("table");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
-  // Pastas
-  const [pastas, setPastas] = useState<Pasta[]>([]);
-  const [pastaItems, setPastaItems] = useState<PastaItem[]>([]);
-  const [selectedPasta, setSelectedPasta] = useState<string>("all");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // reset page when search / filters / sort / view change
+  const filtersKey = JSON.stringify(filters);
+  useEffect(() => { setPage(1); }, [debouncedSearch, filtersKey, sort, pageSize]);
+
+  // --- Data queries
+  const empresasQ = useEmpresas({ search: debouncedSearch, filters, sort, page, pageSize });
+  const pastasQ = usePastas();
+  const pastaItemsQ = usePastaItems();
+  const acoesQ = useAcoes();
+  const elegsQ = useElegibilidades();
+
+  // --- Mutations
+  const createEmp = useCreateEmpresa();
+  const updateEmp = useUpdateEmpresa();
+  const deleteEmp = useDeleteEmpresa();
+  const bulkDeleteEmp = useBulkDeleteEmpresas();
+  const enrichEmp = useEnrichEmpresa();
+
+  const createPasta = useCreatePasta();
+  const deletePasta = useDeletePasta();
+  const addEmpPasta = useAddEmpresaToPasta();
+  const removeEmpPasta = useRemoveEmpresaFromPasta();
+  const bulkAddEmpPasta = useBulkAddEmpresasToPasta();
+
+  const createEleg = useCreateElegibilidade();
+  const deleteEleg = useDeleteElegibilidade();
+
+  // --- Local UI state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [detailEmpresa, setDetailEmpresa] = useState<Empresa | null>(null);
+  const [empresaToEdit, setEmpresaToEdit] = useState<Empresa | null>(null);
+  const [empresaToDelete, setEmpresaToDelete] = useState<Empresa | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkMovePastaOpen, setBulkMovePastaOpen] = useState(false);
+  const [bulkVincularAcaoOpen, setBulkVincularAcaoOpen] = useState(false);
+  const [bulkTargetPastaId, setBulkTargetPastaId] = useState<string>("");
+  const [bulkTargetAcaoId, setBulkTargetAcaoId] = useState<string>("");
+
   const [pastaDialogOpen, setPastaDialogOpen] = useState(false);
   const [newPastaName, setNewPastaName] = useState("");
-  const [managePastaOpen, setManagePastaOpen] = useState(false);
-  const [managePastaId, setManagePastaId] = useState<string>("");
-  const [selectedEmpresas, setSelectedEmpresas] = useState<Set<string>>(new Set());
-  const [dragOverPastaId, setDragOverPastaId] = useState<string | null>(null);
-  const [draggingEmpresaId, setDraggingEmpresaId] = useState<string | null>(null);
-
-  // Ações
-  const [acoes, setAcoes] = useState<Acao[]>([]);
-  const [elegibilidades, setElegibilidades] = useState<ElegibilidadeRow[]>([]);
-  const [dragOverAcaoId, setDragOverAcaoId] = useState<string | null>(null);
   const [expandedAcaoId, setExpandedAcaoId] = useState<string | null>(null);
+  const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
 
-  // Elegibilidade dialog (opened on drop)
+  // drag-drop to pasta/ação
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverPastaId, setDragOverPastaId] = useState<string | null>(null);
+  const [dragOverAcaoId, setDragOverAcaoId] = useState<string | null>(null);
+
+  // elegibilidade dialog triggered by drop
   const [elegDialogOpen, setElegDialogOpen] = useState(false);
   const [elegEmpresaId, setElegEmpresaId] = useState("");
   const [elegAcaoId, setElegAcaoId] = useState("");
   const [elegElegivel, setElegElegivel] = useState("true");
   const [elegJustificativa, setElegJustificativa] = useState("");
 
-  const fetchAll = async () => {
-    const [empRes, pastaRes, itemsRes, acoesRes, elegRes] = await Promise.all([
-      supabase.from("empresas").select("*").order("created_at", { ascending: false }),
-      supabase.from("pastas_empresas").select("id, nome").order("nome"),
-      supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
-      supabase.from("acoes_tributarias").select("id, nome, tipo, status").order("nome"),
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa"),
-    ]);
-    setEmpresas(empRes.data || []);
-    setPastas(pastaRes.data || []);
-    setPastaItems(itemsRes.data || []);
-    setAcoes(acoesRes.data || []);
-    setElegibilidades(elegRes.data || []);
-    setLoading(false);
-  };
+  // --- Derived
+  const rows = empresasQ.data?.rows ?? [];
+  const total = empresasQ.data?.total ?? 0;
+  const pastas = useMemo(() => pastasQ.data ?? [], [pastasQ.data]);
+  const pastaItems = useMemo(() => pastaItemsQ.data ?? [], [pastaItemsQ.data]);
+  const acoes = acoesQ.data ?? [];
+  const elegs = elegsQ.data ?? [];
 
-  useEffect(() => { fetchAll(); }, []);
+  const pastaNamesByEmpresa = useMemo(() => {
+    const byEmp = new Map<string, string[]>();
+    for (const item of pastaItems) {
+      const pasta = pastas.find((p) => p.id === item.pasta_id);
+      if (!pasta) continue;
+      const arr = byEmp.get(item.empresa_id) || [];
+      arr.push(pasta.nome);
+      byEmp.set(item.empresa_id, arr);
+    }
+    return byEmp;
+  }, [pastaItems, pastas]);
 
   const empresaIdsInPasta = (pastaId: string) =>
     new Set(pastaItems.filter((i) => i.pasta_id === pastaId).map((i) => i.empresa_id));
 
   const empresaIdsInAcao = (acaoId: string) =>
-    new Set(elegibilidades.filter((e) => e.acao_id === acaoId).map((e) => e.empresa_id));
+    new Set(elegs.filter((e) => e.acao_id === acaoId).map((e) => e.empresa_id));
 
-  const filtered = empresas.filter((e) => {
-    const matchesSearch = e.nome.toLowerCase().includes(search.toLowerCase()) || e.cnpj.includes(search);
-    if (selectedPasta === "all") return matchesSearch;
-    return matchesSearch && empresaIdsInPasta(selectedPasta).has(e.id);
-  });
-
-  const handleCreate = async (data: any) => {
-    // data pode incluir dados enriquecidos via EmpresaDialog (razao_social, porte, CNAE, QSA...)
-    const { error } = await (supabase.from("empresas") as any).insert({ ...data, user_id: user?.id });
-    if (error) { toast.error("Erro ao criar empresa: " + error.message); } else {
-      toast.success("Empresa criada!");
-      logAudit({ tabela: "empresas", acao: "Criou empresa", detalhes: { nome: data.nome, cnpj: data.cnpj } });
-      fetchAll();
-    }
-  };
-
-  const handleEdit = async (id: string, data: any) => {
-    const { error } = await (supabase.from("empresas") as any).update(data).eq("id", id);
-    if (error) { toast.error("Erro ao atualizar empresa: " + error.message); } else {
-      toast.success("Empresa atualizada!");
-      logAudit({ tabela: "empresas", acao: "Editou empresa", registro_id: id, detalhes: { nome: data.nome } });
-      fetchAll();
-    }
-  };
-
-  // Enriquece uma empresa específica via botão individual
-  const handleEnriquecer = async (empresaId: string, cnpj: string) => {
-    const loadingId = toast.loading(`Consultando Receita para ${cnpj}...`);
-    try {
-      const { data, error } = await supabase.functions.invoke("enriquecer-cnpj", {
-        body: { cnpj, empresa_id: empresaId, force: true },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success(`Dados atualizados: ${data?.data?.razao_social || cnpj}`, { id: loadingId });
-      logAudit({ tabela: "empresas", acao: "Enriqueceu dados RFB", registro_id: empresaId, detalhes: { cnpj } });
-      fetchAll();
-    } catch (e: any) {
-      toast.error("Erro ao enriquecer: " + (e?.message ?? "falha"), { id: loadingId });
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("empresas").delete().eq("id", id);
-    const empresa = empresas.find((emp) => emp.id === id);
-    if (error) { toast.error("Erro ao remover empresa"); } else {
-      toast.success("Empresa removida");
-      logAudit({ tabela: "empresas", acao: "Removeu empresa", registro_id: id, detalhes: { nome: empresa?.nome } });
-      fetchAll();
-    }
-  };
-
-  // Pasta handlers
-  const handleCreatePasta = async () => {
-    if (!newPastaName.trim()) { toast.error("Nome da pasta é obrigatório"); return; }
-    const { error } = await supabase.from("pastas_empresas").insert({ nome: newPastaName.trim(), user_id: user!.id });
-    if (error) { toast.error("Erro ao criar pasta"); } else { toast.success("Pasta criada!"); setNewPastaName(""); setPastaDialogOpen(false); fetchAll(); }
-  };
-
-  const handleDeletePasta = async (id: string) => {
-    const { error } = await supabase.from("pastas_empresas").delete().eq("id", id);
-    if (error) { toast.error("Erro ao remover pasta"); } else {
-      toast.success("Pasta removida!");
-      if (selectedPasta === id) setSelectedPasta("all");
-      fetchAll();
-    }
-  };
-
-  const openManagePasta = (pastaId: string) => {
-    setManagePastaId(pastaId);
-    setSelectedEmpresas(empresaIdsInPasta(pastaId));
-    setManagePastaOpen(true);
-  };
-
-  const handleSavePastaItems = async () => {
-    await supabase.from("pasta_empresa_items").delete().eq("pasta_id", managePastaId);
-    if (selectedEmpresas.size > 0) {
-      const items = Array.from(selectedEmpresas).map((empresa_id) => ({
-        pasta_id: managePastaId,
-        empresa_id,
-        user_id: user!.id,
-      }));
-      const { error } = await supabase.from("pasta_empresa_items").insert(items);
-      if (error) { toast.error("Erro ao salvar"); console.error(error); return; }
-    }
-    toast.success("Pasta atualizada!");
-    setManagePastaOpen(false);
-    fetchAll();
-  };
-
-  const toggleEmpresa = (id: string) => {
-    setSelectedEmpresas((prev) => {
+  // --- Selection
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
-  const getPastaNames = (empresaId: string) =>
-    pastaItems.filter((i) => i.empresa_id === empresaId).map((i) => pastas.find((p) => p.id === i.pasta_id)?.nome).filter(Boolean);
-
-  // Drag & Drop — Pasta handlers
-  const handleDragStart = (e: DragEvent, empresaId: string) => {
-    e.dataTransfer.setData("empresaId", empresaId);
-    e.dataTransfer.effectAllowed = "copy";
-    setDraggingEmpresaId(empresaId);
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const allIds = rows.map((r) => r.id);
+      const allSel = allIds.every((id) => prev.has(id));
+      if (allSel) {
+        const next = new Set(prev);
+        allIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...allIds]);
+    });
   };
 
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // --- Drag-drop handlers
+  const handleDragStart = (e: DragEvent, id: string) => {
+    e.dataTransfer.setData("empresaId", id);
+    e.dataTransfer.effectAllowed = "copy";
+    setDraggingId(id);
+  };
   const handleDragEnd = () => {
-    setDraggingEmpresaId(null);
+    setDraggingId(null);
     setDragOverPastaId(null);
     setDragOverAcaoId(null);
   };
-
-  const handleDragOverPasta = (e: DragEvent, pastaId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setDragOverPastaId(pastaId);
-  };
-
-  const handleDragLeavePasta = () => { setDragOverPastaId(null); };
 
   const handleDropPasta = async (e: DragEvent, pastaId: string) => {
     e.preventDefault();
     setDragOverPastaId(null);
-    setDraggingEmpresaId(null);
-    const empresaId = e.dataTransfer.getData("empresaId");
-    if (!empresaId) return;
-
-    const alreadyIn = pastaItems.some((i) => i.pasta_id === pastaId && i.empresa_id === empresaId);
-    if (alreadyIn) { toast.info("Empresa já está nesta pasta"); return; }
-
-    const { error } = await supabase.from("pasta_empresa_items").insert({
-      pasta_id: pastaId, empresa_id: empresaId, user_id: user!.id,
-    });
-    if (error) { toast.error("Erro ao adicionar à pasta"); } else {
-      const empresa = empresas.find((emp) => emp.id === empresaId);
-      const pasta = pastas.find((p) => p.id === pastaId);
-      toast.success(`"${empresa?.nome}" adicionada à pasta "${pasta?.nome}"`);
-      fetchAll();
-    }
+    const id = e.dataTransfer.getData("empresaId");
+    if (!id) return;
+    const already = pastaItems.some((i) => i.pasta_id === pastaId && i.empresa_id === id);
+    if (already) { toast.info("Empresa já está nesta pasta"); return; }
+    await addEmpPasta.mutateAsync({ empresaId: id, pastaId });
+    toast.success("Empresa adicionada à pasta");
   };
-
-  const handleRemoveFromPasta = async (empresaId: string, pastaId: string) => {
-    const { error } = await supabase.from("pasta_empresa_items").delete().eq("pasta_id", pastaId).eq("empresa_id", empresaId);
-    if (error) { toast.error("Erro ao remover da pasta"); } else { toast.success("Empresa removida da pasta"); fetchAll(); }
-  };
-
-  // Drag & Drop — Ação handlers
-  const handleDragOverAcao = (e: DragEvent, acaoId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setDragOverAcaoId(acaoId);
-  };
-
-  const handleDragLeaveAcao = () => { setDragOverAcaoId(null); };
 
   const handleDropAcao = (e: DragEvent, acaoId: string) => {
     e.preventDefault();
     setDragOverAcaoId(null);
-    const empresaId = e.dataTransfer.getData("empresaId");
-    setDraggingEmpresaId(null);
-    if (!empresaId) return;
-
-    const alreadyIn = elegibilidades.some((el) => el.acao_id === acaoId && el.empresa_id === empresaId);
-    if (alreadyIn) { toast.info("Empresa já vinculada a esta ação"); return; }
-
-    // Open elegibilidade dialog
-    setElegEmpresaId(empresaId);
+    const id = e.dataTransfer.getData("empresaId");
+    if (!id) return;
+    const already = elegs.some((el) => el.acao_id === acaoId && el.empresa_id === id);
+    if (already) { toast.info("Empresa já vinculada a esta ação"); return; }
+    setElegEmpresaId(id);
     setElegAcaoId(acaoId);
     setElegElegivel("true");
     setElegJustificativa("");
     setElegDialogOpen(true);
   };
 
-  const handleSaveElegibilidade = async () => {
-    if (!elegEmpresaId || !elegAcaoId) return;
+  // --- CRUD handlers
+  const handleCreate = async (data: Record<string, unknown>) => {
+    await createEmp.mutateAsync(data);
+  };
 
-    const { error } = await supabase.from("elegibilidade").insert({
-      empresa_id: elegEmpresaId,
-      acao_id: elegAcaoId,
-      elegivel: elegElegivel === "true",
-      justificativa: elegJustificativa || "",
-      user_id: user!.id,
+  const handleEdit = async (id: string, data: Record<string, unknown>) => {
+    await updateEmp.mutateAsync({ id, data });
+  };
+
+  const handleDelete = (emp: Empresa) => setEmpresaToDelete(emp);
+  const confirmDelete = async () => {
+    if (!empresaToDelete) return;
+    await deleteEmp.mutateAsync({ id: empresaToDelete.id, nome: empresaToDelete.nome });
+    if (detailEmpresa?.id === empresaToDelete.id) setDetailEmpresa(null);
+    setEmpresaToDelete(null);
+  };
+
+  // --- Bulk actions
+  const handleBulkMovePasta = () => {
+    if (selectedIds.size === 0) return;
+    setBulkTargetPastaId(pastas[0]?.id || "");
+    setBulkMovePastaOpen(true);
+  };
+
+  const confirmBulkMovePasta = async () => {
+    if (!bulkTargetPastaId) { toast.error("Selecione uma pasta"); return; }
+    await bulkAddEmpPasta.mutateAsync({
+      empresaIds: Array.from(selectedIds),
+      pastaId: bulkTargetPastaId,
     });
-    if (error) { toast.error("Erro ao criar elegibilidade"); console.error(error); return; }
-
-    const emp = empresas.find((e) => e.id === elegEmpresaId);
-    const acao = acoes.find((a) => a.id === elegAcaoId);
-    toast.success(`"${emp?.nome}" vinculada a "${acao?.nome}"`);
-    logAudit({ tabela: "elegibilidade", acao: "Criou elegibilidade", detalhes: { empresa: emp?.nome, acao_nome: acao?.nome, elegivel: elegElegivel === "true" } });
-    setElegDialogOpen(false);
-    fetchAll();
+    setBulkMovePastaOpen(false);
+    clearSelection();
   };
 
-  const handleRemoveEleg = async (elegId: string) => {
-    const { error } = await supabase.from("elegibilidade").delete().eq("id", elegId);
-    if (error) { toast.error("Erro ao remover"); } else { toast.success("Vínculo removido"); fetchAll(); }
+  const handleBulkVincularAcao = () => {
+    if (selectedIds.size === 0) return;
+    setBulkTargetAcaoId(acoes[0]?.id || "");
+    setBulkVincularAcaoOpen(true);
   };
 
-  const getEmpresaNome = (id: string) => empresas.find((e) => e.id === id)?.nome || "—";
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <LoadingState variant="kpi-grid" count={3} />
-        <LoadingState variant="table" count={8} />
-      </div>
+  const confirmBulkVincularAcao = async () => {
+    if (!bulkTargetAcaoId) { toast.error("Selecione uma ação"); return; }
+    // Cria elegibilidades em lote — para empresas que ainda não têm vínculo com a ação
+    const alreadyLinked = new Set(
+      elegs.filter((e) => e.acao_id === bulkTargetAcaoId).map((e) => e.empresa_id),
     );
-  }
+    const toLink = Array.from(selectedIds).filter((id) => !alreadyLinked.has(id));
+    if (!toLink.length) { toast.info("Todas as empresas selecionadas já estão vinculadas"); setBulkVincularAcaoOpen(false); return; }
+
+    let ok = 0, fail = 0;
+    for (const empresaId of toLink) {
+      try {
+        await createEleg.mutateAsync({
+          empresa_id: empresaId,
+          acao_id: bulkTargetAcaoId,
+          elegivel: true,
+          justificativa: "Vínculo em lote",
+        });
+        ok++;
+      } catch { fail++; }
+    }
+    toast.success(`${ok} vínculo(s) criado(s)${fail ? ` · ${fail} falharam` : ""}`);
+    setBulkVincularAcaoOpen(false);
+    clearSelection();
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleteOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    await bulkDeleteEmp.mutateAsync(Array.from(selectedIds));
+    setBulkDeleteOpen(false);
+    clearSelection();
+  };
+
+  // --- Export
+  const handleExport = (format: "csv" | "xlsx") => {
+    const selected = selectedIds.size > 0
+      ? rows.filter((r) => selectedIds.has(r.id))
+      : rows;
+
+    const data = selected.map((e) => ({
+      Nome: e.nome,
+      "Razão Social": e.razao_social || "",
+      "Nome Fantasia": e.nome_fantasia || "",
+      CNPJ: formatCNPJ(e.cnpj),
+      Status: e.status,
+      "Situação Cadastral": e.situacao_cadastral || "",
+      Porte: e.porte || "",
+      UF: e.uf || "",
+      Município: e.municipio || "",
+      "CNAE Principal": e.cnae_principal ? `${e.cnae_principal} — ${e.cnae_principal_desc || ""}` : "",
+      "Simples Nacional": e.opcao_simples ? "Sim" : e.opcao_simples === false ? "Não" : "",
+      "Capital Social": e.capital_social ?? "",
+      "Valor Potencial": e.valor_potencial_total ?? "",
+      "Data Abertura": e.data_abertura || "",
+      Telefone: e.telefone_receita || "",
+      "E-mail": e.email_receita || "",
+      Endereço: [e.logradouro, e.numero_endereco, e.bairro, e.cep].filter(Boolean).join(", "),
+      Pastas: (pastaNamesByEmpresa.get(e.id) || []).join("; "),
+      "Última RFB": e.receita_atualizada_em || "",
+      Observações: e.obs || "",
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Empresas");
+
+    const today = new Date().toISOString().slice(0, 10);
+    const filename = `empresas-${today}.${format}`;
+
+    if (format === "xlsx") {
+      XLSX.writeFile(wb, filename);
+    } else {
+      const csv = XLSX.utils.sheet_to_csv(ws);
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }
+    toast.success(`${data.length} empresa(s) exportada(s)`);
+  };
+
+  // --- Render
+  const loading = empresasQ.isLoading || pastasQ.isLoading || acoesQ.isLoading;
 
   return (
     <div className="space-y-6 animate-fade-in">
       <PageHeader
         title="Empresas"
-        description="Arraste empresas para pastas ou ações tributárias"
+        description="Gerencie empresas: busque, filtre, arraste para pastas ou ações tributárias."
         actions={
           <>
+            <Button variant="outline" onClick={() => setBulkEnrichOpen(true)} title="Atualizar dados da Receita Federal em lote">
+              <Sparkles className="mr-2 h-4 w-4" />Atualizar RFB
+            </Button>
             <Button variant="outline" onClick={() => setPastaDialogOpen(true)}>
-              <FolderPlus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Pasta
+              <FolderPlus className="mr-2 h-4 w-4" />Nova Pasta
             </Button>
             <EmpresaDialog onSave={handleCreate} />
           </>
         }
       />
 
-      {/* Three-column layout: Pastas | Table | Ações */}
+      <EmpresasHeader />
+
       <div className="flex gap-5 items-start">
-        {/* LEFT — Folders sidebar */}
-        <div className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
+        {/* LEFT — Pastas sidebar */}
+        <aside className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pastas</h3>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setPastaDialogOpen(true)}>
@@ -357,15 +357,16 @@ export default function Empresas() {
             </Button>
           </div>
 
-          <div
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors text-sm ${
-              selectedPasta === "all" ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50 text-muted-foreground"
+          <button
+            type="button"
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors text-sm ${
+              !filters.pastaId ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50 text-muted-foreground"
             }`}
-            onClick={() => setSelectedPasta("all")}
+            onClick={() => setFilters({ ...filters, pastaId: null })}
           >
             <Folder className="h-4 w-4" />
-            <span>Todas ({empresas.length})</span>
-          </div>
+            <span>Todas</span>
+          </button>
 
           {pastas.length === 0 && (
             <div className="text-xs text-muted-foreground text-center py-4 border border-dashed rounded-lg">
@@ -377,20 +378,18 @@ export default function Empresas() {
           {pastas.map((p) => {
             const idsInPasta = empresaIdsInPasta(p.id);
             const isOver = dragOverPastaId === p.id;
-            const isSelected = selectedPasta === p.id;
+            const isSelected = filters.pastaId === p.id;
             return (
               <div key={p.id}>
                 <div
-                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 text-sm ${
-                    isOver
-                      ? "bg-primary/10 ring-2 ring-primary scale-[1.02]"
-                      : isSelected
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "hover:bg-muted/50 text-muted-foreground"
+                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm ${
+                    isOver ? "bg-primary/10 ring-2 ring-primary scale-[1.02]" :
+                    isSelected ? "bg-primary/10 text-primary font-medium" :
+                    "hover:bg-muted/50 text-muted-foreground"
                   }`}
-                  onClick={() => setSelectedPasta(isSelected ? "all" : p.id)}
-                  onDragOver={(e) => handleDragOverPasta(e, p.id)}
-                  onDragLeave={handleDragLeavePasta}
+                  onClick={() => setFilters({ ...filters, pastaId: isSelected ? null : p.id })}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverPastaId(p.id); }}
+                  onDragLeave={() => setDragOverPastaId(null)}
                   onDrop={(e) => handleDropPasta(e, p.id)}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -399,9 +398,6 @@ export default function Empresas() {
                     <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{idsInPasta.size}</Badge>
                   </div>
                   <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={(e) => { e.stopPropagation(); openManagePasta(p.id); }}>
-                      <Pencil className="h-2.5 w-2.5" />
-                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={(e) => e.stopPropagation()}>
@@ -411,18 +407,21 @@ export default function Empresas() {
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Excluir pasta "{p.nome}"?</AlertDialogTitle>
-                          <AlertDialogDescription>As empresas não serão removidas.</AlertDialogDescription>
+                          <AlertDialogDescription>As empresas não serão removidas — só o vínculo.</AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDeletePasta(p.id)}>Excluir</AlertDialogAction>
+                          <AlertDialogAction onClick={() => {
+                            if (filters.pastaId === p.id) setFilters({ ...filters, pastaId: null });
+                            deletePasta.mutate(p.id);
+                          }}>Excluir</AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
                   </div>
                 </div>
 
-                {isOver && draggingEmpresaId && (
+                {isOver && draggingId && (
                   <div className="mx-3 mt-1 text-[10px] text-primary font-medium text-center py-1 border border-dashed border-primary rounded">
                     Solte para adicionar
                   </div>
@@ -430,10 +429,13 @@ export default function Empresas() {
 
                 {isSelected && idsInPasta.size > 0 && (
                   <div className="ml-6 mt-1 space-y-0.5 max-h-32 overflow-y-auto">
-                    {empresas.filter((emp) => idsInPasta.has(emp.id)).map((emp) => (
+                    {rows.filter((r) => idsInPasta.has(r.id)).map((emp) => (
                       <div key={emp.id} className="flex items-center justify-between text-[11px] text-muted-foreground px-2 py-1 rounded hover:bg-muted/50">
                         <span className="truncate">{emp.nome}</span>
-                        <Button variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); handleRemoveFromPasta(emp.id, p.id); }}>
+                        <Button
+                          variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => removeEmpPasta.mutate({ empresaId: emp.id, pastaId: p.id })}
+                        >
                           <X className="h-2.5 w-2.5" />
                         </Button>
                       </div>
@@ -443,191 +445,87 @@ export default function Empresas() {
               </div>
             );
           })}
-        </div>
+        </aside>
 
-        {/* CENTER — Table */}
+        {/* CENTER — Toolbar + View */}
         <div className="flex-1 min-w-0 space-y-4">
-          <div className="flex gap-3 flex-wrap">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Buscar por nome ou CNPJ..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-            </div>
-            <div className="lg:hidden">
-              <Select value={selectedPasta} onValueChange={setSelectedPasta}>
-                <SelectTrigger className="w-48">
-                  <Folder className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <SelectValue placeholder="Pasta..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  {pastas.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <EmpresasToolbar
+            search={search}
+            onSearchChange={setSearch}
+            filters={filters}
+            onFiltersChange={setFilters}
+            sort={sort}
+            onSortChange={setSort}
+            view={view}
+            onViewChange={setView}
+            selectedIds={Array.from(selectedIds)}
+            onBulkMovePasta={handleBulkMovePasta}
+            onBulkVincularAcao={handleBulkVincularAcao}
+            onBulkDelete={handleBulkDelete}
+            onExport={handleExport}
+            onClearSelection={clearSelection}
+            totalCount={total}
+          />
 
-          <Card className="shadow-card">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="w-8"></th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Empresa</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">CNPJ</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Receita</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Pastas</th>
-                    <th className="text-left py-3 px-4 font-medium text-muted-foreground">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 && (
-                    <tr><td colSpan={7} className="py-10 text-center">
-                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                        <Search className="h-6 w-6 opacity-50" aria-hidden="true" />
-                        <p className="text-sm font-medium">
-                          {empresas.length === 0 ? "Nenhuma empresa cadastrada" : "Nenhuma empresa encontrada"}
-                        </p>
-                        {empresas.length === 0 ? (
-                          <p className="text-xs">Clique em "Nova Empresa" para começar.</p>
-                        ) : (
-                          <p className="text-xs">Tente outro termo de busca ou remova filtros.</p>
-                        )}
-                      </div>
-                    </td></tr>
-                  )}
-                  {filtered.map((e, idx) => (
-                    <tr
-                      key={e.id}
-                      className={`border-b border-border last:border-0 hover:bg-muted/40 transition-colors ${idx % 2 === 1 ? "bg-muted/[0.15]" : ""} ${
-                        draggingEmpresaId === e.id ? "opacity-50" : ""
-                      }`}
-                      draggable
-                      onDragStart={(ev) => handleDragStart(ev, e.id)}
-                      onDragEnd={handleDragEnd}
-                    >
-                      <td className="py-3 pl-2 pr-0">
-                        <GripVertical className="h-4 w-4 text-muted-foreground/50 cursor-grab active:cursor-grabbing" />
-                      </td>
-                      <td className="py-3 px-4 font-medium">
-                        <div className="flex flex-col">
-                          <span>{e.nome}</span>
-                          {(e as any).razao_social && (e as any).razao_social !== e.nome && (
-                            <span className="text-[10px] text-muted-foreground font-normal line-clamp-1">
-                              {(e as any).razao_social}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-muted-foreground font-mono text-xs">{e.cnpj}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusColors[e.status] || ""}`}>
-                          {e.status}
-                        </span>
-                      </td>
-                      {/* Coluna Receita: porte + situação + UF */}
-                      <td className="py-3 px-4">
-                        {(() => {
-                          const any = e as any;
-                          if (!any.receita_atualizada_em) {
-                            return (
-                              <Badge variant="outline" className="text-[10px] text-muted-foreground" title="Sem dados da Receita — clique no botão de refresh para buscar">
-                                não enriquecida
-                              </Badge>
-                            );
-                          }
-                          if (any.receita_erro) {
-                            return (
-                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/30" title={any.receita_erro}>
-                                erro RFB
-                              </Badge>
-                            );
-                          }
-                          const sit = any.situacao_cadastral;
-                          const sitColor = sit === "ATIVA" ? "bg-success/10 text-success"
-                                         : sit === "BAIXADA" || sit === "INAPTA" || sit === "NULA" ? "bg-destructive/10 text-destructive"
-                                         : "bg-warning/10 text-warning";
-                          return (
-                            <div className="flex flex-wrap gap-1">
-                              {sit && (
-                                <Badge variant="secondary" className={`text-[10px] ${sitColor}`}>{sit}</Badge>
-                              )}
-                              {any.porte && any.porte !== "NAO_INFORMADO" && (
-                                <Badge variant="outline" className="text-[10px]">{any.porte}</Badge>
-                              )}
-                              {any.uf && (
-                                <Badge variant="outline" className="text-[10px]">{any.uf}</Badge>
-                              )}
-                              {any.opcao_simples && (
-                                <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Simples</Badge>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex gap-1 flex-wrap">
-                          {getPastaNames(e.id).map((name) => (
-                            <Badge key={name} variant="outline" className="text-[10px]">
-                              <Folder className="mr-1 h-2.5 w-2.5" />{name}
-                            </Badge>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailEmpresa(e)} aria-label={`Ver detalhes de ${e.nome}`}>
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                          <Button
-                            variant="ghost" size="icon" className="h-8 w-8"
-                            onClick={() => handleEnriquecer(e.id, e.cnpj)}
-                            aria-label={`Atualizar dados da Receita de ${e.nome}`}
-                            title="Atualizar dados da Receita Federal"
-                          >
-                            <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                          <EmpresaDialog
-                            onSave={(data) => handleEdit(e.id, data)}
-                            initialData={e}
-                            title="Editar Empresa"
-                            trigger={
-                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Editar ${e.nome}`}>
-                                <Pencil className="h-4 w-4" aria-hidden="true" />
-                              </Button>
-                            }
-                          />
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" aria-label={`Excluir ${e.nome}`}>
-                                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-                                <AlertDialogDescription>Deseja remover "{e.nome}"?</AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDelete(e.id)}>Excluir</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          {view === "table" && (
+            <EmpresasTableView
+              rows={rows}
+              loading={loading}
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              selectedIds={selectedIds}
+              pastaNamesByEmpresa={pastaNamesByEmpresa}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              onToggleSelect={toggleSelect}
+              onToggleSelectAll={toggleSelectAll}
+              onOpenDetail={setDetailEmpresa}
+              onEnrichir={(e) => enrichEmp.mutate({ id: e.id, cnpj: e.cnpj })}
+              onEdit={setEmpresaToEdit}
+              onDelete={handleDelete}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              draggingId={draggingId}
+            />
+          )}
+
+          {view === "cards" && (
+            <EmpresasCardView
+              rows={rows}
+              loading={loading}
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              selectedIds={selectedIds}
+              pastaNamesByEmpresa={pastaNamesByEmpresa}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              onToggleSelect={toggleSelect}
+              onOpenDetail={setDetailEmpresa}
+              onEnrichir={(e) => enrichEmp.mutate({ id: e.id, cnpj: e.cnpj })}
+              onEdit={setEmpresaToEdit}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              draggingId={draggingId}
+            />
+          )}
+
+          {view === "kanban" && (
+            <EmpresasKanbanView
+              rows={rows}
+              loading={loading}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onOpenDetail={setDetailEmpresa}
+              onEnrichir={(e) => enrichEmp.mutate({ id: e.id, cnpj: e.cnpj })}
+              onEdit={setEmpresaToEdit}
+            />
+          )}
         </div>
 
         {/* RIGHT — Ações sidebar */}
-        <div className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
+        <aside className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ações Tributárias</h3>
           </div>
@@ -643,21 +541,19 @@ export default function Empresas() {
             const idsInAcao = empresaIdsInAcao(a.id);
             const isOver = dragOverAcaoId === a.id;
             const isExpanded = expandedAcaoId === a.id;
-            const elegsForAcao = elegibilidades.filter((el) => el.acao_id === a.id);
+            const elegsForAcao = elegs.filter((el) => el.acao_id === a.id);
 
             return (
               <div key={a.id}>
                 <div
-                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 text-sm ${
-                    isOver
-                      ? "bg-accent/20 ring-2 ring-accent scale-[1.02]"
-                      : isExpanded
-                      ? "bg-accent/10 text-accent-foreground"
-                      : "hover:bg-muted/50 text-muted-foreground"
+                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm ${
+                    isOver ? "bg-accent/20 ring-2 ring-accent scale-[1.02]" :
+                    isExpanded ? "bg-accent/10 text-accent-foreground" :
+                    "hover:bg-muted/50 text-muted-foreground"
                   }`}
                   onClick={() => setExpandedAcaoId(isExpanded ? null : a.id)}
-                  onDragOver={(e) => handleDragOverAcao(e, a.id)}
-                  onDragLeave={handleDragLeaveAcao}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverAcaoId(a.id); }}
+                  onDragLeave={() => setDragOverAcaoId(null)}
                   onDrop={(e) => handleDropAcao(e, a.id)}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -672,7 +568,7 @@ export default function Empresas() {
                   </Badge>
                 </div>
 
-                {isOver && draggingEmpresaId && (
+                {isOver && draggingId && (
                   <div className="mx-3 mt-1 text-[10px] text-accent-foreground font-medium text-center py-1 border border-dashed border-accent rounded">
                     Solte para vincular
                   </div>
@@ -680,45 +576,153 @@ export default function Empresas() {
 
                 {isExpanded && elegsForAcao.length > 0 && (
                   <div className="ml-6 mt-1 space-y-0.5 max-h-40 overflow-y-auto">
-                    {elegsForAcao.map((el) => (
-                      <div key={el.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded hover:bg-muted/50">
-                        <div className="flex items-center gap-1 min-w-0">
-                          <span className="truncate text-muted-foreground">{getEmpresaNome(el.empresa_id)}</span>
-                          <span className={`text-[9px] px-1 rounded ${el.elegivel ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                            {el.elegivel ? "E" : "NE"}
-                          </span>
+                    {elegsForAcao.map((el) => {
+                      const emp = rows.find((r) => r.id === el.empresa_id);
+                      return (
+                        <div key={el.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded hover:bg-muted/50">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="truncate text-muted-foreground">{emp?.nome || "—"}</span>
+                            <span className={`text-[9px] px-1 rounded ${el.elegivel ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                              {el.elegivel ? "E" : "NE"}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive"
+                            onClick={(e) => { e.stopPropagation(); deleteEleg.mutate(el.id); }}
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </Button>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); handleRemoveEleg(el.id); }}>
-                          <X className="h-2.5 w-2.5" />
-                        </Button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             );
           })}
-        </div>
+        </aside>
       </div>
 
-      {/* Detail dialog */}
-      <Dialog open={!!detailEmpresa} onOpenChange={(open) => !open && setDetailEmpresa(null)}>
-        <DialogContent className="sm:max-w-md">
+      {/* Bulk enrich dialog */}
+      <BulkEnrichDialog open={bulkEnrichOpen} onOpenChange={setBulkEnrichOpen} />
+
+      {/* Detail Sheet */}
+      <EmpresaDetailSheet
+        empresa={detailEmpresa}
+        onClose={() => setDetailEmpresa(null)}
+        onEnrichir={(e) => enrichEmp.mutate({ id: e.id, cnpj: e.cnpj })}
+        onEdit={(e) => setEmpresaToEdit(e)}
+        onDelete={handleDelete}
+      />
+
+      {/* Edit dialog — controlado */}
+      {empresaToEdit && (
+        <EmpresaDialog
+          key={empresaToEdit.id}
+          open={!!empresaToEdit}
+          onOpenChange={(o) => { if (!o) setEmpresaToEdit(null); }}
+          onSave={async (data) => {
+            await handleEdit(empresaToEdit.id, data);
+            setEmpresaToEdit(null);
+          }}
+          initialData={empresaToEdit as unknown as Parameters<typeof EmpresaDialog>[0]["initialData"]}
+          title="Editar Empresa"
+        />
+      )}
+
+      {/* Delete confirm */}
+      <AlertDialog open={!!empresaToDelete} onOpenChange={(v) => !v && setEmpresaToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir empresa</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja remover "{empresaToDelete?.nome}"? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk delete confirm */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir {selectedIds.size} empresa(s)?</AlertDialogTitle>
+            <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk move to pasta */}
+      <Dialog open={bulkMovePastaOpen} onOpenChange={setBulkMovePastaOpen}>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-heading">Detalhes da Empresa</DialogTitle>
+            <DialogTitle className="font-heading">Mover {selectedIds.size} empresa(s) para pasta</DialogTitle>
           </DialogHeader>
-          {detailEmpresa && (
-            <div className="space-y-3 text-sm">
-              <div><span className="font-medium text-muted-foreground">Nome:</span> {detailEmpresa.nome}</div>
-              <div><span className="font-medium text-muted-foreground">CNPJ:</span> <span className="font-mono">{detailEmpresa.cnpj}</span></div>
-              <div><span className="font-medium text-muted-foreground">Status:</span> <span className="capitalize">{detailEmpresa.status}</span></div>
-              <div><span className="font-medium text-muted-foreground">Observações:</span> {detailEmpresa.obs || "Nenhuma"}</div>
-              <div>
-                <span className="font-medium text-muted-foreground">Pastas:</span>{" "}
-                {getPastaNames(detailEmpresa.id).join(", ") || "Nenhuma"}
-              </div>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Pasta destino</Label>
+              <Select value={bulkTargetPastaId} onValueChange={setBulkTargetPastaId}>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  {pastas.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {pastas.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhuma pasta cadastrada. Crie uma primeiro.</p>
+              )}
             </div>
-          )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkMovePastaOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmBulkMovePasta} disabled={!bulkTargetPastaId || pastas.length === 0}>
+              Mover
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk vincular ação */}
+      <Dialog open={bulkVincularAcaoOpen} onOpenChange={setBulkVincularAcaoOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Vincular {selectedIds.size} empresa(s) a ação</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Ação tributária</Label>
+              <Select value={bulkTargetAcaoId} onValueChange={setBulkTargetAcaoId}>
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  {acoes.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Cria elegibilidades marcadas como "elegível" em lote. Empresas já vinculadas serão ignoradas.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkVincularAcaoOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmBulkVincularAcao} disabled={!bulkTargetAcaoId || acoes.length === 0}>
+              Vincular
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -736,38 +740,21 @@ export default function Empresas() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPastaDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreatePasta}>Criar</Button>
+            <Button
+              onClick={() => {
+                if (!newPastaName.trim()) { toast.error("Nome obrigatório"); return; }
+                createPasta.mutate(newPastaName.trim());
+                setNewPastaName("");
+                setPastaDialogOpen(false);
+              }}
+            >
+              Criar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Manage folder items dialog */}
-      <Dialog open={managePastaOpen} onOpenChange={setManagePastaOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="font-heading">
-              Gerenciar Pasta: {pastas.find((p) => p.id === managePastaId)?.nome}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 overflow-y-auto max-h-[50vh]">
-            {empresas.map((e) => (
-              <label key={e.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer">
-                <Checkbox checked={selectedEmpresas.has(e.id)} onCheckedChange={() => toggleEmpresa(e.id)} />
-                <div>
-                  <div className="text-sm font-medium">{e.nome}</div>
-                  <div className="text-xs text-muted-foreground font-mono">{e.cnpj}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setManagePastaOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSavePastaItems}>Salvar ({selectedEmpresas.size} empresas)</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Elegibilidade dialog — opened on drop to ação */}
+      {/* Elegibilidade dialog (drag-drop) */}
       <Dialog open={elegDialogOpen} onOpenChange={setElegDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -775,8 +762,14 @@ export default function Empresas() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="p-3 rounded-lg bg-muted/50 space-y-1 text-sm">
-              <div><span className="text-muted-foreground">Empresa:</span> <span className="font-medium">{getEmpresaNome(elegEmpresaId)}</span></div>
-              <div><span className="text-muted-foreground">Ação:</span> <span className="font-medium">{acoes.find((a) => a.id === elegAcaoId)?.nome}</span></div>
+              <div>
+                <span className="text-muted-foreground">Empresa:</span>{" "}
+                <span className="font-medium">{rows.find((r) => r.id === elegEmpresaId)?.nome || "—"}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Ação:</span>{" "}
+                <span className="font-medium">{acoes.find((a) => a.id === elegAcaoId)?.nome}</span>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Elegível?</Label>
@@ -795,10 +788,23 @@ export default function Empresas() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setElegDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveElegibilidade}>Vincular</Button>
+            <Button
+              onClick={async () => {
+                await createEleg.mutateAsync({
+                  empresa_id: elegEmpresaId,
+                  acao_id: elegAcaoId,
+                  elegivel: elegElegivel === "true",
+                  justificativa: elegJustificativa || "",
+                });
+                setElegDialogOpen(false);
+              }}
+            >
+              Vincular
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+

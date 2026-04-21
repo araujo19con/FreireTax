@@ -4,8 +4,7 @@
 //
 // Body: { email, password, nome, role, telefone?, cargo? }
 
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "*")
   .split(",")
@@ -58,7 +57,7 @@ function validatePassword(pw: string): string | null {
   return null;
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const cors = corsFor(req);
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405, cors);
