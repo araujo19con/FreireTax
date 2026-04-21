@@ -44,6 +44,7 @@ type ItemDef = {
   url: string;
   icon: typeof LayoutDashboard;
   adminOnly?: boolean;
+  gestorOrAdmin?: boolean;                         // visível só pra gestor ou admin
   badgeKey?: "tarefas_atrasadas" | "agenda_hoje" | "prosp_parados";
 };
 
@@ -57,12 +58,22 @@ const mainItems: ItemDef[] = [
   { title: "Importação",        url: "/importacao",    icon: Upload },
 ];
 
+// Hub unificado: Semana + Tarefas + Agenda dentro de uma única tela com abas.
+// Equipe fica separado e visível só pra quem gerencia (admin/gestor).
 const workspaceItems: ItemDef[] = [
-  { title: "Minha Semana",    url: "/minha-semana",     icon: CalendarDays },
-  { title: "Minhas Tarefas",  url: "/minhas-tarefas",   icon: ClipboardList, badgeKey: "tarefas_atrasadas" },
-  { title: "Minha Agenda",    url: "/minha-agenda",     icon: Calendar,      badgeKey: "agenda_hoje" },
-  { title: "Equipe (Tarefas)", url: "/tarefas/equipe",  icon: UsersRound },
-  { title: "Templates",       url: "/tarefas/templates", icon: FileStack },
+  {
+    title: "Meu Espaço",
+    url: "/meu-espaco",
+    icon: CalendarDays,
+    // bucketzão de notificações: tarefas atrasadas tem prioridade visual
+    badgeKey: "tarefas_atrasadas",
+  },
+  {
+    title: "Equipe (Tarefas)",
+    url: "/tarefas/equipe",
+    icon: UsersRound,
+    gestorOrAdmin: true,
+  },
 ];
 
 const adminItems: ItemDef[] = [
@@ -81,7 +92,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
-  const { signOut, profile, user, isAdmin } = useAuth();
+  const { signOut, profile, user, isAdmin, canManageAll } = useAuth();
   const isActive = (path: string) =>
     path === "/" ? location.pathname === "/" : location.pathname.startsWith(path);
 
@@ -138,7 +149,12 @@ export function AppSidebar() {
     return () => { cancelled = true; clearInterval(id); };
   }, [user]);
 
-  const visibleAdminItems = adminItems.filter((item) => !item.adminOnly || isAdmin);
+  // Aplica visibilidade condicional por role
+  const applyVisibility = (item: ItemDef) =>
+    (!item.adminOnly || isAdmin) && (!item.gestorOrAdmin || canManageAll);
+
+  const visibleWorkspaceItems = workspaceItems.filter(applyVisibility);
+  const visibleAdminItems = adminItems.filter(applyVisibility);
 
   const renderItem = (item: ItemDef) => {
     const count = item.badgeKey ? counts[item.badgeKey] : 0;
@@ -224,7 +240,7 @@ export function AppSidebar() {
             Meu Espaço
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>{workspaceItems.map(renderItem)}</SidebarMenu>
+            <SidebarMenu>{visibleWorkspaceItems.map(renderItem)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 

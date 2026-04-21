@@ -25,6 +25,7 @@ const EquipeTarefas = lazy(() => import("./pages/tarefas/EquipeView"));
 const TemplatesTarefas = lazy(() => import("./pages/tarefas/TemplatesAdmin"));
 const MinhaAgenda = lazy(() => import("./pages/MinhaAgenda"));
 const MinhaSemana = lazy(() => import("./pages/MinhaSemana"));
+const MeuEspaco = lazy(() => import("./pages/MeuEspaco"));
 const Usuarios = lazy(() => import("./pages/Usuarios"));
 const AnaliseRFB = lazy(() => import("./pages/AnaliseRFB"));
 
@@ -114,6 +115,7 @@ function AppRoutes() {
               </RequireAdmin>
             }
           />
+          <Route path="/meu-espaco" element={<MeuEspaco />} />
           <Route path="/minhas-tarefas" element={<MinhasTarefas />} />
           <Route path="/tarefas/equipe" element={<EquipeTarefas />} />
           <Route path="/tarefas/templates" element={<TemplatesTarefas />} />

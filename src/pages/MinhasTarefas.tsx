@@ -52,7 +52,12 @@ function initials(nome: string) {
   return nome.split(" ").slice(0, 2).map((n) => n[0] ?? "").join("").toUpperCase() || "?";
 }
 
-export default function MinhasTarefas() {
+interface MinhasTarefasProps {
+  /** Quando renderizada dentro do hub Meu Espaço, esconde o PageHeader. */
+  embedded?: boolean;
+}
+
+export default function MinhasTarefas({ embedded = false }: MinhasTarefasProps = {}) {
   const { user, canManageAll } = useAuth();
   const [tarefas, setTarefas] = useState<TarefaWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,30 +192,39 @@ export default function MinhasTarefas() {
     return { text: format(d, "dd/MM", { locale: ptBR }), color: "text-muted-foreground" };
   };
 
+  const novaBtn = (
+    <Button onClick={openNew}>
+      <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Tarefa
+    </Button>
+  );
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title="Minhas Tarefas"
-        description="Kanban das tarefas atribuídas a você"
-        icon={<ClipboardList className="h-7 w-7" />}
-        actions={
-          <>
-            <Button asChild variant="outline">
-              <Link to="/tarefas/templates">
-                <FileText className="mr-2 h-4 w-4" aria-hidden="true" />Templates
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to="/tarefas/equipe">
-                <Users className="mr-2 h-4 w-4" aria-hidden="true" />Equipe
-              </Link>
-            </Button>
-            <Button onClick={openNew}>
-              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Tarefa
-            </Button>
-          </>
-        }
-      />
+    <div className={embedded ? "space-y-4" : "space-y-6 animate-fade-in"}>
+      {!embedded && (
+        <PageHeader
+          title="Minhas Tarefas"
+          description="Kanban das tarefas atribuídas a você"
+          icon={<ClipboardList className="h-7 w-7" />}
+          actions={
+            <>
+              <Button asChild variant="outline">
+                <Link to="/tarefas/templates">
+                  <FileText className="mr-2 h-4 w-4" aria-hidden="true" />Templates
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link to="/tarefas/equipe">
+                  <Users className="mr-2 h-4 w-4" aria-hidden="true" />Equipe
+                </Link>
+              </Button>
+              {novaBtn}
+            </>
+          }
+        />
+      )}
+      {embedded && (
+        <div className="flex items-center justify-end">{novaBtn}</div>
+      )}
 
       {/* Resumo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

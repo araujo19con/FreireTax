@@ -46,7 +46,12 @@ const statusLabel: Record<ReuniaoStatus, string> = {
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"] as const;
 
-export default function MinhaAgenda() {
+interface MinhaAgendaProps {
+  /** Quando renderizada dentro do hub Meu Espaço, esconde o PageHeader. */
+  embedded?: boolean;
+}
+
+export default function MinhaAgenda({ embedded = false }: MinhaAgendaProps = {}) {
   const { user, canManageAll } = useAuth();
   const [reunioes, setReunioes] = useState<ReuniaoView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,18 +155,25 @@ export default function MinhaAgenda() {
     );
   }
 
+  const agendarBtn = (
+    <Button onClick={openNew}>
+      <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Agendar Reunião
+    </Button>
+  );
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title="Minha Agenda"
-        description="Reuniões comerciais — convites por email automático"
-        icon={<Calendar className="h-7 w-7" />}
-        actions={
-          <Button onClick={openNew}>
-            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Agendar Reunião
-          </Button>
-        }
-      />
+    <div className={embedded ? "space-y-4" : "space-y-6 animate-fade-in"}>
+      {!embedded && (
+        <PageHeader
+          title="Minha Agenda"
+          description="Reuniões comerciais — convites por email automático"
+          icon={<Calendar className="h-7 w-7" />}
+          actions={agendarBtn}
+        />
+      )}
+      {embedded && (
+        <div className="flex items-center justify-end">{agendarBtn}</div>
+      )}
 
       {/* Resumo */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

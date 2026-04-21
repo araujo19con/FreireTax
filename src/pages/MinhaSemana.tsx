@@ -27,7 +27,12 @@ const prioColor: Record<string, string> = {
   baixa: "border-l-muted-foreground bg-muted/30",
 };
 
-export default function MinhaSemana() {
+interface MinhaSemanaProps {
+  /** Quando renderizada dentro do hub Meu Espaço, esconde o PageHeader e aplica layout mais compacto. */
+  embedded?: boolean;
+}
+
+export default function MinhaSemana({ embedded = false }: MinhaSemanaProps = {}) {
   const { user } = useAuth();
   const [weekOffset, setWeekOffset] = useState(0); // 0 = esta semana, -1 = anterior, +1 = próxima
   const [editingTarefa, setEditingTarefa] = useState<Tarefa | null>(null);
@@ -97,26 +102,33 @@ export default function MinhaSemana() {
   const totalSemana = tarefas.length + reunioes.length;
   const loading = tarefasQ.isLoading || reunioesQ.isLoading;
 
+  const weekNav = (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="icon" onClick={() => setWeekOffset((o) => o - 1)}>
+        <ChevronLeft className="h-4 w-4" />
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => setWeekOffset(0)}>
+        {weekOffset === 0 ? "Esta semana" : `Voltar pra hoje`}
+      </Button>
+      <Button variant="outline" size="icon" onClick={() => setWeekOffset((o) => o + 1)}>
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title="Minha Semana"
-        description="Tarefas com prazo e reuniões agendadas, dia a dia."
-        icon={<CalendarDays className="h-7 w-7" />}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={() => setWeekOffset((o) => o - 1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setWeekOffset(0)}>
-              {weekOffset === 0 ? "Esta semana" : `Voltar pra hoje`}
-            </Button>
-            <Button variant="outline" size="icon" onClick={() => setWeekOffset((o) => o + 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        }
-      />
+    <div className={embedded ? "space-y-4" : "space-y-6 animate-fade-in"}>
+      {!embedded && (
+        <PageHeader
+          title="Minha Semana"
+          description="Tarefas com prazo e reuniões agendadas, dia a dia."
+          icon={<CalendarDays className="h-7 w-7" />}
+          actions={weekNav}
+        />
+      )}
+      {embedded && (
+        <div className="flex items-center justify-end">{weekNav}</div>
+      )}
 
       <Card className="p-3 flex items-center justify-between gap-3 flex-wrap">
         <div>

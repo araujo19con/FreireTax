@@ -27,7 +27,12 @@ const PRIORIDADE_OPTS = [
   { value: "baixa", label: "Baixa", color: "bg-muted text-muted-foreground" },
 ];
 
-export default function TemplatesAdmin() {
+interface TemplatesAdminProps {
+  /** Quando embutido dentro de outra página (ex: aba do /admin), esconde o PageHeader. */
+  embedded?: boolean;
+}
+
+export default function TemplatesAdmin({ embedded = false }: TemplatesAdminProps = {}) {
   const templatesQ = useTarefasTemplates();
   const acoesQ = useAcoes();
   const createT = useCreateTemplate();
@@ -41,14 +46,26 @@ export default function TemplatesAdmin() {
 
   const openNew = () => { setEditing(null); setDialogOpen(true); };
 
+  const novoBtn = <Button onClick={openNew}><Plus className="mr-1.5 h-4 w-4" />Novo template</Button>;
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title="Templates de Tarefa"
-        description="Crie modelos reutilizáveis com subtarefas, prioridade e prazo relativo. Reduz retrabalho em workflows recorrentes (ex: análise Tema 985)."
-        icon={<FileText className="h-7 w-7" />}
-        actions={<Button onClick={openNew}><Plus className="mr-1.5 h-4 w-4" />Novo template</Button>}
-      />
+    <div className={embedded ? "space-y-4" : "space-y-6 animate-fade-in"}>
+      {!embedded && (
+        <PageHeader
+          title="Templates de Tarefa"
+          description="Crie modelos reutilizáveis com subtarefas, prioridade e prazo relativo. Reduz retrabalho em workflows recorrentes (ex: análise Tema 985)."
+          icon={<FileText className="h-7 w-7" />}
+          actions={novoBtn}
+        />
+      )}
+      {embedded && (
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-sm text-muted-foreground">
+            Modelos reutilizáveis de tarefa (título, prioridade, subtarefas, prazo relativo).
+          </p>
+          {novoBtn}
+        </div>
+      )}
 
       {templatesQ.isLoading ? (
         <Card className="p-8 text-center text-sm text-muted-foreground">Carregando templates...</Card>
