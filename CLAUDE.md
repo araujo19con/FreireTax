@@ -33,6 +33,12 @@ bun run lint     # eslint
 
 Aliases: `@/` → `src/`.
 
+## Contexto adicional sob demanda
+
+- **Schema Supabase completo** → `.claude/rules/supabase-schema.md` (ativa automaticamente em arquivos `src/**` — evita abrir `types.ts`)
+- **Mapa de arquitetura** (rotas, hooks, componentes, fluxos) → `.claude/ARCHITECTURE_MAP.md`
+- **Regra de leitura de arquivos grandes** → `.claude/rules/large-files.md`
+
 ## Schema Supabase (tabelas principais)
 
 - `empresas` — cadastro de clientes/prospects enriquecido com dados RFB (~25 campos: porte, situacao_cadastral, uf, cnae_principal, capital_social, opcao_simples, opcao_mei, receita_atualizada_em, etc.)
