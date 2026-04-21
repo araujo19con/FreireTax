@@ -4,17 +4,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Pagination, PaginationContent, PaginationItem, PaginationLink,
   PaginationNext, PaginationPrevious,
 } from "@/components/ui/pagination";
-import { Search, CheckCircle2, XCircle, Circle, AlertCircle, Gavel, Building2 } from "lucide-react";
+import {
+  Search, CheckCircle2, XCircle, Circle, AlertCircle, Gavel, Building2,
+  X, Play,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Acao } from "@/hooks/useAcoes";
+import { useEmpresas, type EmpresaFilters } from "@/hooks/useEmpresas";
 import { formatCompactCurrency, formatCNPJ } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
+import { BulkQualificationDialog } from "./BulkQualificationDialog";
 
 interface EmpresaRow { id: string; nome: string; cnpj: string }
 interface ElegRow {
@@ -37,26 +44,19 @@ interface MatrizViewProps {
 
 export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<EmpresaFilters>({});
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
-  // Busca empresas paginadas + todas as elegibilidades dessas empresas
-  const empresasQ = useQuery({
-    queryKey: ["matriz-empresas", search, page],
-    queryFn: async () => {
-      const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      let q = supabase.from("empresas").select("id, nome, cnpj", { count: "exact" }).order("nome");
-      if (search.trim()) {
-        q = q.or(`nome.ilike.%${search.trim()}%,cnpj.ilike.%${search.trim()}%`);
-      }
-      const { data, count, error } = await q.range(from, to);
-      if (error) throw error;
-      return { rows: (data || []) as EmpresaRow[], total: count ?? 0 };
-    },
-  });
+  // Reusa o hook canônico — mesmos filtros server-side da aba Empresas
+  const empresasQ = useEmpresas({ search, filters, sort: "nome_asc", page, pageSize });
+  const rows = (empresasQ.data?.rows ?? []) as EmpresaRow[];
+  const total = empresasQ.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const empresaIds = useMemo(() => (empresasQ.data?.rows ?? []).map((e) => e.id), [empresasQ.data]);
+  const empresaIds = useMemo(() => rows.map((e) => e.id), [rows]);
 
   const elegsQ = useQuery({
     queryKey: ["matriz-elegs", empresaIds.join(",")],
@@ -73,7 +73,7 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
   });
 
   const cellMap = useMemo(() => {
-    const map = new Map<string, Cell>(); // key = empresa_id|acao_id
+    const map = new Map<string, Cell>();
     for (const el of elegsQ.data ?? []) {
       const key = `${el.empresa_id}|${el.acao_id}`;
       const status = (el.status_qualificacao || "").toLowerCase();
@@ -90,23 +90,48 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
     return map;
   }, [elegsQ.data]);
 
-  const rows = empresasQ.data?.rows ?? [];
-  const total = empresasQ.data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const someChecked = rows.some((r) => selected.has(r.id));
+
+  const toggleAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allChecked) rows.forEach((r) => next.delete(r.id));
+      else rows.forEach((r) => next.add(r.id));
+      return next;
+    });
+  };
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelected(new Set());
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="space-y-4">
+      <div className="space-y-3">
+        {/* Toolbar */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[240px] max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar empresa por nome ou CNPJ..."
+              placeholder="Buscar nome, CNPJ, razão social..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="pl-9"
             />
           </div>
+
+          <EmpresaFilterPopover
+            filters={filters}
+            onChange={(f) => { setFilters(f); setPage(1); }}
+          />
+
           <div className="flex items-center gap-3 text-[11px] text-muted-foreground ml-auto">
             <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-success/20 border border-success/40" />Elegível</span>
             <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-destructive/20 border border-destructive/40" />Não</span>
@@ -114,6 +139,25 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
             <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-muted border border-border" />Sem qualificação</span>
           </div>
         </div>
+
+        <EmpresaFilterChips filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 flex-wrap">
+            <Badge variant="secondary" className="shrink-0">
+              {selected.size} selecionada{selected.size > 1 ? "s" : ""}
+            </Badge>
+            <div className="h-4 w-px bg-border" />
+            <Button size="sm" onClick={() => setBulkOpen(true)} className="h-8" disabled={acoes.length === 0}>
+              <Play className="mr-1.5 h-3.5 w-3.5" />Qualificar em lote
+            </Button>
+            <div className="flex-1" />
+            <Button variant="ghost" size="sm" onClick={clearSelection} className="h-8">
+              <X className="mr-1.5 h-3.5 w-3.5" />Limpar seleção
+            </Button>
+          </div>
+        )}
 
         {acoes.length === 0 ? (
           <Card className="p-12 text-center">
@@ -132,7 +176,14 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
               <table className="w-full text-sm border-collapse">
                 <thead className="bg-muted/30">
                   <tr>
-                    <th className="sticky left-0 z-10 bg-muted/30 text-left py-2 px-3 font-medium text-xs uppercase tracking-wider text-muted-foreground min-w-[220px]">
+                    <th className="sticky left-0 z-10 bg-muted/30 w-8 px-2">
+                      <Checkbox
+                        checked={allChecked ? true : someChecked ? "indeterminate" : false}
+                        onCheckedChange={toggleAll}
+                        aria-label="Selecionar todas as empresas da página"
+                      />
+                    </th>
+                    <th className="sticky left-8 z-10 bg-muted/30 text-left py-2 px-3 font-medium text-xs uppercase tracking-wider text-muted-foreground min-w-[220px]">
                       Empresa
                     </th>
                     {acoes.map((a) => (
@@ -151,41 +202,56 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                   {empresasQ.isLoading && rows.length === 0 &&
                     Array.from({ length: 8 }).map((_, i) => (
                       <tr key={`sk-${i}`} className="border-t border-border">
-                        <td colSpan={acoes.length + 1} className="p-2">
+                        <td colSpan={acoes.length + 2} className="p-2">
                           <Skeleton className="h-8 w-full" />
                         </td>
                       </tr>
                     ))}
 
-                  {rows.map((emp) => (
-                    <tr key={emp.id} className="border-t border-border hover:bg-muted/20 transition-colors">
-                      <td className="sticky left-0 z-10 bg-background hover:bg-muted/20 py-2 px-3">
-                        <div className="flex flex-col min-w-0">
-                          <span className="text-sm font-medium truncate">{emp.nome}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono">{formatCNPJ(emp.cnpj)}</span>
-                        </div>
-                      </td>
-                      {acoes.map((a) => {
-                        const cell = cellMap.get(`${emp.id}|${a.id}`) ?? { state: "none" as CellState };
-                        return (
-                          <td key={a.id} className="p-1 text-center">
-                            <CellButton
-                              cell={cell}
-                              onClick={() => onOpenWizard(emp, a, cell.elegibilidade_id)}
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                  {rows.map((emp) => {
+                    const isSel = selected.has(emp.id);
+                    return (
+                      <tr key={emp.id} className={cn(
+                        "border-t border-border hover:bg-muted/20 transition-colors",
+                        isSel && "bg-primary/5"
+                      )}>
+                        <td className="sticky left-0 z-10 bg-background w-8 px-2 align-middle">
+                          <Checkbox
+                            checked={isSel}
+                            onCheckedChange={() => toggleOne(emp.id)}
+                            aria-label={`Selecionar ${emp.nome}`}
+                          />
+                        </td>
+                        <td className="sticky left-8 z-10 bg-background py-2 px-3">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-sm font-medium truncate">{emp.nome}</span>
+                            <span className="text-[10px] text-muted-foreground font-mono">{formatCNPJ(emp.cnpj)}</span>
+                          </div>
+                        </td>
+                        {acoes.map((a) => {
+                          const cell = cellMap.get(`${emp.id}|${a.id}`) ?? { state: "none" as CellState };
+                          return (
+                            <td key={a.id} className="p-1 text-center">
+                              <CellButton
+                                cell={cell}
+                                onClick={() => onOpenWizard(emp, a, cell.elegibilidade_id)}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
-            {/* Footer */}
             <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-t border-border">
               <span className="text-xs text-muted-foreground">
                 <strong className="text-foreground tabular-nums">{total}</strong> empresa{total === 1 ? "" : "s"} × <strong className="text-foreground tabular-nums">{acoes.length}</strong> aç{acoes.length === 1 ? "ão" : "ões"}
+                {selected.size > 0 && (
+                  <span className="ml-2">· <strong className="text-primary">{selected.size}</strong> selecionada{selected.size > 1 ? "s" : ""}</span>
+                )}
               </span>
               {totalPages > 1 && (
                 <Pagination>
@@ -209,6 +275,14 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
               )}
             </div>
           </Card>
+        )}
+
+        {bulkOpen && (
+          <BulkQualificationDialog
+            open={bulkOpen}
+            onClose={() => { setBulkOpen(false); clearSelection(); }}
+            empresaIds={Array.from(selected)}
+          />
         )}
       </div>
     </TooltipProvider>

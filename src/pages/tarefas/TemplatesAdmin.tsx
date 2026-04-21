@@ -11,13 +11,14 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, Pencil, GripVertical, FileText, AlertCircle, X } from "lucide-react";
+import { Plus, Trash2, Pencil, GripVertical, FileText, AlertCircle, X, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useAcoes } from "@/hooks/useAcoes";
 import {
   useTarefasTemplates, useCreateTemplate, useDeleteTemplate,
   type TarefaTemplate, type TemplateInput,
 } from "@/hooks/useTarefasExtras";
+import { SEED_TEMPLATES } from "@/lib/seedTemplates";
 import { toast } from "sonner";
 
 const PRIORIDADE_OPTS = [
@@ -46,7 +47,37 @@ export default function TemplatesAdmin({ embedded = false }: TemplatesAdminProps
 
   const openNew = () => { setEditing(null); setDialogOpen(true); };
 
-  const novoBtn = <Button onClick={openNew}><Plus className="mr-1.5 h-4 w-4" />Novo template</Button>;
+  const seedExisting = new Set(templates.map((t) => (t.nome || "").trim().toLowerCase()));
+  const seedFaltando = SEED_TEMPLATES.filter((t) => !seedExisting.has(t.nome.trim().toLowerCase()));
+
+  const handleSeed = async () => {
+    if (seedFaltando.length === 0) {
+      toast.info("Todos os exemplos já estão cadastrados.");
+      return;
+    }
+    let ok = 0;
+    for (const t of seedFaltando) {
+      try {
+        await createT.mutateAsync(t);
+        ok++;
+      } catch {
+        // toast já é disparado no hook
+      }
+    }
+    if (ok > 0) toast.success(`${ok} template${ok === 1 ? "" : "s"} de exemplo carregado${ok === 1 ? "" : "s"}`);
+  };
+
+  const novoBtn = (
+    <div className="flex gap-2">
+      {seedFaltando.length > 0 && (
+        <Button variant="outline" onClick={handleSeed} disabled={createT.isPending}>
+          <Sparkles className="mr-1.5 h-4 w-4" />
+          Carregar exemplos ({seedFaltando.length})
+        </Button>
+      )}
+      <Button onClick={openNew}><Plus className="mr-1.5 h-4 w-4" />Novo template</Button>
+    </div>
+  );
 
   return (
     <div className={embedded ? "space-y-4" : "space-y-6 animate-fade-in"}>
@@ -76,9 +107,14 @@ export default function TemplatesAdmin({ embedded = false }: TemplatesAdminProps
           <p className="text-xs text-muted-foreground mt-1">
             Templates economizam tempo: um clique cria tarefa com título, descrição, prioridade e subtarefas pré-definidas.
           </p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={openNew}>
-            Criar primeiro template
-          </Button>
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <Button variant="default" size="sm" onClick={handleSeed} disabled={createT.isPending}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />Carregar exemplos
+            </Button>
+            <Button variant="outline" size="sm" onClick={openNew}>
+              Criar do zero
+            </Button>
+          </div>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
