@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,12 +59,13 @@ interface TarefaDialogProps {
   defaultProspeccaoId?: string;
   defaultAcaoId?: string;
   onSaved?: () => void;
+  onDeleted?: () => void;
 }
 
 export function TarefaDialog({
   open, onOpenChange, tarefa,
   defaultAssignedTo, defaultEmpresaId, defaultProspeccaoId, defaultAcaoId,
-  onSaved,
+  onSaved, onDeleted,
 }: TarefaDialogProps) {
   const { user, profile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -234,6 +239,29 @@ export function TarefaDialog({
       onSaved?.();
       onOpenChange(false);
     }
+  };
+
+  const [deleting, setDeleting] = useState(false);
+  const handleDelete = async () => {
+    if (!tarefaId) return;
+    setDeleting(true);
+    const tituloAtual = titulo;
+    const { error } = await supabase.from("tarefas").delete().eq("id", tarefaId);
+    setDeleting(false);
+    if (error) {
+      toast.error("Erro ao excluir tarefa: " + error.message);
+      return;
+    }
+    await logAudit({
+      tabela: "tarefas",
+      acao: "Excluiu tarefa",
+      registro_id: tarefaId,
+      detalhes: { titulo: tituloAtual },
+    });
+    toast.success("Tarefa excluída");
+    onDeleted?.();
+    onSaved?.();
+    onOpenChange(false);
   };
 
   const addSubtarefa = async () => {
@@ -582,9 +610,40 @@ export function TarefaDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? "Salvando..." : tarefaId ? "Salvar" : "Criar tarefa"}</Button>
+        <DialogFooter className="sm:justify-between">
+          <div>
+            {tarefaId && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30" disabled={deleting || saving}>
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    {deleting ? "Excluindo..." : "Excluir"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Excluir tarefa "{titulo}"?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Esta ação é irreversível. Subtarefas, comentários e anexos vinculados também serão removidos.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Sim, excluir
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Fechar</Button>
+            <Button onClick={handleSave} disabled={saving || deleting}>{saving ? "Salvando..." : tarefaId ? "Salvar" : "Criar tarefa"}</Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
