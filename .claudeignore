@@ -1,0 +1,33 @@
+# Build artifacts
+dist/
+build/
+.vite/
+
+# Dependencies
+node_modules/
+
+# Lockfiles (3 convivem no repo — todos ruído em Grep/Glob)
+bun.lockb
+bun.lock
+package-lock.json
+yarn.lock
+
+# VSCode / IDE
+.vscode/chrome-profile/
+.vscode/edge-profile/
+.idea/
+
+# Supabase temp/branches
+supabase/.temp/
+supabase/.branches/
+
+# Logs e caches
+*.log
+.turbo/
+coverage/
+
+# Autogerado — NÃO leia inteiro. Use Grep pra tipos específicos.
+src/integrations/supabase/types.ts
+
+# Docs antigas que não agregam contexto
+README.md
