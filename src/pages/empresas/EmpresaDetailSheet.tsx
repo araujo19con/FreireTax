@@ -242,6 +242,13 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                     <Field label="Data abertura" value={formatDate(empresa.data_abertura)} />
                     <Field label="Simples Nacional" value={empresa.opcao_simples ? "Sim" : empresa.opcao_simples === false ? "Não" : "—"} />
                   </div>
+                  {/* Funcionários + Faturamento (campos manuais/importáveis) */}
+                  {(empresa.quantidade_funcionarios != null || empresa.faturamento_anual != null) && (
+                    <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 gap-x-4 gap-y-3">
+                      <Field label="Funcionários" value={empresa.quantidade_funcionarios?.toString() ?? null} />
+                      <Field label="Faturamento anual" value={formatCurrency(empresa.faturamento_anual)} />
+                    </div>
+                  )}
                   {empresa.obs && (
                     <div className="mt-4 pt-3 border-t border-border">
                       <Label>Observações</Label>
@@ -249,6 +256,29 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                     </div>
                   )}
                 </Card>
+
+                {/* Campos personalizados (metadados) */}
+                {empresa.metadados && Object.keys(empresa.metadados).length > 0 && (
+                  <Card className="p-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                      <FileText className="h-3.5 w-3.5" /> Campos personalizados
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                      {Object.entries(empresa.metadados).map(([k, v]) => (
+                        <Field key={k} label={k} value={v} />
+                      ))}
+                    </div>
+                  </Card>
+                )}
+
+                {/* Botão pra editar (atalho — também tem o botão no topo) */}
+                <Button
+                  variant="outline" size="sm" className="w-full"
+                  onClick={() => onEdit(empresa)}
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                  Editar todos os campos / adicionar campos personalizados
+                </Button>
 
                 <Card className="p-4">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Status RFB</h3>

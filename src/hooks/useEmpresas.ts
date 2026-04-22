@@ -83,6 +83,8 @@ export interface Empresa {
   data_opcao_simples: string | null;
   responsavel_id: string | null;
   user_id: string;
+  /** Campos personalizados definidos pelo usuário ({ rótulo: valor }) */
+  metadados: Record<string, string> | null;
 }
 
 // Supabase's PostgrestFilterBuilder typings são verbosos; usamos um tipo relaxado local

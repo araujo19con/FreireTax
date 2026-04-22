@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, CheckCircle2, MapPin, Users, FileText, Calendar, Building2, Loader2 } from "lucide-react";
+import { Plus, Search, CheckCircle2, MapPin, Users, FileText, Calendar, Building2, Loader2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCNPJ as validateCNPJReal, validateCNPJMessage, maskCNPJ } from "@/lib/cnpj";
@@ -47,6 +47,8 @@ export interface EmpresaFormData {
   // Campos manuais (importáveis via planilha)
   quantidade_funcionarios?: number | null;
   faturamento_anual?: number | null;
+  /** Campos personalizados livres ({ rótulo: valor }) */
+  metadados?: Record<string, string> | null;
 }
 
 interface EmpresaDialogProps {
@@ -213,93 +215,18 @@ export function EmpresaDialog({
             </p>
           </div>
 
-          {/* Preview dos dados da Receita (aparece após busca ou edição) */}
-          {(rfbPreview || form.receita_atualizada_em) && (
-            <div className="p-3 rounded-md border border-success/30 bg-success/5 space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="text-xs font-semibold flex items-center gap-1.5 text-success">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Dados da Receita Federal
-                </p>
-                {form.situacao_cadastral && (
-                  <Badge className={`text-[10px] ${situacaoColor(form.situacao_cadastral)}`} variant="secondary">
-                    {form.situacao_cadastral}
-                  </Badge>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                {form.razao_social && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Razão social:</span>
-                    <p className="font-medium">{form.razao_social}</p>
-                  </div>
-                )}
-                {form.nome_fantasia && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground">Nome fantasia:</span>
-                    <p>{form.nome_fantasia}</p>
-                  </div>
-                )}
-                {form.porte && (
-                  <div>
-                    <span className="text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" />Porte:</span>
-                    <p className="font-medium">{form.porte}</p>
-                  </div>
-                )}
-                {form.capital_social != null && (
-                  <div>
-                    <span className="text-muted-foreground">Capital social:</span>
-                    <p className="font-medium tabular-nums">{formatBRL(form.capital_social)}</p>
-                  </div>
-                )}
-                {form.data_abertura && (
-                  <div>
-                    <span className="text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" />Abertura:</span>
-                    <p>{new Date(form.data_abertura + "T00:00:00").toLocaleDateString("pt-BR")}</p>
-                  </div>
-                )}
-                {(form.opcao_simples || form.opcao_mei) && (
-                  <div>
-                    <span className="text-muted-foreground">Regime:</span>
-                    <p className="font-medium">
-                      {form.opcao_mei ? "MEI" : form.opcao_simples ? "Simples Nacional" : "Lucro presumido/real"}
-                    </p>
-                  </div>
-                )}
-                {form.cnae_principal_desc && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground flex items-center gap-1"><FileText className="h-3 w-3" />CNAE principal:</span>
-                    <p className="line-clamp-2">{form.cnae_principal} — {form.cnae_principal_desc}</p>
-                  </div>
-                )}
-                {(form.logradouro || form.municipio) && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground flex items-center gap-1"><MapPin className="h-3 w-3" />Endereço:</span>
-                    <p className="line-clamp-2">
-                      {[form.logradouro, form.numero_endereco, form.complemento, form.bairro].filter(Boolean).join(", ")}
-                      {form.municipio && ` — ${form.municipio}/${form.uf}`}
-                      {form.cep && ` — CEP ${form.cep}`}
-                    </p>
-                  </div>
-                )}
-                {form.qsa && form.qsa.length > 0 && (
-                  <div className="col-span-2">
-                    <span className="text-muted-foreground flex items-center gap-1"><Users className="h-3 w-3" />Quadro societário ({form.qsa.length}):</span>
-                    <div className="mt-1 space-y-0.5">
-                      {form.qsa.slice(0, 3).map((s: any, i: number) => (
-                        <p key={i} className="text-[10px]">
-                          <span className="font-medium">{s.nome}</span>
-                          {s.qualificacao && <span className="text-muted-foreground"> — {s.qualificacao}</span>}
-                        </p>
-                      ))}
-                      {form.qsa.length > 3 && (
-                        <p className="text-[10px] text-muted-foreground">+ {form.qsa.length - 3} outros</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+          {/* Aviso de origem RFB (quando aplicável) */}
+          {form.receita_atualizada_em && (
+            <div className="px-3 py-2 rounded-md border border-success/30 bg-success/5 flex items-center justify-between gap-2 text-[11px]">
+              <span className="flex items-center gap-1.5 text-success">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Dados RFB carregados — todos os campos são editáveis
+              </span>
+              {form.situacao_cadastral && (
+                <Badge className={`text-[10px] ${situacaoColor(form.situacao_cadastral)}`} variant="secondary">
+                  {form.situacao_cadastral}
+                </Badge>
+              )}
             </div>
           )}
 
@@ -363,6 +290,209 @@ export function EmpresaDialog({
             </div>
           </div>
 
+          {/* ============================================================
+              IDENTIFICAÇÃO (RFB) — todos editáveis
+          ============================================================ */}
+          <Section title="Identificação">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5 col-span-2">
+                <Label htmlFor="razao_social">Razão social</Label>
+                <Input
+                  id="razao_social"
+                  value={form.razao_social ?? ""}
+                  onChange={(e) => setForm({ ...form, razao_social: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label htmlFor="nome_fantasia">Nome fantasia</Label>
+                <Input
+                  id="nome_fantasia"
+                  value={form.nome_fantasia ?? ""}
+                  onChange={(e) => setForm({ ...form, nome_fantasia: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="natureza">Natureza jurídica</Label>
+                <Input
+                  id="natureza"
+                  value={form.natureza_juridica ?? ""}
+                  onChange={(e) => setForm({ ...form, natureza_juridica: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="data_abertura">Data de abertura</Label>
+                <Input
+                  id="data_abertura"
+                  type="date"
+                  value={form.data_abertura ?? ""}
+                  onChange={(e) => setForm({ ...form, data_abertura: e.target.value || null })}
+                />
+              </div>
+            </div>
+          </Section>
+
+          {/* ============================================================
+              FISCAL / RFB — todos editáveis
+          ============================================================ */}
+          <Section title="Situação fiscal">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Situação cadastral</Label>
+                <Select
+                  value={form.situacao_cadastral ?? "_none"}
+                  onValueChange={(v) => setForm({ ...form, situacao_cadastral: v === "_none" ? null : v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— não informado —</SelectItem>
+                    <SelectItem value="ATIVA">ATIVA</SelectItem>
+                    <SelectItem value="SUSPENSA">SUSPENSA</SelectItem>
+                    <SelectItem value="INAPTA">INAPTA</SelectItem>
+                    <SelectItem value="BAIXADA">BAIXADA</SelectItem>
+                    <SelectItem value="NULA">NULA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Porte</Label>
+                <Select
+                  value={form.porte ?? "_none"}
+                  onValueChange={(v) => setForm({ ...form, porte: v === "_none" ? null : v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— não informado —</SelectItem>
+                    <SelectItem value="MEI">MEI</SelectItem>
+                    <SelectItem value="ME">ME</SelectItem>
+                    <SelectItem value="EPP">EPP</SelectItem>
+                    <SelectItem value="DEMAIS">DEMAIS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Data da situação</Label>
+                <Input
+                  type="date"
+                  value={form.situacao_cadastral_data ?? ""}
+                  onChange={(e) => setForm({ ...form, situacao_cadastral_data: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Motivo da situação</Label>
+                <Input
+                  value={form.motivo_situacao ?? ""}
+                  onChange={(e) => setForm({ ...form, motivo_situacao: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Capital social (R$)</Label>
+                <Input
+                  type="number" inputMode="decimal" min={0} step="0.01"
+                  value={form.capital_social ?? ""}
+                  onChange={(e) => setForm({ ...form, capital_social: e.target.value === "" ? null : Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Regime tributário</Label>
+                <Select
+                  value={form.opcao_mei ? "mei" : form.opcao_simples ? "simples" : form.opcao_simples === false ? "presumido" : "_none"}
+                  onValueChange={(v) => {
+                    if (v === "_none") setForm({ ...form, opcao_simples: null, opcao_mei: null });
+                    else if (v === "mei") setForm({ ...form, opcao_mei: true, opcao_simples: true });
+                    else if (v === "simples") setForm({ ...form, opcao_simples: true, opcao_mei: false });
+                    else setForm({ ...form, opcao_simples: false, opcao_mei: false });
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— não informado —</SelectItem>
+                    <SelectItem value="mei">MEI</SelectItem>
+                    <SelectItem value="simples">Simples Nacional</SelectItem>
+                    <SelectItem value="presumido">Presumido / Real</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>CNAE principal (código)</Label>
+                <Input
+                  placeholder="Ex: 6920-6/01"
+                  value={form.cnae_principal ?? ""}
+                  onChange={(e) => setForm({ ...form, cnae_principal: e.target.value || null })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Descrição CNAE</Label>
+                <Input
+                  value={form.cnae_principal_desc ?? ""}
+                  onChange={(e) => setForm({ ...form, cnae_principal_desc: e.target.value || null })}
+                />
+              </div>
+            </div>
+          </Section>
+
+          {/* ============================================================
+              ENDEREÇO
+          ============================================================ */}
+          <Section title="Endereço">
+            <div className="grid grid-cols-6 gap-3">
+              <div className="space-y-1.5 col-span-4">
+                <Label>Logradouro</Label>
+                <Input value={form.logradouro ?? ""} onChange={(e) => setForm({ ...form, logradouro: e.target.value || null })} />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label>Número</Label>
+                <Input value={form.numero_endereco ?? ""} onChange={(e) => setForm({ ...form, numero_endereco: e.target.value || null })} />
+              </div>
+              <div className="space-y-1.5 col-span-3">
+                <Label>Complemento</Label>
+                <Input value={form.complemento ?? ""} onChange={(e) => setForm({ ...form, complemento: e.target.value || null })} />
+              </div>
+              <div className="space-y-1.5 col-span-3">
+                <Label>Bairro</Label>
+                <Input value={form.bairro ?? ""} onChange={(e) => setForm({ ...form, bairro: e.target.value || null })} />
+              </div>
+              <div className="space-y-1.5 col-span-3">
+                <Label>Município</Label>
+                <Input value={form.municipio ?? ""} onChange={(e) => setForm({ ...form, municipio: e.target.value || null })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>UF</Label>
+                <Input maxLength={2} className="uppercase" value={form.uf ?? ""} onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase().slice(0, 2) || null })} />
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <Label>CEP</Label>
+                <Input value={form.cep ?? ""} onChange={(e) => setForm({ ...form, cep: e.target.value || null })} />
+              </div>
+            </div>
+          </Section>
+
+          {/* ============================================================
+              CONTATO
+          ============================================================ */}
+          <Section title="Contato">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Telefone</Label>
+                <Input value={form.telefone_receita ?? ""} onChange={(e) => setForm({ ...form, telefone_receita: e.target.value || null })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>E-mail</Label>
+                <Input type="email" value={form.email_receita ?? ""} onChange={(e) => setForm({ ...form, email_receita: e.target.value || null })} />
+              </div>
+            </div>
+          </Section>
+
+          {/* ============================================================
+              CAMPOS PERSONALIZADOS (metadados jsonb)
+          ============================================================ */}
+          <CamposPersonalizados
+            metadados={form.metadados ?? {}}
+            onChange={(m) => setForm({ ...form, metadados: m })}
+          />
+
+          {/* ============================================================
+              OBSERVAÇÕES
+          ============================================================ */}
           <div className="space-y-2">
             <Label htmlFor="obs">Observações internas</Label>
             <Textarea
@@ -374,7 +504,7 @@ export function EmpresaDialog({
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2 pt-2 border-t border-border sticky bottom-0 bg-background py-3 -mx-6 px-6 -mb-6">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
             <Button type="submit">Salvar</Button>
           </div>
@@ -383,3 +513,101 @@ export function EmpresaDialog({
     </Dialog>
   );
 }
+
+// =========================================================================
+// Seção com título (agrupa campos relacionados no form)
+// =========================================================================
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3 pt-3 border-t border-border">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+// =========================================================================
+// Editor de campos personalizados (metadados jsonb)
+// =========================================================================
+interface CamposPersonalizadosProps {
+  metadados: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}
+
+function CamposPersonalizados({ metadados, onChange }: CamposPersonalizadosProps) {
+  // Trabalha com lista de pares pra preservar ordem ao editar chaves
+  const entries = Object.entries(metadados);
+
+  const setPair = (oldKey: string, newKey: string, newVal: string) => {
+    const next: Record<string, string> = {};
+    for (const [k, v] of entries) {
+      if (k === oldKey) {
+        if (newKey.trim()) next[newKey.trim()] = newVal;
+      } else {
+        next[k] = v;
+      }
+    }
+    onChange(next);
+  };
+
+  const removePair = (key: string) => {
+    const next = { ...metadados };
+    delete next[key];
+    onChange(next);
+  };
+
+  const addPair = () => {
+    // Gera chave única "campo 1", "campo 2", etc.
+    let base = "Novo campo";
+    let i = 1;
+    let key = base;
+    while (key in metadados) {
+      key = `${base} ${i++}`;
+    }
+    onChange({ ...metadados, [key]: "" });
+  };
+
+  return (
+    <Section title="Campos personalizados">
+      <p className="text-[11px] text-muted-foreground -mt-1">
+        Adicione campos livres (ex: "Indicado por", "Código interno", "Tags").
+        Aparecem no detalhe da empresa e são pesquisáveis.
+      </p>
+      {entries.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic py-2">Nenhum campo personalizado ainda.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {entries.map(([key, value]) => (
+            <div key={key} className="flex items-center gap-2">
+              <Input
+                placeholder="Rótulo"
+                value={key}
+                onChange={(e) => setPair(key, e.target.value, value)}
+                className="w-1/3"
+              />
+              <Input
+                placeholder="Valor"
+                value={value}
+                onChange={(e) => setPair(key, key, e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive"
+                onClick={() => removePair(key)}
+                aria-label={`Remover ${key}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <Button type="button" variant="outline" size="sm" onClick={addPair}>
+        <Plus className="mr-1.5 h-3.5 w-3.5" />Adicionar campo
+      </Button>
+    </Section>
+  );
+}
+
+// Suprime warning de import não-usado quando ícones ficam só em futuros pontos
+void X;
