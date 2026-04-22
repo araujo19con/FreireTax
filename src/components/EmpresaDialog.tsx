@@ -49,6 +49,8 @@ export interface EmpresaFormData {
   faturamento_anual?: number | null;
   /** Campos personalizados livres ({ rótulo: valor }) */
   metadados?: Record<string, string> | null;
+  /** Regime tributário (simples/mei/lucro_presumido/lucro_real/imune_isento) */
+  regime_tributario?: string | null;
 }
 
 interface EmpresaDialogProps {
@@ -395,20 +397,28 @@ export function EmpresaDialog({
               <div className="space-y-1.5">
                 <Label>Regime tributário</Label>
                 <Select
-                  value={form.opcao_mei ? "mei" : form.opcao_simples ? "simples" : form.opcao_simples === false ? "presumido" : "_none"}
+                  value={form.regime_tributario ?? "_none"}
                   onValueChange={(v) => {
-                    if (v === "_none") setForm({ ...form, opcao_simples: null, opcao_mei: null });
-                    else if (v === "mei") setForm({ ...form, opcao_mei: true, opcao_simples: true });
-                    else if (v === "simples") setForm({ ...form, opcao_simples: true, opcao_mei: false });
-                    else setForm({ ...form, opcao_simples: false, opcao_mei: false });
+                    const reg = v === "_none" ? null : v;
+                    // Atualiza derivados RFB pra manter consistência (filtros antigos)
+                    const opcao_simples =
+                      reg === "simples" || reg === "mei" ? true :
+                      reg === "lucro_presumido" || reg === "lucro_real" || reg === "imune_isento" ? false :
+                      form.opcao_simples ?? null;
+                    const opcao_mei = reg === "mei" ? true :
+                      reg && reg !== "mei" ? false :
+                      form.opcao_mei ?? null;
+                    setForm({ ...form, regime_tributario: reg, opcao_simples, opcao_mei });
                   }}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">— não informado —</SelectItem>
-                    <SelectItem value="mei">MEI</SelectItem>
                     <SelectItem value="simples">Simples Nacional</SelectItem>
-                    <SelectItem value="presumido">Presumido / Real</SelectItem>
+                    <SelectItem value="mei">MEI</SelectItem>
+                    <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                    <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                    <SelectItem value="imune_isento">Imune / Isento</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

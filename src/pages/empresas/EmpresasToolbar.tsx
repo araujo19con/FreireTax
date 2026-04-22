@@ -18,6 +18,7 @@ import {
   Download, FolderPlus, Gavel, Trash2, ChevronDown, FileSpreadsheet, FileText,
 } from "lucide-react";
 import type { EmpresaFilters, EmpresaSort, EmpresaStatus, EmpresaPorte, EmpresaSituacao } from "@/hooks/useEmpresas";
+import { REGIMES_TRIBUTARIOS } from "@/lib/regimeTributario";
 
 export type EmpresasView = "table" | "cards" | "kanban";
 
@@ -79,6 +80,7 @@ function activeFiltersCount(f: EmpresaFilters): number {
   if (f.capitalMin != null || f.capitalMax != null) n++;
   if (f.funcionariosMin != null || f.funcionariosMax != null) n++;
   if (f.faturamentoMin != null || f.faturamentoMax != null) n++;
+  if (f.regimeTributario?.length) n += f.regimeTributario.length;
   if (f.municipio?.trim()) n++;
   if (f.cnae?.trim()) n++;
   return n;
@@ -123,6 +125,14 @@ function FilterChips({ filters, onChange }: { filters: EmpresaFilters; onChange:
       onRemove: () => onChange({ ...filters, opcaoSimples: null }),
     });
   }
+  filters.regimeTributario?.forEach((v) => {
+    const found = REGIMES_TRIBUTARIOS.find((r) => r.value === v);
+    chips.push({
+      label: `Regime: ${found?.short ?? v}`,
+      color: found?.color,
+      onRemove: () => onChange({ ...filters, regimeTributario: (filters.regimeTributario || []).filter((x) => x !== v) }),
+    });
+  });
   if (filters.enriquecida) {
     const labelMap = { yes: "Enriquecida", no: "Sem enrichment", error: "Com erro RFB" };
     chips.push({
@@ -221,6 +231,7 @@ function FilterChips({ filters, onChange }: { filters: EmpresaFilters; onChange:
           capitalMin: null, capitalMax: null,
           funcionariosMin: null, funcionariosMax: null,
           faturamentoMin: null, faturamentoMax: null,
+          regimeTributario: undefined,
           municipio: null, cnae: null,
         })}
       >
@@ -408,10 +419,36 @@ export function EmpresasToolbar({
                   </div>
                 </section>
 
+                {/* Regime tributário (campo manual) */}
+                <section>
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Regime tributário</Label>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    {REGIMES_TRIBUTARIOS.map((r) => {
+                      const active = filters.regimeTributario?.includes(r.value) ?? false;
+                      return (
+                        <button
+                          key={r.value}
+                          type="button"
+                          onClick={() => {
+                            const cur = filters.regimeTributario ?? [];
+                            const next = active ? cur.filter((x) => x !== r.value) : [...cur, r.value];
+                            onFiltersChange({ ...filters, regimeTributario: next.length ? next : undefined });
+                          }}
+                          className={`h-8 rounded-md text-xs transition-colors border ${
+                            active ? r.color + " ring-1 ring-current" : "bg-background hover:bg-muted border-border"
+                          }`}
+                        >
+                          {r.short}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
                 {/* Selects */}
                 <section className="space-y-3">
                   <div>
-                    <Label className="text-xs font-semibold uppercase text-muted-foreground">Simples Nacional</Label>
+                    <Label className="text-xs font-semibold uppercase text-muted-foreground">Simples Nacional (RFB)</Label>
                     <Select
                       value={filters.opcaoSimples == null ? "any" : filters.opcaoSimples ? "yes" : "no"}
                       onValueChange={(v) =>

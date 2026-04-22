@@ -30,6 +30,8 @@ export interface EmpresaFilters {
   /** Faturamento anual em R$ — range numérico */
   faturamentoMin?: number | null;
   faturamentoMax?: number | null;
+  /** Regime tributário (simples/mei/lucro_presumido/lucro_real/imune_isento) */
+  regimeTributario?: string[];
 }
 
 export type EmpresaSort =
@@ -91,6 +93,8 @@ export interface Empresa {
   user_id: string;
   /** Campos personalizados definidos pelo usuário ({ rótulo: valor }) */
   metadados: Record<string, string> | null;
+  /** Regime tributário identificado: simples, mei, lucro_presumido, lucro_real, imune_isento */
+  regime_tributario: string | null;
 }
 
 // Supabase's PostgrestFilterBuilder typings são verbosos; usamos um tipo relaxado local
@@ -132,6 +136,7 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.funcionariosMax != null) query = query.lte("quantidade_funcionarios", filters.funcionariosMax);
   if (filters.faturamentoMin != null) query = query.gte("faturamento_anual", filters.faturamentoMin);
   if (filters.faturamentoMax != null) query = query.lte("faturamento_anual", filters.faturamentoMax);
+  if (filters.regimeTributario?.length) query = query.in("regime_tributario", filters.regimeTributario);
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
   if (filters.enriquecida === "error") query = query.not("receita_erro", "is", null);

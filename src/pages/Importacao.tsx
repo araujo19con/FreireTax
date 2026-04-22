@@ -20,10 +20,24 @@ interface ImportRow {
   /** Texto original quando a célula é um range tipo "100 A 999" — guardado em metadados */
   faixa_funcionarios_texto: string | null;
   faixa_faturamento_texto: string | null;
+  regime_tributario: string | null;
   /** ID da empresa existente (quando o CNPJ já existe na base) */
   existing_id: string | null;
   mode: ImportMode;
   errors: string[];
+}
+
+/** Normaliza valor de regime da planilha → enum aceito pelo DB. */
+function parseRegime(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!s) return null;
+  if (s.includes("mei")) return "mei";
+  if (s.includes("simples")) return "simples";
+  if (s.includes("real")) return "lucro_real";
+  if (s.includes("presum")) return "lucro_presumido";
+  if (s.includes("imune") || s.includes("isent")) return "imune_isento";
+  return null;
 }
 
 function formatCNPJ(value: string) {
@@ -137,6 +151,7 @@ export default function Importacao() {
         const statusCol = findColumnExact(headers, ["status"]);
         const funcCol = findColumn(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
         const fatCol  = findColumn(headers, ["faturamento", "receita", "revenue", "billing"]);
+        const regCol  = findColumn(headers, ["regime", "tributari"]);
 
         if (cnpjCol === -1) {
           toast.error("Não foi possível identificar a coluna 'CNPJ' na planilha");
@@ -166,6 +181,7 @@ export default function Importacao() {
           // Se a coluna existe, valor é não-vazio E não virou número → é uma faixa/texto
           const faixa_funcionarios_texto = (funcCol !== -1 && rawFunc && quantidade_funcionarios == null) ? rawFunc : null;
           const faixa_faturamento_texto  = (fatCol  !== -1 && rawFat  && faturamento_anual == null)       ? rawFat  : null;
+          const regime_tributario       = regCol  !== -1 ? parseRegime(row[regCol]) : null;
 
           const errors: string[] = [];
 
@@ -175,6 +191,7 @@ export default function Importacao() {
             nome, cnpj, status,
             quantidade_funcionarios, faturamento_anual,
             faixa_funcionarios_texto, faixa_faturamento_texto,
+            regime_tributario,
             errors,
           });
         }
@@ -287,6 +304,7 @@ export default function Importacao() {
           if (comExtras) {
             if (r.quantidade_funcionarios != null) base.quantidade_funcionarios = r.quantidade_funcionarios;
             if (r.faturamento_anual != null) base.faturamento_anual = r.faturamento_anual;
+            if (r.regime_tributario) base.regime_tributario = r.regime_tributario;
             const meta: Record<string, string> = {};
             if (r.faixa_funcionarios_texto) meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
             if (r.faixa_faturamento_texto)  meta["Faixa de Faturamento"]  = r.faixa_faturamento_texto;
@@ -340,6 +358,9 @@ export default function Importacao() {
               }
               if (hasFaturamentoCol && r.faturamento_anual != null) {
                 patchFull.faturamento_anual = r.faturamento_anual;
+              }
+              if (r.regime_tributario) {
+                patchFull.regime_tributario = r.regime_tributario;
               }
               // Faixas como metadados (preserva formatação original)
               const meta: Record<string, string> = {};

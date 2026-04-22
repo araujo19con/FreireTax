@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCurrency, formatDate, formatDateTime, formatRelativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { humanizeRegime, getRegimeEffective, regimeColor } from "@/lib/regimeTributario";
 
 interface EmpresaDetailSheetProps {
   empresa: Empresa | null;
@@ -240,7 +241,18 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                     <Field label="Capital social" value={formatCurrency(empresa.capital_social)} />
                     <Field label="Valor potencial" value={formatCurrency(empresa.valor_potencial_total)} />
                     <Field label="Data abertura" value={formatDate(empresa.data_abertura)} />
-                    <Field label="Simples Nacional" value={empresa.opcao_simples ? "Sim" : empresa.opcao_simples === false ? "Não" : "—"} />
+                    <Field
+                      label="Regime tributário"
+                      value={(() => {
+                        const eff = getRegimeEffective(empresa);
+                        if (!eff) return "—";
+                        return (
+                          <Badge variant="outline" className={`text-[10px] ${regimeColor(eff)}`}>
+                            {humanizeRegime(eff)}
+                          </Badge>
+                        );
+                      })()}
+                    />
                   </div>
                   {/* Funcionários + Faturamento (campos manuais/importáveis) */}
                   {(empresa.quantidade_funcionarios != null || empresa.faturamento_anual != null) && (

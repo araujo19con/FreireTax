@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import * as XLSX from "xlsx";
 import type { Database } from "@/integrations/supabase/types";
+import { REGIMES_TRIBUTARIOS, getRegimeEffective, humanizeRegime, type RegimeTributario } from "@/lib/regimeTributario";
 
 type Empresa = Database["public"]["Tables"]["empresas"]["Row"];
 
@@ -61,7 +62,8 @@ interface Filtros {
   uf: string[];
   porte: string[];
   situacao: string[];
-  regime: "all" | "simples" | "mei" | "outros";
+  /** Regimes tributários selecionados; vazio = todos */
+  regime: RegimeTributario[];
   search: string;
   funcionariosMin: number | null;
   funcionariosMax: number | null;
@@ -76,7 +78,7 @@ export default function AnaliseRFB() {
     uf: [],
     porte: [],
     situacao: [],
-    regime: "all",
+    regime: [],
     search: "",
     funcionariosMin: null,
     funcionariosMax: null,
@@ -105,9 +107,11 @@ export default function AnaliseRFB() {
       if (filtros.uf.length > 0 && !filtros.uf.includes(any.uf ?? "")) return false;
       if (filtros.porte.length > 0 && !filtros.porte.includes(any.porte ?? "NAO_INFORMADO")) return false;
       if (filtros.situacao.length > 0 && !filtros.situacao.includes(any.situacao_cadastral ?? "")) return false;
-      if (filtros.regime === "simples" && !any.opcao_simples) return false;
-      if (filtros.regime === "mei" && !any.opcao_mei) return false;
-      if (filtros.regime === "outros" && (any.opcao_simples || any.opcao_mei)) return false;
+      // Regime tributário (campo manual, com fallback para opcao_simples/opcao_mei)
+      if (filtros.regime.length > 0) {
+        const eff = getRegimeEffective(any);
+        if (!eff || !filtros.regime.includes(eff)) return false;
+      }
       // Filtros numéricos novos: funcionários e faturamento_anual
       const qf = any.quantidade_funcionarios as number | null | undefined;
       if (filtros.funcionariosMin != null && (qf == null || qf < filtros.funcionariosMin)) return false;
@@ -134,7 +138,9 @@ export default function AnaliseRFB() {
     const porPorte: Record<string, number> = {};
     const porSituacao: Record<string, number> = {};
     const porCNAE: Record<string, number> = {};
-    const porRegime = { simples: 0, mei: 0, outros: 0 };
+    const porRegime: Record<string, number> = {
+      simples: 0, mei: 0, lucro_presumido: 0, lucro_real: 0, imune_isento: 0, nao_informado: 0,
+    };
     const porStatusCRM: Record<string, number> = {};
 
     let capitalTotal = 0;
@@ -163,9 +169,8 @@ export default function AnaliseRFB() {
       const cnaeDesc = any.cnae_principal_desc;
       if (cnaeDesc) porCNAE[cnaeDesc] = (porCNAE[cnaeDesc] ?? 0) + 1;
 
-      if (any.opcao_mei) porRegime.mei++;
-      else if (any.opcao_simples) porRegime.simples++;
-      else porRegime.outros++;
+      const eff = getRegimeEffective(any);
+      porRegime[eff ?? "nao_informado"] = (porRegime[eff ?? "nao_informado"] ?? 0) + 1;
 
       porStatusCRM[e.status] = (porStatusCRM[e.status] ?? 0) + 1;
 
@@ -188,10 +193,9 @@ export default function AnaliseRFB() {
       porSituacao: toSortedArray(porSituacao),
       porCNAE: toSortedArray(porCNAE).slice(0, 10),
       porRegime: [
-        { name: "Simples Nacional", value: porRegime.simples },
-        { name: "MEI",              value: porRegime.mei },
-        { name: "Lucro Presumido/Real", value: porRegime.outros },
-      ],
+        ...REGIMES_TRIBUTARIOS.map((r) => ({ name: r.label, value: porRegime[r.value] ?? 0 })),
+        { name: "Não informado", value: porRegime.nao_informado ?? 0 },
+      ].filter((x) => x.value > 0),
       porStatusCRM: toSortedArray(porStatusCRM),
     };
   }, [filtered]);
@@ -223,7 +227,7 @@ export default function AnaliseRFB() {
 
   const limparFiltros = () => {
     setFiltros({
-      uf: [], porte: [], situacao: [], regime: "all", search: "",
+      uf: [], porte: [], situacao: [], regime: [], search: "",
       funcionariosMin: null, funcionariosMax: null,
       faturamentoMin: null, faturamentoMax: null,
     });
@@ -231,7 +235,7 @@ export default function AnaliseRFB() {
 
   const hasFiltros =
     filtros.uf.length > 0 || filtros.porte.length > 0 || filtros.situacao.length > 0 ||
-    filtros.regime !== "all" || filtros.search.trim() !== "" ||
+    filtros.regime.length > 0 || filtros.search.trim() !== "" ||
     filtros.funcionariosMin != null || filtros.funcionariosMax != null ||
     filtros.faturamentoMin != null || filtros.faturamentoMax != null;
 
@@ -247,7 +251,7 @@ export default function AnaliseRFB() {
         "Status CRM": e.status,
         Situação: any.situacao_cadastral ?? "",
         Porte: any.porte ?? "",
-        Regime: any.opcao_mei ? "MEI" : any.opcao_simples ? "Simples" : "Lucro Presumido/Real",
+        Regime: humanizeRegime(getRegimeEffective(any)),
         UF: any.uf ?? "",
         Município: any.municipio ?? "",
         CEP: any.cep ?? "",
@@ -460,23 +464,29 @@ export default function AnaliseRFB() {
               </div>
             )}
 
-            {/* Regime */}
+            {/* Regime tributário (multi-select) */}
             <div className="space-y-1">
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Regime tributário</p>
               <div className="flex flex-wrap gap-1.5">
-                {(["all", "simples", "mei", "outros"] as const).map((r) => (
-                  <button
-                    key={r} type="button"
-                    onClick={() => setFiltros((f) => ({ ...f, regime: r }))}
-                    className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
-                      filtros.regime === r
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
-                    }`}
-                  >
-                    {r === "all" ? "Todos" : r === "simples" ? "Simples Nacional" : r === "mei" ? "MEI" : "Lucro Presumido/Real"}
-                  </button>
-                ))}
+                {REGIMES_TRIBUTARIOS.map((r) => {
+                  const active = filtros.regime.includes(r.value);
+                  return (
+                    <button
+                      key={r.value} type="button"
+                      onClick={() => setFiltros((f) => ({
+                        ...f,
+                        regime: active
+                          ? f.regime.filter((x) => x !== r.value)
+                          : [...f.regime, r.value],
+                      }))}
+                      className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
+                        active ? r.color + " ring-1 ring-current" : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                      }`}
+                    >
+                      {r.short}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
