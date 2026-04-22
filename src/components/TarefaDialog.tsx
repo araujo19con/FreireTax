@@ -84,7 +84,13 @@ export function TarefaDialog({
 
   const [profiles, setProfiles] = useState<ProfileSlim[]>([]);
   const [empresas, setEmpresas] = useState<{ id: string; nome: string }[]>([]);
-  const [prospeccoes, setProspeccoes] = useState<{ id: string; contato_nome: string | null }[]>([]);
+  const [prospeccoes, setProspeccoes] = useState<Array<{
+    id: string;
+    contato_nome: string | null;
+    status_prospeccao: string | null;
+    empresa: { nome: string } | null;
+    acao: { nome: string } | null;
+  }>>([]);
   const [acoes, setAcoes] = useState<{ id: string; nome: string }[]>([]);
 
   const [subtarefas, setSubtarefas] = useState<Subtarefa[]>([]);
@@ -105,12 +111,16 @@ export function TarefaDialog({
     const [{ data: p }, { data: e }, { data: pr }, { data: a }] = await Promise.all([
       supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
       supabase.from("empresas").select("id, nome").order("nome"),
-      supabase.from("prospeccoes").select("id, contato_nome").order("created_at", { ascending: false }),
+      supabase
+        .from("prospeccoes")
+        .select("id, contato_nome, status_prospeccao, empresa:empresas(nome), acao:acoes_tributarias(nome)")
+        .order("created_at", { ascending: false }),
       supabase.from("acoes_tributarias").select("id, nome").order("nome"),
     ]);
     setProfiles((p ?? []) as ProfileSlim[]);
     setEmpresas(e ?? []);
-    setProspeccoes(pr ?? []);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setProspeccoes((pr ?? []) as any);
     setAcoes(a ?? []);
   }, []);
 
@@ -487,9 +497,22 @@ export function TarefaDialog({
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— nenhuma —</SelectItem>
-                    {prospeccoes.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.contato_nome ?? p.id.slice(0, 8)}</SelectItem>
-                    ))}
+                    {prospeccoes.map((p) => {
+                      const empresaNome = p.empresa?.nome?.trim();
+                      const acaoNome = p.acao?.nome?.trim();
+                      const partes = [empresaNome, acaoNome].filter(Boolean);
+                      const principal = partes.length > 0
+                        ? partes.join(" — ")
+                        : (p.contato_nome?.trim() || "Prospecção sem empresa");
+                      return (
+                        <SelectItem key={p.id} value={p.id}>
+                          <span className="truncate">{principal}</span>
+                          {p.status_prospeccao && (
+                            <span className="text-muted-foreground text-[11px] ml-1.5">· {p.status_prospeccao}</span>
+                          )}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
