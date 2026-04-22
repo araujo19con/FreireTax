@@ -62,6 +62,8 @@ export interface Empresa {
   opcao_mei: boolean | null;
   capital_social: number | null;
   faturamento_estimado: number | null;
+  faturamento_anual: number | null;
+  quantidade_funcionarios: number | null;
   valor_potencial_total: number | null;
   data_abertura: string | null;
   receita_atualizada_em: string | null;

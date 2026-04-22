@@ -44,6 +44,9 @@ export interface EmpresaFormData {
   email_receita?: string | null;
   qsa?: any[];
   receita_atualizada_em?: string | null;
+  // Campos manuais (importáveis via planilha)
+  quantidade_funcionarios?: number | null;
+  faturamento_anual?: number | null;
 }
 
 interface EmpresaDialogProps {
@@ -323,6 +326,41 @@ export function EmpresaDialog({
                 <SelectItem value="inativo">Inativo</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Dados operacionais (manuais ou via importação) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="qtd_func">Quantidade de funcionários</Label>
+              <Input
+                id="qtd_func"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                placeholder="Ex: 50"
+                value={form.quantidade_funcionarios ?? ""}
+                onChange={(e) => setForm({
+                  ...form,
+                  quantidade_funcionarios: e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="fat_anual">Faturamento anual (R$)</Label>
+              <Input
+                id="fat_anual"
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                placeholder="Ex: 1500000"
+                value={form.faturamento_anual ?? ""}
+                onChange={(e) => setForm({
+                  ...form,
+                  faturamento_anual: e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                })}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
