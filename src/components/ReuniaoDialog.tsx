@@ -72,20 +72,61 @@ export function ReuniaoDialog({
 
   const [advogados, setAdvogados] = useState<ProfileSlim[]>([]);
   const [empresas, setEmpresas] = useState<{ id: string; nome: string }[]>([]);
-  const [prospeccoes, setProspeccoes] = useState<{ id: string; contato_nome: string | null; contato_email: string | null }[]>([]);
+  const [prospeccoes, setProspeccoes] = useState<Array<{
+    id: string;
+    contato_nome: string | null;
+    contato_email: string | null;
+    status_prospeccao: string | null;
+    empresa_id: string | null;
+    acao_id: string | null;
+    empresa_nome: string | null;
+    acao_nome: string | null;
+  }>>([]);
   const [saving, setSaving] = useState(false);
   const [enviandoConvite, setEnviandoConvite] = useState(false);
 
   const loadRelations = useCallback(async () => {
-    // apenas colunas necessárias
-    const [{ data: p }, { data: e }, { data: pr }] = await Promise.all([
+    const [{ data: p }, { data: e }, { data: pr }, { data: a }, { data: el }] = await Promise.all([
       supabase.from("profiles").select("id, nome, email, ativo").eq("ativo", true).order("nome"),
       supabase.from("empresas").select("id, nome").order("nome"),
-      supabase.from("prospeccoes").select("id, contato_nome, contato_email").order("created_at", { ascending: false }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase.from("prospeccoes").select("id, contato_nome, contato_email, status_prospeccao, elegibilidade_id, empresa_id, acao_id").order("created_at", { ascending: false }) as any),
+      supabase.from("acoes_tributarias").select("id, nome"),
+      supabase.from("elegibilidade").select("id, empresa_id, acao_id"),
     ]);
+
+    const empMap = new Map((e ?? []).map((x) => [x.id, x.nome] as const));
+    const acaoMap = new Map((a ?? []).map((x) => [x.id, x.nome] as const));
+    const elegMap = new Map((el ?? []).map((x) => [x.id, x] as const));
+
+    type ProspRaw = {
+      id: string;
+      contato_nome: string | null;
+      contato_email: string | null;
+      status_prospeccao: string | null;
+      elegibilidade_id: string | null;
+      empresa_id: string | null;
+      acao_id: string | null;
+    };
+    const prospEnriched = ((pr ?? []) as ProspRaw[]).map((row) => {
+      const eleg = row.elegibilidade_id ? elegMap.get(row.elegibilidade_id) : null;
+      const empresa_id = row.empresa_id || eleg?.empresa_id || null;
+      const acao_id = row.acao_id || eleg?.acao_id || null;
+      return {
+        id: row.id,
+        contato_nome: row.contato_nome,
+        contato_email: row.contato_email,
+        status_prospeccao: row.status_prospeccao,
+        empresa_id,
+        acao_id,
+        empresa_nome: empresa_id ? empMap.get(empresa_id) ?? null : null,
+        acao_nome: acao_id ? acaoMap.get(acao_id) ?? null : null,
+      };
+    });
+
     setAdvogados((p ?? []) as ProfileSlim[]);
     setEmpresas(e ?? []);
-    setProspeccoes(pr ?? []);
+    setProspeccoes(prospEnriched);
   }, []);
 
   useEffect(() => {
@@ -124,6 +165,8 @@ export function ReuniaoDialog({
     if (p) {
       if (p.contato_nome && !leadNome) setLeadNome(p.contato_nome);
       if (p.contato_email && !leadEmail) setLeadEmail(p.contato_email);
+      // Auto-preenche empresa quando ainda não selecionada
+      if (p.empresa_id && !empresaId) setEmpresaId(p.empresa_id);
     }
   };
 
@@ -279,11 +322,27 @@ export function ReuniaoDialog({
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">— nenhuma —</SelectItem>
-                {prospeccoes.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.contato_nome ?? "—"} {p.contato_email ? `(${p.contato_email})` : ""}
-                  </SelectItem>
-                ))}
+                {prospeccoes.map((p) => {
+                  const empresaNome = p.empresa_nome?.trim();
+                  const acaoNome = p.acao_nome?.trim();
+                  const contato = p.contato_nome?.trim();
+                  let principal: string;
+                  if (empresaNome && acaoNome) principal = `${empresaNome} — ${acaoNome}`;
+                  else if (empresaNome) principal = empresaNome;
+                  else if (contato) principal = contato;
+                  else principal = "Prospecção sem dados";
+                  return (
+                    <SelectItem key={p.id} value={p.id}>
+                      <span className="truncate">{principal}</span>
+                      {contato && empresaNome && (
+                        <span className="text-muted-foreground text-[11px] ml-1.5">· {contato}</span>
+                      )}
+                      {p.status_prospeccao && (
+                        <span className="text-muted-foreground text-[11px] ml-1.5">· {p.status_prospeccao}</span>
+                      )}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>

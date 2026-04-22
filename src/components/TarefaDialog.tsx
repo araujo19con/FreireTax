@@ -88,8 +88,10 @@ export function TarefaDialog({
     id: string;
     contato_nome: string | null;
     status_prospeccao: string | null;
-    empresa: { nome: string } | null;
-    acao: { nome: string } | null;
+    empresa_id: string | null;
+    acao_id: string | null;
+    empresa_nome: string | null;
+    acao_nome: string | null;
   }>>([]);
   const [acoes, setAcoes] = useState<{ id: string; nome: string }[]>([]);
 
@@ -107,20 +109,48 @@ export function TarefaDialog({
   const tarefaId = tarefa?.id ?? null;
 
   const loadRelations = useCallback(async () => {
-    // busca apenas colunas necessárias: enxuga payload e acelera queries
-    const [{ data: p }, { data: e }, { data: pr }, { data: a }] = await Promise.all([
+    // Prospeccoes linkam empresa/acao via elegibilidade_id (e às vezes direto via
+    // empresa_id/acao_id na schema nova). Buscamos todas as fontes e juntamos no JS.
+    const [{ data: p }, { data: e }, { data: pr }, { data: a }, { data: el }] = await Promise.all([
       supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
       supabase.from("empresas").select("id, nome").order("nome"),
-      supabase
-        .from("prospeccoes")
-        .select("id, contato_nome, status_prospeccao, empresa:empresas(nome), acao:acoes_tributarias(nome)")
-        .order("created_at", { ascending: false }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase.from("prospeccoes").select("id, contato_nome, status_prospeccao, elegibilidade_id, empresa_id, acao_id").order("created_at", { ascending: false }) as any),
       supabase.from("acoes_tributarias").select("id, nome").order("nome"),
+      supabase.from("elegibilidade").select("id, empresa_id, acao_id"),
     ]);
+
+    const empMap = new Map((e ?? []).map((x) => [x.id, x.nome] as const));
+    const acaoMap = new Map((a ?? []).map((x) => [x.id, x.nome] as const));
+    const elegMap = new Map((el ?? []).map((x) => [x.id, x] as const));
+
+    type ProspRaw = {
+      id: string;
+      contato_nome: string | null;
+      status_prospeccao: string | null;
+      elegibilidade_id: string | null;
+      empresa_id: string | null;
+      acao_id: string | null;
+    };
+    const prospEnriched = ((pr ?? []) as ProspRaw[]).map((row) => {
+      // Prefere FK direto; cai pra lookup via elegibilidade quando ausente.
+      const eleg = row.elegibilidade_id ? elegMap.get(row.elegibilidade_id) : null;
+      const empresa_id = row.empresa_id || eleg?.empresa_id || null;
+      const acao_id = row.acao_id || eleg?.acao_id || null;
+      return {
+        id: row.id,
+        contato_nome: row.contato_nome,
+        status_prospeccao: row.status_prospeccao,
+        empresa_id,
+        acao_id,
+        empresa_nome: empresa_id ? empMap.get(empresa_id) ?? null : null,
+        acao_nome: acao_id ? acaoMap.get(acao_id) ?? null : null,
+      };
+    });
+
     setProfiles((p ?? []) as ProfileSlim[]);
     setEmpresas(e ?? []);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setProspeccoes((pr ?? []) as any);
+    setProspeccoes(prospEnriched);
     setAcoes(a ?? []);
   }, []);
 
@@ -493,17 +523,30 @@ export function TarefaDialog({
 
               <div className="space-y-2">
                 <Label>Vincular a prospecção (opcional)</Label>
-                <Select value={prospeccaoId || "none"} onValueChange={(v) => setProspeccaoId(v === "none" ? "" : v)}>
+                <Select
+                  value={prospeccaoId || "none"}
+                  onValueChange={(v) => {
+                    if (v === "none") { setProspeccaoId(""); return; }
+                    setProspeccaoId(v);
+                    // Auto-preenche empresa e ação se ainda estiverem vazias
+                    const p = prospeccoes.find((x) => x.id === v);
+                    if (p?.empresa_id && !empresaId) setEmpresaId(p.empresa_id);
+                    if (p?.acao_id && !acaoId) setAcaoId(p.acao_id);
+                  }}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— nenhuma —</SelectItem>
                     {prospeccoes.map((p) => {
-                      const empresaNome = p.empresa?.nome?.trim();
-                      const acaoNome = p.acao?.nome?.trim();
-                      const partes = [empresaNome, acaoNome].filter(Boolean);
-                      const principal = partes.length > 0
-                        ? partes.join(" — ")
-                        : (p.contato_nome?.trim() || "Prospecção sem empresa");
+                      // Prioridade do label: Empresa — Ação > Empresa > Contato > "Prospecção sem dados"
+                      const empresaNome = p.empresa_nome?.trim();
+                      const acaoNome = p.acao_nome?.trim();
+                      const contato = p.contato_nome?.trim();
+                      let principal: string;
+                      if (empresaNome && acaoNome) principal = `${empresaNome} — ${acaoNome}`;
+                      else if (empresaNome) principal = empresaNome;
+                      else if (contato) principal = contato;
+                      else principal = "Prospecção sem dados";
                       return (
                         <SelectItem key={p.id} value={p.id}>
                           <span className="truncate">{principal}</span>

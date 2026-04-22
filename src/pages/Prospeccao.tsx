@@ -501,12 +501,15 @@ export default function Prospeccao() {
           action={{ label: "Nova Prospecção", onClick: openCreateDialog, icon: Plus }}
         />
       ) : (
-      /* Kanban Board */
-      <div className="flex gap-4 overflow-x-auto pb-4 snap-kanban scrollbar-thin" role="list" aria-label="Pipeline de prospecção por etapa">
+      <KanbanWithNav
+        statusColumns={statusColumns}
+        getCount={(key) => filteredProspeccoes.filter(p => p.status_prospeccao === key).length}
+      >
+      <div className="flex gap-4 overflow-x-auto pb-4 snap-kanban scrollbar-thin" role="list" aria-label="Pipeline de prospecção por etapa" id="prospeccao-kanban-scroll">
         {statusColumns.map(col => {
           const items = filteredProspeccoes.filter(p => p.status_prospeccao === col.key);
           return (
-            <div key={col.key} className="flex-shrink-0 w-[300px]" role="listitem" aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}>
+            <div key={col.key} id={`kanban-col-${col.key.replace(/\s+/g, "-")}`} className="flex-shrink-0 w-[300px] scroll-mt-4" role="listitem" aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}>
               <div className="flex items-center gap-2 mb-3 px-1">
                 <div className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} aria-hidden="true" />
                 <h3 className="text-sm font-semibold">{col.label}</h3>
@@ -653,6 +656,7 @@ export default function Prospeccao() {
           );
         })}
       </div>
+      </KanbanWithNav>
       )}
 
       {/* Edit Dialog */}
@@ -1041,6 +1045,58 @@ export default function Prospeccao() {
           />
         );
       })()}
+    </div>
+  );
+}
+
+
+// Barra de navegação por coluna do Kanban — facilita pular entre etapas
+// quando o pipeline tem muitas colunas (scroll horizontal cansativo).
+function KanbanWithNav({
+  statusColumns,
+  getCount,
+  children,
+}: {
+  statusColumns: Array<{ key: string; label: string; color: string; dotColor: string }>;
+  getCount: (key: string) => number;
+  children: React.ReactNode;
+}) {
+  const scrollTo = (key: string) => {
+    const id = `kanban-col-${key.replace(/\s+/g, "-")}`;
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="flex gap-1.5 overflow-x-auto scrollbar-thin pb-1.5 sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border"
+        role="tablist"
+        aria-label="Navegar entre etapas do pipeline"
+      >
+        {statusColumns.map((col) => {
+          const n = getCount(col.key);
+          return (
+            <Button
+              key={col.key}
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => scrollTo(col.key)}
+              className="h-8 shrink-0 text-xs gap-1.5"
+              aria-label={`Ir para etapa ${col.label}, ${n} ${n === 1 ? "prospecção" : "prospecções"}`}
+            >
+              <span className={`h-2 w-2 rounded-full ${col.dotColor}`} aria-hidden="true" />
+              <span>{col.label}</span>
+              <Badge variant="secondary" className="h-4 px-1.5 text-[10px] tabular-nums">
+                {n}
+              </Badge>
+            </Button>
+          );
+        })}
+      </div>
+      {children}
     </div>
   );
 }
