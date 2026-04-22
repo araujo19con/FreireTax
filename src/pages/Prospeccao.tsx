@@ -112,6 +112,7 @@ const statusColumns = [
   { key: "Proposta enviada", label: "Proposta Enviada", color: "bg-warning/10 text-warning", dotColor: "bg-warning" },
   { key: "Em negociação", label: "Em Negociação", color: "bg-primary/10 text-primary", dotColor: "bg-primary" },
   { key: "Contrato assinado", label: "Contrato Assinado", color: "bg-success/10 text-success", dotColor: "bg-success" },
+  { key: "Serviço iniciado", label: "Serviço Iniciado", color: "bg-accent/15 text-accent-foreground", dotColor: "bg-accent" },
   { key: "Perdido", label: "Perdido", color: "bg-destructive/10 text-destructive", dotColor: "bg-destructive" },
 ];
 
@@ -160,9 +161,11 @@ export default function Prospeccao() {
   const [elegibilidades, setElegibilidades] = useState<ElegibilidadeRow[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [acoes, setAcoes] = useState<Acao[]>([]);
+  const [profiles, setProfiles] = useState<Array<{ id: string; nome: string; email: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterAcao, setFilterAcao] = useState("all");
+  const [filterResponsavel, setFilterResponsavel] = useState("all");
   const { user } = useAuth();
 
   // Create dialog
@@ -191,6 +194,9 @@ export default function Prospeccao() {
   const [editMotivoPerdido, setEditMotivoPerdido] = useState<MotivoPerdido | "">("");
   const [editMotivoDetalhes, setEditMotivoDetalhes] = useState("");
 
+  // Responsável pela prospecção (FK profiles)
+  const [editResponsavelId, setEditResponsavelId] = useState<string>("");
+
   // CLOSER — Sprint 2
   const [editDor, setEditDor] = useState("");
   const [editTentativas, setEditTentativas] = useState("");
@@ -213,15 +219,18 @@ export default function Prospeccao() {
   const [propostaProsp, setPropostaProsp] = useState<Prospeccao | null>(null);
 
   const fetchAll = async () => {
-    const [prospRes, elegRes, empRes, acoesRes] = await Promise.all([
+    const [prospRes, elegRes, empRes, acoesRes, profsRes] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.from("prospeccoes").select("*") as any),
       supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado"),
       supabase.from("empresas").select("id, nome, cnpj"),
       supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
+      supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
     ]);
     setProspeccoes(prospRes.data || []);
     setElegibilidades(elegRes.data || []);
     setEmpresas(empRes.data || []);
+    setProfiles((profsRes.data ?? []) as Array<{ id: string; nome: string; email: string }>);
     setAcoes((acoesRes.data as Acao[]) || []);
     setLoading(false);
   };
@@ -250,6 +259,17 @@ export default function Prospeccao() {
       const elegIds = new Set(elegibilidades.filter(e => e.acao_id === filterAcao).map(e => e.id));
       items = items.filter(p => elegIds.has(p.elegibilidade_id));
     }
+    // Filtro por responsável: 'all' | '_me' (logado) | '_none' (sem) | <profile_id>
+    if (filterResponsavel === "_me") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items = items.filter(p => (p as any).responsavel_id === user?.id);
+    } else if (filterResponsavel === "_none") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items = items.filter(p => !(p as any).responsavel_id);
+    } else if (filterResponsavel !== "all") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items = items.filter(p => (p as any).responsavel_id === filterResponsavel);
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       items = items.filter(p => {
@@ -268,7 +288,7 @@ export default function Prospeccao() {
       const vb = getValorPotencial(b.elegibilidade_id);
       return vb - va;
     });
-  }, [prospeccoes, elegibilidades, empresas, acoes, filterAcao, search]);
+  }, [prospeccoes, elegibilidades, empresas, acoes, filterAcao, filterResponsavel, search, user?.id]);
 
   const openEdit = (p: Prospeccao) => {
     setEditProsp(p);
@@ -293,6 +313,8 @@ export default function Prospeccao() {
     setEditObjecoes(p.objecoes_principais ?? []);
     setEditCargoCat(p.cargo_categoria ?? "");
     setEditEhDecisor(p.eh_decisor ?? false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setEditResponsavelId(((p as any).responsavel_id ?? "") as string);
     setEditOpen(true);
   };
 
@@ -340,6 +362,7 @@ export default function Prospeccao() {
       objecoes_principais: editObjecoes,
       cargo_categoria: editCargoCat || null,
       eh_decisor: editEhDecisor,
+      responsavel_id: editResponsavelId || null,
     };
     const { error } = await (supabase.from("prospeccoes") as any).update(payload).eq("id", editProsp.id);
     if (error) { toast.error("Erro ao atualizar: " + error.message); return; }
@@ -518,9 +541,23 @@ export default function Prospeccao() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={filterResponsavel} onValueChange={setFilterResponsavel}>
+          <SelectTrigger className="w-[220px]">
+            <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+            <SelectValue placeholder="Filtrar por responsável" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos responsáveis</SelectItem>
+            <SelectItem value="_me">Meus (logado)</SelectItem>
+            <SelectItem value="_none">Sem responsável</SelectItem>
+            {profiles.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {filteredProspeccoes.length === 0 && !search && filterAcao === "all" ? (
+      {filteredProspeccoes.length === 0 && !search && filterAcao === "all" && filterResponsavel === "all" ? (
         <EmptyState
           icon={Handshake}
           title="Nenhuma prospecção cadastrada"
@@ -615,6 +652,24 @@ export default function Prospeccao() {
                             <span className="flex items-center gap-1 truncate"><Mail className="h-2.5 w-2.5" />{p.contato_email}</span>
                           )}
                         </div>
+
+                        {/* Responsável (avatar com iniciais) */}
+                        {(() => {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          const respId = (p as any).responsavel_id as string | null | undefined;
+                          if (!respId) return null;
+                          const resp = profiles.find((x) => x.id === respId);
+                          if (!resp) return null;
+                          const ini = resp.nome.split(" ").slice(0, 2).map((n) => n[0] ?? "").join("").toUpperCase() || "?";
+                          return (
+                            <div className="flex items-center gap-1.5 text-[11px]" title={resp.nome}>
+                              <div className="h-5 w-5 rounded-full bg-primary/15 flex items-center justify-center text-[9px] font-semibold text-primary shrink-0">
+                                {ini}
+                              </div>
+                              <span className="text-muted-foreground truncate">{resp.nome.split(" ")[0]}</span>
+                            </div>
+                          );
+                        })()}
 
                         {/* QW3: badge cadência + último contato */}
                         <div className="flex items-center gap-2 flex-wrap">
@@ -750,6 +805,23 @@ export default function Prospeccao() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Responsável pela prospecção */}
+              <div>
+                <Label>Responsável</Label>
+                <Select value={editResponsavelId || "_none"} onValueChange={(v) => setEditResponsavelId(v === "_none" ? "" : v)}>
+                  <SelectTrigger><SelectValue placeholder="Selecione um responsável" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— sem responsável —</SelectItem>
+                    {profiles.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Quem está liderando esta prospecção. Aparece como badge no card e pode ser usado pra filtrar.
+                </p>
               </div>
 
               {/* QW1: motivo perdido quando status = Perdido */}

@@ -373,7 +373,15 @@ export function useCreateEmpresa() {
       toast.success(`Empresa "${emp.nome}" criada`);
       qc.invalidateQueries({ queryKey: ["empresas"] });
     },
-    onError: (err) => toast.error("Erro ao criar empresa: " + (err?.message ?? "falha")),
+    onError: (err: unknown) => {
+      // Postgres 23505 = unique_violation. Mensagem amigável para CNPJ duplicado.
+      const e = err as { code?: string; message?: string } | undefined;
+      if (e?.code === "23505" && (e?.message ?? "").includes("cnpj")) {
+        toast.error("Este CNPJ já está cadastrado — verifique na lista de empresas.");
+        return;
+      }
+      toast.error("Erro ao criar empresa: " + (e?.message ?? "falha"));
+    },
   });
 }
 

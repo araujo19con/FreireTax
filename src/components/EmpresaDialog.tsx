@@ -13,6 +13,8 @@ import { validateCNPJ as validateCNPJReal, validateCNPJMessage, maskCNPJ } from 
 
 // Payload que vai pro banco — inclui campos RFB (todos opcionais)
 export interface EmpresaFormData {
+  /** ID da empresa quando em modo edição (não enviado no insert) */
+  id?: string;
   nome: string;
   cnpj: string;
   status: string;
@@ -152,15 +154,37 @@ export function EmpresaDialog({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [submitting, setSubmitting] = useState(false);
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!form.nome.trim()) { toast.error("Nome empresarial é obrigatório"); return; }
     const cnpjErr = validateCNPJMessage(form.cnpj);
     if (cnpjErr) { toast.error(cnpjErr); return; }
-    onSave(form);
-    toast.success(`Empresa "${form.nome}" salva com sucesso!`);
-    setOpen(false);
-    // não reseta o form — fica persistido pra visualização ao reabrir no edit
+
+    // Bloqueia duplicidade de CNPJ — proativo (UX) + UNIQUE constraint no DB (defensivo)
+    setSubmitting(true);
+    try {
+      const cnpjLimpo = form.cnpj.trim();
+      if (cnpjLimpo) {
+        const { data: existing } = await supabase
+          .from("empresas")
+          .select("id, nome")
+          .eq("cnpj", cnpjLimpo)
+          .maybeSingle();
+        // Existe outra empresa com este CNPJ (que não é a que estamos editando)
+        if (existing && existing.id !== initialData?.id) {
+          toast.error(`CNPJ já cadastrado: empresa "${existing.nome}" já existe.`);
+          setSubmitting(false);
+          return;
+        }
+      }
+      onSave(form);
+      toast.success(`Empresa "${form.nome}" salva com sucesso!`);
+      setOpen(false);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const situacaoColor = (s: string | null | undefined) => {
@@ -516,7 +540,7 @@ export function EmpresaDialog({
 
           <div className="flex justify-end gap-2 pt-2 border-t border-border sticky bottom-0 bg-background py-3 -mx-6 px-6 -mb-6">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit">Salvar</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? "Verificando..." : "Salvar"}</Button>
           </div>
         </form>
       </DialogContent>
