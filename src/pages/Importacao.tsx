@@ -49,6 +49,38 @@ function findColumn(headers: string[], candidates: string[]): number {
   return -1;
 }
 
+/**
+ * Versão estrita: o header normalizado deve ser EXATAMENTE igual a um candidato.
+ * Evita falsos positivos como "Situação" (cadastral RFB) ser detectado como "Status" CRM.
+ */
+function findColumnExact(headers: string[], candidates: string[]): number {
+  for (const candidate of candidates) {
+    const idx = headers.findIndex((h) => normalizeHeader(h) === candidate);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+const STATUS_VALIDOS = new Set(["prospect", "cliente", "inativo"]);
+
+/** Extrai mensagem legível de qualquer erro (Error nativo, PostgrestError, string, etc) */
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    // PostgrestError: { message, details, hint, code }
+    const parts: string[] = [];
+    if (typeof e.message === "string") parts.push(e.message);
+    if (typeof e.details === "string") parts.push(e.details);
+    if (typeof e.hint === "string") parts.push(`(${e.hint})`);
+    if (typeof e.code === "string") parts.push(`[code ${e.code}]`);
+    if (parts.length > 0) return parts.join(" — ");
+    try { return JSON.stringify(err); } catch { /* ignore */ }
+  }
+  return "erro desconhecido";
+}
+
 /** Converte string de planilha (R$ 1.500,00 / 1500.5 / 1500,5 / vazio) em número ou null. */
 function parseNumber(raw: unknown): number | null {
   if (raw == null) return null;
@@ -97,7 +129,9 @@ export default function Importacao() {
         const headers = (jsonData[0] as string[]).map(String);
         const cnpjCol = findColumn(headers, ["cnpj", "cpf_cnpj"]);
         const nomeCol = findColumn(headers, ["nome", "razao", "empresa", "name"]);
-        const statusCol = findColumn(headers, ["status", "situacao"]);
+        // ATENÇÃO: status do CRM (prospect/cliente/inativo) é DIFERENTE da
+        // situação cadastral RFB (ATIVA/SUSPENSA/...). Match estrito pra evitar confusão.
+        const statusCol = findColumnExact(headers, ["status"]);
         const funcCol = findColumn(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
         const fatCol  = findColumn(headers, ["faturamento", "receita", "revenue", "billing"]);
 
@@ -116,7 +150,9 @@ export default function Importacao() {
 
           const nome = nomeCol !== -1 ? String(row[nomeCol] || "").trim() : "";
           const rawCnpj = String(row[cnpjCol] || "").trim();
-          const status = statusCol !== -1 ? String(row[statusCol] || "prospect").trim().toLowerCase() : "prospect";
+          // Só aceita status válido — qualquer outra coisa vira "prospect"
+          const rawStatus = statusCol !== -1 ? String(row[statusCol] || "").trim().toLowerCase() : "prospect";
+          const status = STATUS_VALIDOS.has(rawStatus) ? rawStatus : "prospect";
           const cnpj = formatCNPJ(rawCnpj);
           const quantidade_funcionarios = funcCol !== -1 ? parseNumber(row[funcCol]) : null;
           const faturamento_anual = fatCol !== -1 ? parseNumber(row[fatCol]) : null;
@@ -243,6 +279,7 @@ export default function Importacao() {
       }
 
       // 2) UPDATE 1×1 das existentes (Promise.all em chunks pra velocidade)
+      const updateErrors: string[] = [];
       if (updRows.length > 0) {
         const CHUNK = 8;
         for (let i = 0; i < updRows.length; i += CHUNK) {
@@ -258,7 +295,11 @@ export default function Importacao() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { error } = await (supabase.from("empresas") as any)
               .update(patch).eq("id", r.existing_id!);
-            if (!error) upsertedCount++;
+            if (error) {
+              updateErrors.push(`${r.cnpj}: ${extractErrorMessage(error)}`);
+            } else {
+              upsertedCount++;
+            }
           }));
         }
       }
@@ -266,7 +307,16 @@ export default function Importacao() {
       const msgParts: string[] = [];
       if (inserted.length > 0) msgParts.push(`${inserted.length} criada${inserted.length === 1 ? "" : "s"}`);
       if (upsertedCount > 0)  msgParts.push(`${upsertedCount} atualizada${upsertedCount === 1 ? "" : "s"}`);
-      toast.success("Importação concluída: " + msgParts.join(", "));
+      if (msgParts.length > 0) {
+        toast.success("Importação concluída: " + msgParts.join(", "));
+      }
+      if (updateErrors.length > 0) {
+        console.warn("[Importacao] erros de update:", updateErrors);
+        toast.warning(
+          `${updateErrors.length} update${updateErrors.length === 1 ? " falhou" : "s falharam"} — veja o console`,
+          { duration: 8000 }
+        );
+      }
 
       // 3) Enriquecimento RFB só pras novas
       if (inserted.length > 0) {
@@ -311,9 +361,9 @@ export default function Importacao() {
       setRows([]);
       setFileName("");
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "erro desconhecido";
-      toast.error("Erro ao importar: " + msg);
-      console.error(error);
+      const msg = extractErrorMessage(error);
+      toast.error("Erro ao importar: " + msg, { duration: 10000 });
+      console.error("[Importacao] erro detalhado:", error);
     } finally {
       setImporting(false);
       setEnriching(false);
