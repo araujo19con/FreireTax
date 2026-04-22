@@ -41,27 +41,50 @@ Aliases: `@/` → `src/`.
 
 ## Schema Supabase (tabelas principais)
 
-- `empresas` — cadastro de clientes/prospects enriquecido com dados RFB (~25 campos: porte, situacao_cadastral, uf, cnae_principal, capital_social, opcao_simples, opcao_mei, receita_atualizada_em, etc.)
+- `empresas` — cadastro RFB-enriquecido. Campos manuais relevantes: `quantidade_funcionarios`, `faturamento_anual`, `regime_tributario` (simples/mei/lucro_presumido/lucro_real/imune_isento), `metadados jsonb` (campos personalizados). **CNPJ tem UNIQUE constraint** (mig 20260425).
 - `acoes_tributarias` — teses jurídicas; campo `regras_elegibilidade jsonb` filtra pool
-- `elegibilidade` — qualificação (empresa, acao, estado: nao_avaliada/qualificada/desqualificada/em_prospeccao/fechada/perdida)
-- `prospeccoes` — pipeline comercial (FK: empresa_id, acao_id). Status: "Não iniciado", "Contato inicial", ..., "Contrato assinado", "Perdido"
-- `tarefas` — colunas: `created_by`, `assigned_to`, `prazo`, `status`, `prospeccao_id`. **NÃO existe coluna `user_id`**
-- `reunioes` — agenda (advogado_id, data_inicio, data_fim)
-- `profiles` — perfis de usuário (nome, email, role)
-- `user_roles` — roles: admin, gestor, advogado
+- `criterios_elegibilidade` — critérios c/ `regra_excludente jsonb` (mig 20260422)
+- `elegibilidade` — qualificação empresa×ação (estados: nao_avaliada/qualificada/desqualificada/em_prospeccao/fechada/perdida)
+- `prospeccoes` — pipeline comercial. Status: "Não iniciado" → "Contato feito" → "Proposta enviada" → "Em negociação" → "Contrato assinado" → **"Serviço iniciado"** → "Perdido"
+- `propostas_templates` + `propostas` — templates reutilizáveis e proposta única por prospecção (mig 20260423)
+- `tarefas` — colunas: `created_by`, `assigned_to`, `prazo`, `status`. **NÃO existe `user_id`**
+- `reunioes` — agenda (advogado_id, data_inicio)
+- `profiles`, `user_roles` — perfis e roles (admin, gestor, advogado, comercial)
 
 Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
+
+## Helpers compartilhados (src/lib/) — REUSE em vez de reimplementar
+
+- `regimeTributario.ts` → `REGIMES_TRIBUTARIOS`, `getRegimeEffective(emp)`, `humanizeRegime`, `regimeColor`
+- `proposta.ts` → `ESCRITORIO_DEFAULT`, `renderVariaveis(html, ctx)`, `VARIAVEIS_DISPONIVEIS`
+- `criterios.ts` → `defaultRegraFor(tipo)`, `respostaDisparaExclusao`, `humanizeRegra`, `validateRegra`
+- `seedTemplates.ts` → templates seed de tarefas
+- `format.ts` → `formatCNPJ`, `formatCurrency`, `formatCompactCurrency`, `formatDate`, `formatRelativeDate`
+- `cnpj.ts` → `validateCNPJ` (mod 11 real), `validateCNPJMessage`, `maskCNPJ`, `unmaskCNPJ`
+
+## Componentes compartilhados (src/components/) — REUSE
+
+- `EmpresaFilterPopover` + `EmpresaFilterChips` — usado em **Empresas** E **Matriz Elegibilidade**. Não duplique a UI de filtros.
+- `EmpresaDialog` — criação/edição com validação CNPJ duplicado embutida
+- `PropostaDialog` + `RichTextEditor` (Tiptap) — proposta com timbrado, preview e print
+- `TarefaDialog`, `ReuniaoDialog` — pattern de loadRelations (profiles+empresas+prospeccoes)
+- `PageHeader`, `EmptyState`, `LoadingState` — UX consistente
 
 ## ⚠️ Regras para economizar contexto
 
 1. **NUNCA leia `src/integrations/supabase/types.ts` inteiro** — tem 1.624 linhas autogeradas. Use `Grep` para encontrar o tipo específico (`Database["public"]["Tables"]["tarefas"]["Row"]` etc.).
 
 2. **Arquivos grandes (>500 linhas) — sempre leia com `offset` + `limit`** antes de `Read` completo:
-   - `src/pages/Prospeccao.tsx` (1046)
+   - `src/pages/Prospeccao.tsx` (1247)
    - `src/pages/Acoes.tsx` (923)
-   - `src/pages/Empresas.tsx` (810)
+   - `src/pages/Empresas.tsx` (832)
+   - `src/components/PropostaDialog.tsx` (800)
+   - `src/pages/AnaliseRFB.tsx` (772)
    - `src/pages/Dashboard.tsx` (757)
-   - `src/pages/AnaliseRFB.tsx` (701)
+   - `src/pages/Importacao.tsx` (670)
+   - `src/components/EmpresaDialog.tsx` (647)
+   - `src/components/EmpresaFilterPopover.tsx` (626 — fonte ÚNICA dos filtros)
+   - `src/pages/empresas/EmpresaDetailSheet.tsx` (576)
    - `src/components/ui/sidebar.tsx` (637 — shadcn, raramente precisa ler)
 
 3. **Migrations em `supabase/migrations/`** — só leia a específica que interessa. Nome do arquivo já revela escopo (`20260421_elegibilidade_workflow.sql` etc.).
@@ -83,6 +106,10 @@ Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
 - **Vercel SPA**: `vercel.json` na raiz faz rewrite `/(.*) → /index.html`. Sem isso, F5 dá 404.
 - **BrasilAPI** tem rate limit agressivo — backfill precisa de delay 350ms + retry em 429.
 - **Toda prospecção precisa de `empresa_id` + `acao_id`** (denormalizado; `elegibilidade_id` é legacy).
+- **`prospeccoes` sem FK direta a empresa nos types**: linkar via `elegibilidade_id` → `elegibilidade.empresa_id` (pattern em Prospeccao.tsx `getEmpresa`/`getAcao`)
+- **Importação**: distinguir status CRM (`prospect/cliente/inativo`) de situação RFB (`ATIVA/SUSPENSA/...`). Use `findColumnExact` pra "status" para evitar falso positivo com "situação".
+- **Erros Postgres**: PostgrestError NÃO é `instanceof Error`. Use `extractErrorMessage(err)` (em `src/pages/Importacao.tsx`) ou checagem de `e.code === "23505"` para unique violation (CNPJ duplicado).
+- **Print PDF (PropostaDialog)**: para timbrado em todas as páginas, usar `<table>` com `<thead>`/`<tfoot>` (nunca `position: fixed`, que só ancora na primeira página no Chrome print).
 
 ## Fluxo de deploy
 
