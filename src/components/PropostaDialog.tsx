@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   FileText, Eye, Pencil, Send, Save, Plus, Trash2, ArrowUp, ArrowDown,
-  Printer, Sparkles, Copy, Mail, Trash,
+  Printer, Sparkles, Copy, Mail, Trash, FileDown,
 } from "lucide-react";
 import { RichTextEditor } from "./RichTextEditor";
 import {
@@ -25,6 +25,7 @@ import {
   type ProposalSection, type ProposalContext, ESCRITORIO_DEFAULT,
   renderVariaveis, VARIAVEIS_DISPONIVEIS,
 } from "@/lib/proposta";
+import { gerarPropostaDocx, gerarNomeArquivoDocx } from "@/lib/propostaDocx";
 import { toast } from "sonner";
 
 interface PropostaDialogProps {
@@ -221,6 +222,40 @@ export function PropostaDialog({ open, onClose, prospeccaoId, context, onSaved }
     setTimeout(() => w.print(), 400);
   };
 
+  const [gerandoDocx, setGerandoDocx] = useState(false);
+  const baixarWord = async () => {
+    if (gerandoDocx) return;
+    setGerandoDocx(true);
+    try {
+      // Pega template_path do template selecionado, ou usa o default em /public
+      const tplSelecionado = tplsQ.data?.find((t) => t.id === templateId);
+      const templateUrl = (tplSelecionado as { docx_template_path?: string } | undefined)?.docx_template_path
+        || "/template-proposta-padrao.docx";
+      await gerarPropostaDocx({
+        templateUrl,
+        filename: gerarNomeArquivoDocx({
+          empresaNome: context.empresaNome,
+          acaoNome: context.acaoNome,
+        }),
+        context: ctx,
+        titulo,
+        destinatarioEmpresa,
+        destinatarioAtt,
+        textoIntroducao,
+        secoes,
+        signatarioNome,
+        signatarioCargo,
+      });
+      toast.success("Word baixado. Pra gerar PDF: abra o arquivo e use 'Arquivo → Salvar como PDF'.", { duration: 6000 });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "falha desconhecida";
+      toast.error("Erro ao gerar Word: " + msg, { duration: 8000 });
+      console.error("[propostaDocx]", e);
+    } finally {
+      setGerandoDocx(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-5xl max-h-[95vh] overflow-hidden flex flex-col p-0">
@@ -243,9 +278,15 @@ export function PropostaDialog({ open, onClose, prospeccaoId, context, onSaved }
               <TabsTrigger value="editar" className="gap-1.5"><Pencil className="h-3.5 w-3.5" />Editar</TabsTrigger>
               <TabsTrigger value="preview" className="gap-1.5"><Eye className="h-3.5 w-3.5" />Preview</TabsTrigger>
             </TabsList>
-            <Button variant="outline" size="sm" onClick={printPreview}>
-              <Printer className="mr-1.5 h-3.5 w-3.5" />Imprimir / PDF
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="default" size="sm" onClick={baixarWord} disabled={gerandoDocx}>
+                <FileDown className="mr-1.5 h-3.5 w-3.5" />
+                {gerandoDocx ? "Gerando..." : "Baixar Word (.docx)"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={printPreview}>
+                <Printer className="mr-1.5 h-3.5 w-3.5" />Preview / Imprimir
+              </Button>
+            </div>
           </div>
 
           {/* ============== EDITAR ============== */}

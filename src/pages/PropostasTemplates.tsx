@@ -172,6 +172,7 @@ function TemplateFormDialog({ open, onClose, template, acoes, onCreate, onUpdate
   const [valorEntradaDefault, setValorEntradaDefault] = useState("");
   const [percentualExitoDefault, setPercentualExitoDefault] = useState("");
   const [textoDestinatario, setTextoDestinatario] = useState("");
+  const [docxTemplatePath, setDocxTemplatePath] = useState("");
   const [secoes, setSecoes] = useState<ProposalSection[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [ativo, setAtivo] = useState(true);
@@ -185,6 +186,7 @@ function TemplateFormDialog({ open, onClose, template, acoes, onCreate, onUpdate
     setValorEntradaDefault(template?.valor_entrada_default?.toString() ?? "");
     setPercentualExitoDefault(template?.percentual_exito_default?.toString() ?? "");
     setTextoDestinatario(template?.texto_destinatario_default ?? "");
+    setDocxTemplatePath(template?.docx_template_path ?? "/template-proposta-padrao.docx");
     setSecoes(template?.secoes ?? []);
     setAtivo(template?.ativo ?? true);
     setActiveIdx(0);
@@ -227,6 +229,7 @@ function TemplateFormDialog({ open, onClose, template, acoes, onCreate, onUpdate
       valor_entrada_default: valorEntradaDefault ? Number(valorEntradaDefault) : null,
       percentual_exito_default: percentualExitoDefault ? Number(percentualExitoDefault) : null,
       texto_destinatario_default: textoDestinatario.trim() || null,
+      docx_template_path: docxTemplatePath.trim() || null,
       ativo,
     };
     if (template) await onUpdate(template.id, data);
@@ -286,6 +289,21 @@ function TemplateFormDialog({ open, onClose, template, acoes, onCreate, onUpdate
               onChange={(e) => setTextoDestinatario(e.target.value)}
               placeholder="Texto que aparece logo após o destinatário"
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Caminho do template Word (.docx)</Label>
+            <Input
+              value={docxTemplatePath}
+              onChange={(e) => setDocxTemplatePath(e.target.value)}
+              placeholder="/template-proposta-padrao.docx"
+              className="font-mono text-xs"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Caminho do .docx oficial (com timbrado e formatação) usado pelo botão "Baixar Word".
+              Default: <code>/template-proposta-padrao.docx</code> (em <code>/public</code>).
+              Placeholders aceitos: <code>{`{empresa_nome}`}</code>, <code>{`{contato_nome}`}</code>, <code>{`{titulo_proposta}`}</code>, <code>{`{introducao}`}</code>, <code>{`{honorarios_entrada}`}</code>, <code>{`{honorarios_exito}`}</code>, <code>{`{signatario_nome}`}</code>, <code>{`{data_proposta}`}</code>, e loop <code>{`{#secoes}{titulo}\\n{conteudo_texto}{/secoes}`}</code>.
+            </p>
           </div>
 
           {/* Seções */}

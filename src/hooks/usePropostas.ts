@@ -24,6 +24,8 @@ export interface PropostaTemplate {
   valor_entrada_default: number | null;
   percentual_exito_default: number | null;
   texto_destinatario_default: string | null;
+  /** URL/path do .docx oficial (default: /template-proposta-padrao.docx em /public) */
+  docx_template_path: string | null;
   ativo: boolean;
   user_id: string;
   created_at: string;
