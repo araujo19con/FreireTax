@@ -17,6 +17,9 @@ interface ImportRow {
   status: string;
   quantidade_funcionarios: number | null;
   faturamento_anual: number | null;
+  /** Texto original quando a célula é um range tipo "100 A 999" — guardado em metadados */
+  faixa_funcionarios_texto: string | null;
+  faixa_faturamento_texto: string | null;
   /** ID da empresa existente (quando o CNPJ já existe na base) */
   existing_id: string | null;
   mode: ImportMode;
@@ -154,8 +157,16 @@ export default function Importacao() {
           const rawStatus = statusCol !== -1 ? String(row[statusCol] || "").trim().toLowerCase() : "prospect";
           const status = STATUS_VALIDOS.has(rawStatus) ? rawStatus : "prospect";
           const cnpj = formatCNPJ(rawCnpj);
+
+          // Funcionários/Faturamento: tenta como número; se não, captura texto pra metadados
+          const rawFunc = funcCol !== -1 ? String(row[funcCol] ?? "").trim() : "";
+          const rawFat  = fatCol  !== -1 ? String(row[fatCol]  ?? "").trim() : "";
           const quantidade_funcionarios = funcCol !== -1 ? parseNumber(row[funcCol]) : null;
-          const faturamento_anual = fatCol !== -1 ? parseNumber(row[fatCol]) : null;
+          const faturamento_anual       = fatCol  !== -1 ? parseNumber(row[fatCol])  : null;
+          // Se a coluna existe, valor é não-vazio E não virou número → é uma faixa/texto
+          const faixa_funcionarios_texto = (funcCol !== -1 && rawFunc && quantidade_funcionarios == null) ? rawFunc : null;
+          const faixa_faturamento_texto  = (fatCol  !== -1 && rawFat  && faturamento_anual == null)       ? rawFat  : null;
+
           const errors: string[] = [];
 
           if (!validateCNPJ(rawCnpj)) errors.push("CNPJ inválido");
@@ -163,6 +174,7 @@ export default function Importacao() {
           parsedDraft.push({
             nome, cnpj, status,
             quantidade_funcionarios, faturamento_anual,
+            faixa_funcionarios_texto, faixa_faturamento_texto,
             errors,
           });
         }
@@ -259,44 +271,98 @@ export default function Importacao() {
       let inserted: Array<{ id: string; cnpj: string }> = [];
       let upsertedCount = 0;
 
-      // 1) INSERT em batch das novas
+      // 1) INSERT em batch das novas — defensivo: se colunas novas
+      //    (quantidade_funcionarios, faturamento_anual, metadados) não
+      //    existirem no DB, faz fallback sem elas.
+      let usandoNovasColunas = true;
       if (newRows.length > 0) {
-        const insertData = newRows.map((r) => ({
-          nome: r.nome,
-          cnpj: r.cnpj,
-          status: r.status,
-          obs: "",
-          user_id: user?.id,
-          quantidade_funcionarios: r.quantidade_funcionarios,
-          faturamento_anual: r.faturamento_anual,
-        }));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: ins, error } = await (supabase.from("empresas") as any)
-          .insert(insertData)
-          .select("id, cnpj");
-        if (error) throw error;
+        const buildRow = (r: ImportRow, comExtras: boolean) => {
+          const base: Record<string, unknown> = {
+            nome: r.nome,
+            cnpj: r.cnpj,
+            status: r.status,
+            obs: "",
+            user_id: user?.id,
+          };
+          if (comExtras) {
+            if (r.quantidade_funcionarios != null) base.quantidade_funcionarios = r.quantidade_funcionarios;
+            if (r.faturamento_anual != null) base.faturamento_anual = r.faturamento_anual;
+            const meta: Record<string, string> = {};
+            if (r.faixa_funcionarios_texto) meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
+            if (r.faixa_faturamento_texto)  meta["Faixa de Faturamento"]  = r.faixa_faturamento_texto;
+            if (Object.keys(meta).length > 0) base.metadados = meta;
+          }
+          return base;
+        };
+
+        const tryInsert = async (comExtras: boolean) => {
+          const data = newRows.map((r) => buildRow(r, comExtras));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return await (supabase.from("empresas") as any)
+            .insert(data)
+            .select("id, cnpj");
+        };
+
+        let { data: ins, error } = await tryInsert(true);
+        if (error) {
+          // Provavelmente colunas novas ainda não foram criadas no Supabase.
+          // Loga e tenta de novo sem elas.
+          console.warn("[Importacao] insert com colunas novas falhou:", extractErrorMessage(error));
+          const retry = await tryInsert(false);
+          if (retry.error) throw retry.error;
+          ins = retry.data;
+          usandoNovasColunas = false;
+          toast.warning(
+            "Importadas sem funcionários/faturamento/faixas — aplique as migrations 20260424 no Supabase pra usar esses campos.",
+            { duration: 8000 }
+          );
+        }
         inserted = (ins ?? []) as typeof inserted;
       }
 
-      // 2) UPDATE 1×1 das existentes (Promise.all em chunks pra velocidade)
+      // 2) UPDATE 1×1 das existentes (Promise.all em chunks pra velocidade).
+      //    Se colunas novas não existirem (detectado no insert), pula elas no patch.
       const updateErrors: string[] = [];
       if (updRows.length > 0) {
         const CHUNK = 8;
         for (let i = 0; i < updRows.length; i += CHUNK) {
           const slice = updRows.slice(i, i + CHUNK);
           await Promise.all(slice.map(async (r) => {
-            // Só sobrescreve campos vindos da planilha (não toca nome/status/RFB)
-            const patch: Record<string, unknown> = {};
-            if (hasFuncionariosCol) patch.quantidade_funcionarios = r.quantidade_funcionarios;
-            if (hasFaturamentoCol)  patch.faturamento_anual = r.faturamento_anual;
-            // Se o usuário trouxe nome ou status, atualiza também
-            if (r.nome) patch.nome = r.nome;
-            if (Object.keys(patch).length === 0) return;
+            const patchFull: Record<string, unknown> = {};
+            const patchSafe: Record<string, unknown> = {};
+            if (r.nome) {
+              patchFull.nome = r.nome;
+              patchSafe.nome = r.nome;
+            }
+            if (usandoNovasColunas) {
+              if (hasFuncionariosCol && r.quantidade_funcionarios != null) {
+                patchFull.quantidade_funcionarios = r.quantidade_funcionarios;
+              }
+              if (hasFaturamentoCol && r.faturamento_anual != null) {
+                patchFull.faturamento_anual = r.faturamento_anual;
+              }
+              // Faixas como metadados (preserva formatação original)
+              const meta: Record<string, string> = {};
+              if (r.faixa_funcionarios_texto) meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
+              if (r.faixa_faturamento_texto)  meta["Faixa de Faturamento"]  = r.faixa_faturamento_texto;
+              if (Object.keys(meta).length > 0) patchFull.metadados = meta;
+            }
+            if (Object.keys(patchFull).length === 0) return;
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { error } = await (supabase.from("empresas") as any)
-              .update(patch).eq("id", r.existing_id!);
+              .update(patchFull).eq("id", r.existing_id!);
             if (error) {
-              updateErrors.push(`${r.cnpj}: ${extractErrorMessage(error)}`);
+              // Se for por causa das colunas novas, tenta o "safe" (só nome ou nada)
+              if (Object.keys(patchSafe).length > 0) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const retry = await (supabase.from("empresas") as any)
+                  .update(patchSafe).eq("id", r.existing_id!);
+                if (!retry.error) { upsertedCount++; return; }
+                updateErrors.push(`${r.cnpj}: ${extractErrorMessage(retry.error)}`);
+              } else {
+                updateErrors.push(`${r.cnpj}: ${extractErrorMessage(error)}`);
+              }
             } else {
               upsertedCount++;
             }
@@ -529,14 +595,20 @@ export default function Importacao() {
                       <td className="py-3 px-4 font-mono text-xs text-muted-foreground">{r.cnpj || "—"}</td>
                       {hasFuncionariosCol && (
                         <td className="py-3 px-4 text-right tabular-nums">
-                          {r.quantidade_funcionarios ?? "—"}
+                          {r.quantidade_funcionarios != null
+                            ? r.quantidade_funcionarios
+                            : r.faixa_funcionarios_texto
+                              ? <span className="text-[11px] text-info italic font-mono">{r.faixa_funcionarios_texto}</span>
+                              : "—"}
                         </td>
                       )}
                       {hasFaturamentoCol && (
                         <td className="py-3 px-4 text-right tabular-nums">
                           {r.faturamento_anual != null
                             ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(r.faturamento_anual)
-                            : "—"}
+                            : r.faixa_faturamento_texto
+                              ? <span className="text-[11px] text-info italic font-mono">{r.faixa_faturamento_texto}</span>
+                              : "—"}
                         </td>
                       )}
                       <td className="py-3 px-4">
@@ -568,6 +640,7 @@ export default function Importacao() {
             <li>• Se o CNPJ <strong>já existe</strong> na base, os campos importados (funcionários, faturamento, nome) <strong>atualizam</strong> a empresa existente.</li>
             <li>• Se o CNPJ <strong>não existe</strong>, uma empresa nova é criada (e enriquecida automaticamente via Receita Federal).</li>
             <li>• Valores monetários aceitam formato BR (R$ 1.500,00) ou US (1500.00).</li>
+            <li>• <strong>Faixas</strong> nas colunas Funcionários/Faturamento (ex: "100 A 999", "50M A 100") são preservadas como <strong>campos personalizados</strong> da empresa em vez de números, mantendo a formatação original.</li>
           </ul>
         </Card>
       )}
