@@ -14,7 +14,9 @@ import {
 } from "lucide-react";
 import type { Criterio } from "@/hooks/useCriterios";
 import { useCriterios } from "@/hooks/useCriterios";
-import { useRespostas, useSalvarQualificacao, useCriarProspeccaoFromEleg, evaluateAnswers, type AnswersMap } from "@/hooks/useQualificacao";
+import { useRespostas, useSalvarQualificacao, useCriarProspeccaoFromEleg, evaluateAnswers, isExcludenteFalhouAgora, type AnswersMap } from "@/hooks/useQualificacao";
+import { humanizeRegra } from "@/lib/criterios";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { Empresa } from "@/hooks/useEmpresas";
 import type { Acao } from "@/hooks/useAcoes";
 import { formatCurrency } from "@/lib/format";
@@ -253,6 +255,20 @@ export function QualificacaoWizard({
               <div className="pt-1">
                 {renderAnswerInput(current, currentAnswer, (field, value) => setAnswerField(current.id, field, value))}
               </div>
+
+              {/* Aviso inline quando a resposta dispara excludente */}
+              {isExcludenteFalhouAgora(current, currentAnswer) && (
+                <Alert variant="destructive" className="mt-2">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Esta resposta desqualifica a empresa</AlertTitle>
+                  <AlertDescription className="text-xs">
+                    {current.regra_excludente
+                      ? <>Regra: <em>{humanizeRegra(current.regra_excludente)}</em>. Você pode continuar — a qualificação registrará "Não elegível".</>
+                      : <>Critério excludente — resposta negativa. Você pode continuar; a qualificação registrará "Não elegível".</>
+                    }
+                  </AlertDescription>
+                </Alert>
+              )}
             </Card>
           </div>
         )}

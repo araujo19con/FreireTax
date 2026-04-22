@@ -6,6 +6,11 @@ import { logAudit } from "@/lib/audit";
 
 export type TipoResposta = "boolean" | "date" | "number" | "text" | "select";
 
+// Re-export do shape de regra de exclusão (definido em src/lib/criterios.ts
+// pra evitar ciclo de imports)
+import type { RegraExcludente } from "@/lib/criterios";
+export type { RegraExcludente };
+
 export interface Criterio {
   id: string;
   acao_id: string;
@@ -15,6 +20,8 @@ export interface Criterio {
   tipo_resposta: TipoResposta;
   opcoes: string[] | null;
   eh_excludente: boolean;
+  /** Regra granular de exclusão por tipo. NULL = legacy (answerIsPositive). */
+  regra_excludente: RegraExcludente | null;
   peso: number;
   formula_valor: string | null;
   user_id: string;

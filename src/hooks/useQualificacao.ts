@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { logAudit } from "@/lib/audit";
 import type { Criterio, TipoResposta } from "./useCriterios";
+import { humanizeRegra, respostaDisparaExclusao } from "@/lib/criterios";
 
 export interface RespostaValor {
   bool?: boolean;
@@ -79,9 +80,20 @@ export function evaluateAnswers(criterios: Criterio[], answers: AnswersMap): {
     if (isPositive) {
       positivos++;
       pesoPositivo += c.peso;
-    } else if (c.eh_excludente) {
-      excludenteFalhou = true;
-      justificativas.push(`Excludente: "${c.pergunta}" — resposta negativa.`);
+    }
+
+    // Avaliação de exclusão — preferir regra granular; cair no legacy quando ausente
+    if (c.eh_excludente) {
+      const falhou = c.regra_excludente
+        ? respostaDisparaExclusao(c.regra_excludente, resp)
+        : !isPositive; // legacy: qualquer resposta "negativa" exclui
+      if (falhou) {
+        excludenteFalhou = true;
+        const motivo = c.regra_excludente
+          ? humanizeRegra(c.regra_excludente)
+          : "resposta negativa";
+        justificativas.push(`Excludente: "${c.pergunta}" — ${motivo}.`);
+      }
     }
   }
 
@@ -105,6 +117,16 @@ export function evaluateAnswers(criterios: Criterio[], answers: AnswersMap): {
     valor,
     completo,
   };
+}
+
+/**
+ * Verifica se a resposta de um critério dispara sua regra de exclusão.
+ * Usado para feedback inline no wizard — não recalcula score nem justificativa.
+ */
+export function isExcludenteFalhouAgora(c: Criterio, resp: RespostaValor | undefined): boolean {
+  if (!c.eh_excludente || !resp) return false;
+  if (c.regra_excludente) return respostaDisparaExclusao(c.regra_excludente, resp);
+  return !answerIsPositive(c.tipo_resposta, resp);
 }
 
 function answerIsPositive(tipo: TipoResposta, resp: RespostaValor): boolean {
