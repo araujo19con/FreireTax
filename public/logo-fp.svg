@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- Aproxima\u00e7\u00e3o do mon\u00f3grama FP do logo Freire Pignataro.
+       Substitua este arquivo pelo logo oficial em alta resolu\u00e7\u00e3o quando dispon\u00edvel. -->
+  <circle cx="60" cy="60" r="55" fill="none" stroke="#3a3f4a" stroke-width="2.5"/>
+  <text x="60" y="80"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="60"
+        font-style="italic"
+        font-weight="500"
+        fill="#3a3f4a"
+        text-anchor="middle"
+        letter-spacing="-2">FP</text>
+</svg>
