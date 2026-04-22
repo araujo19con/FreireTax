@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Timbrado inferior Freire Pignataro - banda decorativa espelhada.
-     Substitua por PNG/SVG do timbrado oficial em alta resolucao. -->
+     Layout: tan 0-12% | dark gray 12-50% | tan 50-58% | orange parallelogram 58-72% | tan 72-100% -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 240" preserveAspectRatio="none" width="100%" height="100%">
-  <!-- Base tan -->
+  <!-- Base tan full width -->
   <rect x="0" y="0" width="2100" height="240" fill="#d3b58a"/>
-  <!-- Retangulo dark gray na esquerda-centro (espelhado em rel ao topo) -->
-  <rect x="180" y="0" width="900" height="240" fill="#3a3f48"/>
-  <!-- Paralelogramo orange (acento ao lado direito do gray) -->
-  <polygon points="1140,0 1380,0 1340,240 1100,240" fill="#c98253"/>
-  <!-- Linha decorativa fina acima da banda (separador) -->
-  <rect x="0" y="0" width="2100" height="2" fill="#9c9c9c" opacity="0.3"/>
+  <!-- Retangulo dark gray (12%-50%) -->
+  <rect x="252" y="0" width="798" height="240" fill="#3a3f48"/>
+  <!-- Paralelogramo orange (58%-72%), inclinado pro lado direito -->
+  <polygon points="1218,0 1512,0 1572,240 1278,240" fill="#c98253"/>
 </svg>

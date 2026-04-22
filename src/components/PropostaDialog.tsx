@@ -477,23 +477,24 @@ interface PreviewProps {
   ctx: ProposalContext;
 }
 
-// Cabeçalho timbrado completo (banda decorativa + logo + wordmark)
-// Replicado idêntico em todas as páginas. Mude as URLs de imagens
-// no /public se quiser substituir por timbrado oficial em PNG.
+// Cabeçalho timbrado (banda decorativa + logo FP + wordmark)
+// Mesma estrutura do thead usado no print — garante preview fiel ao PDF.
 function TimbradoTopo() {
   return (
-    <div className="relative w-full" aria-hidden="true">
-      <img src="/timbrado-top.svg" alt="" className="block w-full h-7 select-none" />
-      <div className="flex items-center gap-4 px-12 py-5">
-        <img src="/logo-fp.svg" alt="Freire Pignataro" className="h-20 w-20 shrink-0" />
-        <div className="leading-tight" style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
-          <div className="text-3xl text-gray-700" style={{ letterSpacing: "0.5px" }}>
-            Freire Pignataro
-          </div>
-          <div className="text-[9px] text-gray-600 tracking-[0.18em] uppercase mt-1 text-center">
+    <div className="w-full" aria-hidden="true">
+      <img src="/timbrado-top.svg" alt="" className="block w-full select-none" style={{ height: "10mm" }} />
+      <div
+        className="flex items-center gap-4 border-b border-gray-300"
+        style={{ padding: "6mm 18mm 4mm", fontFamily: "Georgia, 'Times New Roman', serif" }}
+      >
+        <img src="/logo-fp.svg" alt="Freire Pignataro" className="shrink-0" style={{ width: "24mm", height: "24mm" }} />
+        <div className="leading-tight text-gray-700 flex-1">
+          <div style={{ fontSize: "28pt", letterSpacing: "0.5px" }}>Freire Pignataro</div>
+          <div className="text-center text-gray-600 mt-0.5"
+               style={{ fontSize: "7.5pt", letterSpacing: "2px", textTransform: "uppercase" }}>
             — Dantas, Freire, Pignataro, Maciel e Costa —
           </div>
-          <div className="text-[12px] italic text-gray-700 text-center">
+          <div className="text-center italic text-gray-700" style={{ fontSize: "12pt" }}>
             Advogados Associados
           </div>
         </div>
@@ -502,23 +503,19 @@ function TimbradoTopo() {
   );
 }
 
-// Rodapé timbrado: 3 colunas (telefone | URL | cidades) + banda decorativa
+// Rodapé timbrado: 3 colunas (telefone | URL | cidades) + banda decorativa espelhada
 function TimbradoRodape() {
   return (
     <div className="w-full" aria-hidden="true">
-      <div className="flex items-center justify-around px-12 py-3 text-[10pt] text-gray-700"
-           style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}>
-        <div className="flex items-center gap-2">
-          <PhoneIcon /><span>{ESCRITORIO_DEFAULT.telefone}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <GlobeIcon /><span className="text-[9pt]">{ESCRITORIO_DEFAULT.site.replace(/^https?:\/\//, "")}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <PinIcon /><span>Natal | Brasília | São Paulo</span>
-        </div>
+      <div
+        className="flex items-center justify-around border-t border-gray-300 text-gray-600"
+        style={{ padding: "4mm 18mm", fontSize: "10pt", fontFamily: "Georgia, 'Times New Roman', serif" }}
+      >
+        <div className="flex items-center gap-1.5"><PhoneIcon /><span>{ESCRITORIO_DEFAULT.telefone}</span></div>
+        <div className="flex items-center gap-1.5"><GlobeIcon /><span>{ESCRITORIO_DEFAULT.site.replace(/^https?:\/\//, "")}</span></div>
+        <div className="flex items-center gap-1.5"><PinIcon /><span>Natal | Brasília | São Paulo</span></div>
       </div>
-      <img src="/timbrado-bottom.svg" alt="" className="block w-full h-7 select-none" />
+      <img src="/timbrado-bottom.svg" alt="" className="block w-full select-none" style={{ height: "10mm" }} />
     </div>
   );
 }
@@ -555,9 +552,9 @@ function PropostaPreview(p: PreviewProps) {
     >
       <TimbradoTopo />
 
-      <div className="px-12 py-2">
+      <div style={{ padding: "8mm 18mm 6mm" }}>
         {/* Título */}
-        <h1 className="text-center font-bold uppercase mt-2 mb-7 leading-snug" style={{ fontSize: "20pt", letterSpacing: "0.5px" }}>
+        <h1 className="text-center font-bold uppercase mt-2 mb-7 leading-snug" style={{ fontSize: "18pt", letterSpacing: "0.5px" }}>
           {renderVariaveis(p.titulo, ctx)}
         </h1>
 
@@ -630,39 +627,32 @@ function renderPropostaHTML(p: PreviewProps): string {
     </svg>
   `;
 
-  // Banda superior — tan + dark gray central + paralelogramo orange
-  const timbradoTopSvg = `
+  // Banda superior — tan 0-28% | gray 28-50% | tan 50-64% | orange 64-80% | tan 80-100%
+  const bandaTopoSvg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 240" preserveAspectRatio="none" width="100%" height="100%">
       <rect x="0" y="0" width="2100" height="240" fill="#d3b58a"/>
-      <rect x="600" y="0" width="600" height="240" fill="#3a3f48"/>
-      <polygon points="1430,0 1640,0 1600,240 1390,240" fill="#c98253"/>
-      <rect x="0" y="238" width="2100" height="2" fill="#9c9c9c" opacity="0.3"/>
+      <rect x="588" y="0" width="462" height="240" fill="#3a3f48"/>
+      <polygon points="1344,0 1680,0 1620,240 1284,240" fill="#c98253"/>
     </svg>
   `;
 
-  // Banda inferior — espelhada
-  const timbradoBottomSvg = `
+  // Banda inferior — tan 0-12% | gray 12-50% | tan 50-58% | orange 58-72% | tan 72-100%
+  const bandaRodapeSvg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 240" preserveAspectRatio="none" width="100%" height="100%">
       <rect x="0" y="0" width="2100" height="240" fill="#d3b58a"/>
-      <rect x="180" y="0" width="900" height="240" fill="#3a3f48"/>
-      <polygon points="1140,0 1380,0 1340,240 1100,240" fill="#c98253"/>
-      <rect x="0" y="0" width="2100" height="2" fill="#9c9c9c" opacity="0.3"/>
+      <rect x="252" y="0" width="798" height="240" fill="#3a3f48"/>
+      <polygon points="1218,0 1512,0 1572,240 1278,240" fill="#c98253"/>
     </svg>
   `;
 
-  const phoneIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" width="11" height="11" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`;
-  const globeIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" width="11" height="11"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
-  const pinIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" width="11" height="11"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+  const phoneIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" width="12" height="12" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`;
+  const globeIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" width="12" height="12"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+  const pinIconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" width="12" height="12"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
 
-  // CSS — chave da repetição em todas as páginas: position: fixed.
-  // Chrome/Edge re-imprimem elementos position:fixed em CADA página de impressão.
-  // Os margins do @page reservam o espaço do timbrado.
+  // Estratégia: <table> com thead/tfoot — browsers re-imprimem nativamente
+  // a cada página que a tabela quebra. Muito mais confiável que position:fixed.
   const css = `
-    @page {
-      size: A4;
-      /* Margens reservam o espaço para os timbrados fixed */
-      margin: 50mm 16mm 35mm 16mm;
-    }
+    @page { size: A4; margin: 0; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     html, body { margin: 0; padding: 0; }
     body {
@@ -672,57 +662,56 @@ function renderPropostaHTML(p: PreviewProps): string {
       font-size: 11pt;
     }
 
-    /* Timbrado superior — repete em TODA página via position: fixed */
-    .timbrado-topo {
-      position: fixed;
-      top: -50mm;          /* compensa margem da @page */
-      left: -16mm; right: -16mm;
-      height: 50mm;
-      z-index: 100;
+    table.folha {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
     }
-    .timbrado-topo .banda {
-      width: 100%; height: 8mm; display: block;
-    }
-    .timbrado-topo .header {
-      display: flex; align-items: center; gap: 14px;
-      padding: 6mm 18mm 0;
-    }
-    .timbrado-topo .header .logo { width: 22mm; height: 22mm; flex-shrink: 0; }
-    .timbrado-topo .header .text { line-height: 1.1; color: #4a4a4a; }
-    .timbrado-topo .header .name { font-size: 26pt; letter-spacing: 0.5px; }
-    .timbrado-topo .header .sub { font-size: 7.5pt; letter-spacing: 2px; text-transform: uppercase; color: #666; margin-top: 2px; text-align: center; }
-    .timbrado-topo .header .italic { font-size: 11pt; font-style: italic; color: #4a4a4a; text-align: center; }
+    table.folha thead { display: table-header-group; }
+    table.folha tfoot { display: table-footer-group; }
+    table.folha td { padding: 0; vertical-align: top; }
 
-    /* Timbrado inferior — repete em TODA página via position: fixed */
-    .timbrado-rodape {
-      position: fixed;
-      bottom: -35mm;
-      left: -16mm; right: -16mm;
-      height: 35mm;
-      z-index: 100;
+    /* --- TIMBRADO TOPO (thead) --- */
+    .banda { display: block; width: 100%; height: 10mm; line-height: 0; }
+    .header-area {
+      padding: 6mm 18mm 4mm;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      border-bottom: 1px solid #c0c0c0;
     }
-    .timbrado-rodape .footer {
-      display: flex; justify-content: space-around; align-items: center;
-      padding: 8mm 18mm 4mm;
-      font-size: 9.5pt; color: #555;
+    .header-area .logo { width: 24mm; height: 24mm; flex-shrink: 0; }
+    .header-area .text { line-height: 1.1; color: #4a4a4a; flex: 1; }
+    .header-area .name { font-size: 28pt; letter-spacing: 0.5px; }
+    .header-area .sub {
+      font-size: 7.5pt; letter-spacing: 2px; text-transform: uppercase;
+      color: #666; margin-top: 2px; text-align: center;
     }
-    .timbrado-rodape .footer .item { display: flex; align-items: center; gap: 5px; }
-    .timbrado-rodape .footer .item svg { flex-shrink: 0; }
-    .timbrado-rodape .banda {
-      width: 100%; height: 8mm; display: block;
+    .header-area .italic {
+      font-size: 12pt; font-style: italic; color: #4a4a4a; text-align: center;
     }
 
-    /* Conteúdo principal */
-    .conteudo {
-      position: relative;
-      z-index: 1;
+    /* --- TIMBRADO RODAPÉ (tfoot) --- */
+    .footer-area {
+      padding: 4mm 18mm 4mm;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      font-size: 10pt;
+      color: #555;
+      border-top: 1px solid #c0c0c0;
     }
+    .footer-area .item { display: flex; align-items: center; gap: 5px; }
+    .footer-area .item svg { flex-shrink: 0; }
+
+    /* --- BODY (tbody td) --- */
+    .body-area { padding: 8mm 18mm 6mm; }
 
     h1.titulo {
       text-align: center;
       font-size: 18pt;
       text-transform: uppercase;
-      margin: 0 0 10mm;
+      margin: 2mm 0 8mm;
       letter-spacing: 0.5px;
     }
     h2 { font-size: 11pt; font-weight: bold; text-transform: uppercase; margin: 8mm 0 3mm; letter-spacing: 0.3px; }
@@ -740,7 +729,6 @@ function renderPropostaHTML(p: PreviewProps): string {
     .signature .nome { font-weight: bold; margin-top: 3mm; }
     .signature .cargo { font-size: 9.5pt; color: #555; }
 
-    /* Garante que conteúdo nunca colide com timbrado fixo */
     section { page-break-inside: avoid; }
   `;
 
@@ -754,48 +742,53 @@ function renderPropostaHTML(p: PreviewProps): string {
   return `<!doctype html>
 <html lang="pt-br"><head><meta charset="utf-8"><title>${escapeHTML(p.titulo)}</title>
 <style>${css}</style></head><body>
-
-  <!-- TIMBRADO TOPO — fica position:fixed e repete em todas as páginas impressas -->
-  <div class="timbrado-topo">
-    <div class="banda">${timbradoTopSvg}</div>
-    <div class="header">
-      <div class="logo">${logoSvg}</div>
-      <div class="text">
-        <div class="name">Freire Pignataro</div>
-        <div class="sub">— Dantas, Freire, Pignataro, Maciel e Costa —</div>
-        <div class="italic">Advogados Associados</div>
+<table class="folha">
+  <thead>
+    <tr><td>
+      <div class="banda">${bandaTopoSvg}</div>
+      <div class="header-area">
+        <div class="logo">${logoSvg}</div>
+        <div class="text">
+          <div class="name">Freire Pignataro</div>
+          <div class="sub">— Dantas, Freire, Pignataro, Maciel e Costa —</div>
+          <div class="italic">Advogados Associados</div>
+        </div>
       </div>
-    </div>
-  </div>
+    </td></tr>
+  </thead>
 
-  <!-- TIMBRADO RODAPÉ — fica position:fixed e repete em todas as páginas impressas -->
-  <div class="timbrado-rodape">
-    <div class="footer">
-      <div class="item">${phoneIconSvg}<span>${ESCRITORIO_DEFAULT.telefone}</span></div>
-      <div class="item">${globeIconSvg}<span>${escapeHTML(ESCRITORIO_DEFAULT.site.replace(/^https?:\/\//, ""))}</span></div>
-      <div class="item">${pinIconSvg}<span>Natal | Brasília | São Paulo</span></div>
-    </div>
-    <div class="banda">${timbradoBottomSvg}</div>
-  </div>
+  <tbody>
+    <tr><td class="body-area">
+      <h1 class="titulo">${escapeHTML(renderVariaveis(p.titulo, ctx))}</h1>
 
-  <main class="conteudo">
-    <h1 class="titulo">${escapeHTML(renderVariaveis(p.titulo, ctx))}</h1>
+      <div class="destinatario">
+        <div class="empresa">${escapeHTML(renderVariaveis(p.destinatarioEmpresa, ctx))}</div>
+        ${p.destinatarioAtt ? `<div class="att">Att.: ${escapeHTML(renderVariaveis(p.destinatarioAtt, ctx))}</div>` : ""}
+      </div>
 
-    <div class="destinatario">
-      <div class="empresa">${escapeHTML(renderVariaveis(p.destinatarioEmpresa, ctx))}</div>
-      ${p.destinatarioAtt ? `<div class="att">Att.: ${escapeHTML(renderVariaveis(p.destinatarioAtt, ctx))}</div>` : ""}
-    </div>
+      ${p.textoIntroducao ? `<p>${escapeHTML(renderVariaveis(p.textoIntroducao, ctx))}</p>` : ""}
 
-    ${p.textoIntroducao ? `<p>${escapeHTML(renderVariaveis(p.textoIntroducao, ctx))}</p>` : ""}
+      ${secoesHTML}
 
-    ${secoesHTML}
+      <div class="signature">
+        <p>Atenciosamente,</p>
+        <p class="nome">${escapeHTML(p.signatarioNome)}</p>
+        ${p.signatarioCargo ? `<p class="cargo">${escapeHTML(p.signatarioCargo)}</p>` : ""}
+      </div>
+    </td></tr>
+  </tbody>
 
-    <div class="signature">
-      <p>Atenciosamente,</p>
-      <p class="nome">${escapeHTML(p.signatarioNome)}</p>
-      ${p.signatarioCargo ? `<p class="cargo">${escapeHTML(p.signatarioCargo)}</p>` : ""}
-    </div>
-  </main>
+  <tfoot>
+    <tr><td>
+      <div class="footer-area">
+        <div class="item">${phoneIconSvg}<span>${ESCRITORIO_DEFAULT.telefone}</span></div>
+        <div class="item">${globeIconSvg}<span>${escapeHTML(ESCRITORIO_DEFAULT.site.replace(/^https?:\/\//, ""))}</span></div>
+        <div class="item">${pinIconSvg}<span>Natal | Brasília | São Paulo</span></div>
+      </div>
+      <div class="banda">${bandaRodapeSvg}</div>
+    </td></tr>
+  </tfoot>
+</table>
 </body></html>`;
 }
 
