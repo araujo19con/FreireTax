@@ -58,6 +58,8 @@ export function activeFiltersCount(f: EmpresaFilters): number {
   if (f.temAcao != null) n++;
   if (f.pastaId) n++;
   if (f.capitalMin != null || f.capitalMax != null) n++;
+  if (f.funcionariosMin != null || f.funcionariosMax != null) n++;
+  if (f.faturamentoMin != null || f.faturamentoMax != null) n++;
   if (f.municipio?.trim()) n++;
   if (f.cnae?.trim()) n++;
   return n;
@@ -118,6 +120,24 @@ export function EmpresaFilterChips({
       : min != null ? `Capital ≥ ${formatBRLCompact(min)}`
       : `Capital ≤ ${formatBRLCompact(max)}`;
     chips.push({ label, onRemove: () => onChange({ ...filters, capitalMin: null, capitalMax: null }) });
+  }
+  if (filters.funcionariosMin != null || filters.funcionariosMax != null) {
+    const min = filters.funcionariosMin;
+    const max = filters.funcionariosMax;
+    const label =
+      min != null && max != null ? `Funcionários: ${min}–${max}`
+      : min != null ? `Funcionários ≥ ${min}`
+      : `Funcionários ≤ ${max}`;
+    chips.push({ label, onRemove: () => onChange({ ...filters, funcionariosMin: null, funcionariosMax: null }) });
+  }
+  if (filters.faturamentoMin != null || filters.faturamentoMax != null) {
+    const min = filters.faturamentoMin;
+    const max = filters.faturamentoMax;
+    const label =
+      min != null && max != null ? `Faturamento: ${formatBRLCompact(min)} – ${formatBRLCompact(max)}`
+      : min != null ? `Faturamento ≥ ${formatBRLCompact(min)}`
+      : `Faturamento ≤ ${formatBRLCompact(max)}`;
+    chips.push({ label, onRemove: () => onChange({ ...filters, faturamentoMin: null, faturamentoMax: null }) });
   }
   if (filters.municipio?.trim()) {
     chips.push({
@@ -415,6 +435,117 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                   );
                 })}
               </div>
+            </section>
+
+            <section>
+              <Label className="text-xs font-semibold uppercase text-muted-foreground">Funcionários</Label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Mínimo</Label>
+                  <Input
+                    type="number" inputMode="numeric" min={0} placeholder="0"
+                    value={filters.funcionariosMin ?? ""}
+                    onChange={(e) =>
+                      onChange({ ...filters, funcionariosMin: e.target.value === "" ? null : Number(e.target.value) })
+                    }
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Máximo</Label>
+                  <Input
+                    type="number" inputMode="numeric" min={0} placeholder="sem limite"
+                    value={filters.funcionariosMax ?? ""}
+                    onChange={(e) =>
+                      onChange({ ...filters, funcionariosMax: e.target.value === "" ? null : Number(e.target.value) })
+                    }
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+              </div>
+              <div className="mt-2 flex gap-1 flex-wrap">
+                {[
+                  { label: "Até 10", min: null, max: 10 },
+                  { label: "11–50", min: 11, max: 50 },
+                  { label: "51–200", min: 51, max: 200 },
+                  { label: "201–1000", min: 201, max: 1000 },
+                  { label: "Acima de 1000", min: 1001, max: null },
+                ].map((preset) => {
+                  const active = filters.funcionariosMin === preset.min && filters.funcionariosMax === preset.max;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() =>
+                        onChange({ ...filters, funcionariosMin: preset.min, funcionariosMax: preset.max })
+                      }
+                      className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                        active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Filtro numérico. Faixas importadas como texto ("100 A 999") ficam como campos personalizados na empresa.
+              </p>
+            </section>
+
+            <section>
+              <Label className="text-xs font-semibold uppercase text-muted-foreground">Faturamento anual (R$)</Label>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Mínimo</Label>
+                  <Input
+                    type="number" inputMode="numeric" min={0} placeholder="0"
+                    value={filters.faturamentoMin ?? ""}
+                    onChange={(e) =>
+                      onChange({ ...filters, faturamentoMin: e.target.value === "" ? null : Number(e.target.value) })
+                    }
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Máximo</Label>
+                  <Input
+                    type="number" inputMode="numeric" min={0} placeholder="sem limite"
+                    value={filters.faturamentoMax ?? ""}
+                    onChange={(e) =>
+                      onChange({ ...filters, faturamentoMax: e.target.value === "" ? null : Number(e.target.value) })
+                    }
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+              </div>
+              <div className="mt-2 flex gap-1 flex-wrap">
+                {[
+                  { label: "Até R$ 360k", min: null, max: 360_000 },
+                  { label: "R$ 360k–4,8M", min: 360_000, max: 4_800_000 },
+                  { label: "R$ 4,8M–78M", min: 4_800_000, max: 78_000_000 },
+                  { label: "Acima de R$ 78M", min: 78_000_000, max: null },
+                ].map((preset) => {
+                  const active = filters.faturamentoMin === preset.min && filters.faturamentoMax === preset.max;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() =>
+                        onChange({ ...filters, faturamentoMin: preset.min, faturamentoMax: preset.max })
+                      }
+                      className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                        active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Presets seguem faixas do Simples Nacional e LP. Filtro numérico; faixas importadas como texto viram campos personalizados.
+              </p>
             </section>
 
             <section>

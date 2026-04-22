@@ -24,6 +24,12 @@ export interface EmpresaFilters {
   municipio?: string | null;
   /** Busca em `cnae_principal` (código) OU `cnae_principal_desc` (descrição) via ilike */
   cnae?: string | null;
+  /** Quantidade de funcionários — range numérico */
+  funcionariosMin?: number | null;
+  funcionariosMax?: number | null;
+  /** Faturamento anual em R$ — range numérico */
+  faturamentoMin?: number | null;
+  faturamentoMax?: number | null;
 }
 
 export type EmpresaSort =
@@ -122,6 +128,10 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.opcaoSimples === false) query = query.eq("opcao_simples", false);
   if (filters.capitalMin != null) query = query.gte("capital_social", filters.capitalMin);
   if (filters.capitalMax != null) query = query.lte("capital_social", filters.capitalMax);
+  if (filters.funcionariosMin != null) query = query.gte("quantidade_funcionarios", filters.funcionariosMin);
+  if (filters.funcionariosMax != null) query = query.lte("quantidade_funcionarios", filters.funcionariosMax);
+  if (filters.faturamentoMin != null) query = query.gte("faturamento_anual", filters.faturamentoMin);
+  if (filters.faturamentoMax != null) query = query.lte("faturamento_anual", filters.faturamentoMax);
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
   if (filters.enriquecida === "error") query = query.not("receita_erro", "is", null);

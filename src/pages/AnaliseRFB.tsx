@@ -63,6 +63,10 @@ interface Filtros {
   situacao: string[];
   regime: "all" | "simples" | "mei" | "outros";
   search: string;
+  funcionariosMin: number | null;
+  funcionariosMax: number | null;
+  faturamentoMin: number | null;
+  faturamentoMax: number | null;
 }
 
 export default function AnaliseRFB() {
@@ -74,6 +78,10 @@ export default function AnaliseRFB() {
     situacao: [],
     regime: "all",
     search: "",
+    funcionariosMin: null,
+    funcionariosMax: null,
+    faturamentoMin: null,
+    faturamentoMax: null,
   });
 
   const fetchEmpresas = async () => {
@@ -100,6 +108,13 @@ export default function AnaliseRFB() {
       if (filtros.regime === "simples" && !any.opcao_simples) return false;
       if (filtros.regime === "mei" && !any.opcao_mei) return false;
       if (filtros.regime === "outros" && (any.opcao_simples || any.opcao_mei)) return false;
+      // Filtros numéricos novos: funcionários e faturamento_anual
+      const qf = any.quantidade_funcionarios as number | null | undefined;
+      if (filtros.funcionariosMin != null && (qf == null || qf < filtros.funcionariosMin)) return false;
+      if (filtros.funcionariosMax != null && (qf == null || qf > filtros.funcionariosMax)) return false;
+      const fa = any.faturamento_anual as number | null | undefined;
+      if (filtros.faturamentoMin != null && (fa == null || fa < filtros.faturamentoMin)) return false;
+      if (filtros.faturamentoMax != null && (fa == null || fa > filtros.faturamentoMax)) return false;
       if (s && !(
         e.nome.toLowerCase().includes(s) ||
         e.cnpj.includes(s) ||
@@ -207,12 +222,18 @@ export default function AnaliseRFB() {
   };
 
   const limparFiltros = () => {
-    setFiltros({ uf: [], porte: [], situacao: [], regime: "all", search: "" });
+    setFiltros({
+      uf: [], porte: [], situacao: [], regime: "all", search: "",
+      funcionariosMin: null, funcionariosMax: null,
+      faturamentoMin: null, faturamentoMax: null,
+    });
   };
 
   const hasFiltros =
     filtros.uf.length > 0 || filtros.porte.length > 0 || filtros.situacao.length > 0 ||
-    filtros.regime !== "all" || filtros.search.trim() !== "";
+    filtros.regime !== "all" || filtros.search.trim() !== "" ||
+    filtros.funcionariosMin != null || filtros.funcionariosMax != null ||
+    filtros.faturamentoMin != null || filtros.faturamentoMax != null;
 
   const exportarFiltradas = () => {
     if (filtered.length === 0) return toast.error("Nenhuma empresa filtrada para exportar");
@@ -456,6 +477,46 @@ export default function AnaliseRFB() {
                     {r === "all" ? "Todos" : r === "simples" ? "Simples Nacional" : r === "mei" ? "MEI" : "Lucro Presumido/Real"}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Funcionários — range */}
+            <div className="space-y-1">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Funcionários (faixa)</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number" inputMode="numeric" min={0} placeholder="mín"
+                  value={filtros.funcionariosMin ?? ""}
+                  onChange={(e) => setFiltros((f) => ({ ...f, funcionariosMin: e.target.value === "" ? null : Number(e.target.value) }))}
+                  className="h-8 text-xs w-24"
+                />
+                <span className="text-muted-foreground text-xs">a</span>
+                <Input
+                  type="number" inputMode="numeric" min={0} placeholder="máx"
+                  value={filtros.funcionariosMax ?? ""}
+                  onChange={(e) => setFiltros((f) => ({ ...f, funcionariosMax: e.target.value === "" ? null : Number(e.target.value) }))}
+                  className="h-8 text-xs w-24"
+                />
+              </div>
+            </div>
+
+            {/* Faturamento anual — range */}
+            <div className="space-y-1">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Faturamento anual (R$)</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number" inputMode="decimal" min={0} placeholder="mín"
+                  value={filtros.faturamentoMin ?? ""}
+                  onChange={(e) => setFiltros((f) => ({ ...f, faturamentoMin: e.target.value === "" ? null : Number(e.target.value) }))}
+                  className="h-8 text-xs w-32"
+                />
+                <span className="text-muted-foreground text-xs">a</span>
+                <Input
+                  type="number" inputMode="decimal" min={0} placeholder="máx"
+                  value={filtros.faturamentoMax ?? ""}
+                  onChange={(e) => setFiltros((f) => ({ ...f, faturamentoMax: e.target.value === "" ? null : Number(e.target.value) }))}
+                  className="h-8 text-xs w-32"
+                />
               </div>
             </div>
           </Card>
