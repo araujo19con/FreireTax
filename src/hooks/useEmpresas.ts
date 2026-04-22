@@ -222,6 +222,79 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
   });
 }
 
+/**
+ * Busca TODAS as empresas que casam com search/filters/sort, paginando por baixo
+ * até esgotar. Usado por exports — ignora a paginação visível na tela.
+ *
+ * Limite por página = 1000 (default PostgREST). Loop até `count` ou bloco vazio.
+ */
+export async function fetchAllEmpresas(params: Omit<UseEmpresasParams, "page" | "pageSize"> = {}): Promise<Empresa[]> {
+  const { search = "", filters = {}, sort = "recent" } = params;
+
+  // Pré-resolve restrictIds (mesma lógica de useEmpresas)
+  let restrictIds: Set<string> | null = null;
+  if (filters.pastaId) {
+    const { data } = await supabase
+      .from("pasta_empresa_items").select("empresa_id").eq("pasta_id", filters.pastaId);
+    restrictIds = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
+  }
+  if (filters.temAcao === true) {
+    const { data } = await supabase.from("elegibilidade").select("empresa_id");
+    const withAcao = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
+    restrictIds = restrictIds
+      ? new Set(Array.from(restrictIds).filter((id) => withAcao.has(id)))
+      : withAcao;
+  }
+
+  if (restrictIds && restrictIds.size === 0) return [];
+
+  const PAGE = 1000;
+  const all: Empresa[] = [];
+  let from = 0;
+  // Loop até receber bloco menor que PAGE (= esgotou)
+  for (;;) {
+    let query = supabase.from("empresas").select("*") as unknown as QB;
+
+    if (search.trim()) {
+      const term = search.trim();
+      const digits = unmaskCNPJ(term);
+      const orClauses = [
+        `nome.ilike.%${term}%`,
+        `razao_social.ilike.%${term}%`,
+        `nome_fantasia.ilike.%${term}%`,
+      ];
+      if (digits.length >= 2) orClauses.push(`cnpj.ilike.%${digits}%`);
+      query = query.or(orClauses.join(","));
+    }
+
+    query = applyFilters(query, filters);
+    query = applySort(query, sort);
+
+    if (restrictIds && restrictIds.size > 0) {
+      query = query.in("id", Array.from(restrictIds));
+    }
+
+    query = query.range(from, from + PAGE - 1);
+
+    const result = await (query as unknown as PromiseLike<{ data: Empresa[] | null; error: Error | null }>);
+    if (result.error) throw result.error;
+    const batch = (result.data || []) as Empresa[];
+    all.push(...batch);
+    if (batch.length < PAGE) break;
+    from += PAGE;
+    // Trava de segurança contra loop infinito (50k empresas — improvável)
+    if (from > 50_000) break;
+  }
+
+  // Pós-processo: filtro "não tem ação"
+  if (filters.temAcao === false) {
+    const { data: elegs } = await supabase.from("elegibilidade").select("empresa_id");
+    const withAcao = new Set((elegs || []).map((r: { empresa_id: string }) => r.empresa_id));
+    return all.filter((e) => !withAcao.has(e.id));
+  }
+  return all;
+}
+
 /** Lista simples (sem paginação) — usado em selects de combobox. */
 export function useEmpresasSimple() {
   return useQuery({

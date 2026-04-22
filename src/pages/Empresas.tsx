@@ -31,7 +31,8 @@ import { EmpresaDetailSheet } from "./empresas/EmpresaDetailSheet";
 
 import {
   useEmpresas, useCreateEmpresa, useUpdateEmpresa, useDeleteEmpresa,
-  useBulkDeleteEmpresas, useEnrichEmpresa, type Empresa, type EmpresaFilters, type EmpresaSort,
+  useBulkDeleteEmpresas, useEnrichEmpresa, fetchAllEmpresas,
+  type Empresa, type EmpresaFilters, type EmpresaSort,
 } from "@/hooks/useEmpresas";
 import {
   usePastas, usePastaItems, useCreatePasta, useDeletePasta,
@@ -276,52 +277,73 @@ export default function Empresas() {
   };
 
   // --- Export
-  const handleExport = (format: "csv" | "xlsx") => {
-    const selected = selectedIds.size > 0
-      ? rows.filter((r) => selectedIds.has(r.id))
-      : rows;
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async (format: "csv" | "xlsx") => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // Quando há seleção: exporta apenas selecionadas (já carregadas em rows).
+      // Sem seleção: busca TODAS as empresas que casam com os filtros atuais
+      // (não só a página visível) — pode ser milhares.
+      let selected: Empresa[];
+      if (selectedIds.size > 0) {
+        selected = rows.filter((r) => selectedIds.has(r.id));
+      } else {
+        toast.info("Buscando todas as empresas do filtro…");
+        selected = await fetchAllEmpresas({ search: debouncedSearch, filters, sort });
+      }
 
-    const data = selected.map((e) => ({
-      Nome: e.nome,
-      "Razão Social": e.razao_social || "",
-      "Nome Fantasia": e.nome_fantasia || "",
-      CNPJ: formatCNPJ(e.cnpj),
-      Status: e.status,
-      "Situação Cadastral": e.situacao_cadastral || "",
-      Porte: e.porte || "",
-      UF: e.uf || "",
-      Município: e.municipio || "",
-      "CNAE Principal": e.cnae_principal ? `${e.cnae_principal} — ${e.cnae_principal_desc || ""}` : "",
-      "Simples Nacional": e.opcao_simples ? "Sim" : e.opcao_simples === false ? "Não" : "",
-      "Capital Social": e.capital_social ?? "",
-      "Valor Potencial": e.valor_potencial_total ?? "",
-      "Data Abertura": e.data_abertura || "",
-      Telefone: e.telefone_receita || "",
-      "E-mail": e.email_receita || "",
-      Endereço: [e.logradouro, e.numero_endereco, e.bairro, e.cep].filter(Boolean).join(", "),
-      Pastas: (pastaNamesByEmpresa.get(e.id) || []).join("; "),
-      "Última RFB": e.receita_atualizada_em || "",
-      Observações: e.obs || "",
-    }));
+      if (selected.length === 0) {
+        toast.warning("Nenhuma empresa para exportar");
+        return;
+      }
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Empresas");
+      const data = selected.map((e) => ({
+        Nome: e.nome,
+        "Razão Social": e.razao_social || "",
+        "Nome Fantasia": e.nome_fantasia || "",
+        CNPJ: formatCNPJ(e.cnpj),
+        Status: e.status,
+        "Situação Cadastral": e.situacao_cadastral || "",
+        Porte: e.porte || "",
+        UF: e.uf || "",
+        Município: e.municipio || "",
+        "CNAE Principal": e.cnae_principal ? `${e.cnae_principal} — ${e.cnae_principal_desc || ""}` : "",
+        "Simples Nacional": e.opcao_simples ? "Sim" : e.opcao_simples === false ? "Não" : "",
+        "Capital Social": e.capital_social ?? "",
+        "Valor Potencial": e.valor_potencial_total ?? "",
+        "Data Abertura": e.data_abertura || "",
+        Telefone: e.telefone_receita || "",
+        "E-mail": e.email_receita || "",
+        Endereço: [e.logradouro, e.numero_endereco, e.bairro, e.cep].filter(Boolean).join(", "),
+        Pastas: (pastaNamesByEmpresa.get(e.id) || []).join("; "),
+        "Última RFB": e.receita_atualizada_em || "",
+        Observações: e.obs || "",
+      }));
 
-    const today = new Date().toISOString().slice(0, 10);
-    const filename = `empresas-${today}.${format}`;
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Empresas");
 
-    if (format === "xlsx") {
-      XLSX.writeFile(wb, filename);
-    } else {
-      const csv = XLSX.utils.sheet_to_csv(ws);
-      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
+      const today = new Date().toISOString().slice(0, 10);
+      const filename = `empresas-${today}.${format}`;
+
+      if (format === "xlsx") {
+        XLSX.writeFile(wb, filename);
+      } else {
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      }
+      toast.success(`${data.length} empresa${data.length === 1 ? "" : "s"} exportada${data.length === 1 ? "" : "s"}`);
+    } catch (e) {
+      toast.error("Erro ao exportar: " + (e instanceof Error ? e.message : "falha"));
+    } finally {
+      setExporting(false);
     }
-    toast.success(`${data.length} empresa(s) exportada(s)`);
   };
 
   // --- Render
