@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Handshake, Phone, Mail, Building2, Scale, Pencil, DollarSign,
   ArrowRight, Search, Filter, Plus, MessageSquare, AlertTriangle,
-  TrendingUp, Clock, Zap,
+  TrendingUp, Clock, Zap, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { ProspeccaoContatosDialog } from "@/components/ProspeccaoContatosDialog";
 import { TemplateSelectorDialog } from "@/components/TemplateSelectorDialog";
+import { PropostaDialog } from "@/components/PropostaDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
@@ -207,6 +208,10 @@ export default function Prospeccao() {
   // Templates dialog
   const [templatesOpen, setTemplatesOpen] = useState(false);
 
+  // Proposta dialog (criação/edição da proposta comercial)
+  const [propostaOpen, setPropostaOpen] = useState(false);
+  const [propostaProsp, setPropostaProsp] = useState<Prospeccao | null>(null);
+
   const fetchAll = async () => {
     const [prospRes, elegRes, empRes, acoesRes] = await Promise.all([
       (supabase.from("prospeccoes").select("*") as any),
@@ -299,6 +304,11 @@ export default function Prospeccao() {
     setContatosOpen(true);
   };
 
+  const openProposta = (prosp: Prospeccao) => {
+    setPropostaProsp(prosp);
+    setPropostaOpen(true);
+  };
+
   const handleSave = async () => {
     if (!editProsp) return;
 
@@ -341,8 +351,19 @@ export default function Prospeccao() {
       toast.success("🎯 Upsell: tarefa automática criada para avaliar outras teses desta empresa!", { duration: 5000 });
     }
 
+    // Gatilho da proposta: ao mudar para "Proposta enviada" vindo de outro status,
+    // abre o dialog de proposta automaticamente pra preencher.
+    const triggerProposta =
+      editStatus === "Proposta enviada" &&
+      editProsp.status_prospeccao !== "Proposta enviada";
+
     setEditOpen(false);
     fetchAll();
+
+    if (triggerProposta) {
+      // Pequeno timeout pra fechamento do dialog de edição não conflitar
+      setTimeout(() => openProposta({ ...editProsp, status_prospeccao: editStatus }), 300);
+    }
   };
 
   // QW1: bloqueia quick-move para Perdido (obriga passar pelo dialog)
@@ -363,6 +384,12 @@ export default function Prospeccao() {
     if (newStatus === "Contrato assinado") {
       toast.success("🎯 Upsell: tarefa automática criada para avaliar outras teses desta empresa!", { duration: 5000 });
     }
+
+    // Gatilho da proposta: ao mover para "Proposta enviada" via card-quick-move
+    if (newStatus === "Proposta enviada" && prosp.status_prospeccao !== "Proposta enviada") {
+      setTimeout(() => openProposta({ ...prosp, status_prospeccao: newStatus }), 300);
+    }
+
     fetchAll();
   };
 
@@ -627,6 +654,15 @@ export default function Prospeccao() {
                           >
                             <MessageSquare className="mr-1 h-3 w-3" />
                             Contato
+                          </Button>
+                          <Button
+                            variant="outline" size="sm"
+                            className="h-7 text-[11px] flex-1"
+                            onClick={() => openProposta(p)}
+                            title="Criar / editar proposta comercial"
+                          >
+                            <FileText className="mr-1 h-3 w-3" />
+                            Proposta
                           </Button>
                           {nextCol && (
                             <Button
@@ -1041,6 +1077,43 @@ export default function Prospeccao() {
               tese: acao?.nome,
               valor_potencial: valorPot,
               dias_prescricao: dias,
+            }}
+          />
+        );
+      })()}
+
+      {/* Dialog de proposta comercial — abre ao mover pra "Proposta enviada"
+          ou clicando em "Proposta" no card */}
+      {propostaOpen && propostaProsp && (() => {
+        const emp = getEmpresa(propostaProsp.elegibilidade_id);
+        const acao = getAcao(propostaProsp.elegibilidade_id);
+        const valorPot = getValorPotencial(propostaProsp.elegibilidade_id);
+        return (
+          <PropostaDialog
+            open={propostaOpen}
+            onClose={() => { setPropostaOpen(false); setPropostaProsp(null); }}
+            prospeccaoId={propostaProsp.id}
+            context={{
+              empresaNome: emp?.nome ?? "",
+              empresaCnpj: emp?.cnpj ?? "",
+              contatoNome: propostaProsp.contato_nome,
+              contatoCargo: propostaProsp.contato_cargo,
+              contatoEmail: propostaProsp.contato_email,
+              contatoTelefone: propostaProsp.contato_telefone,
+              acaoId: acao?.id ?? null,
+              acaoNome: acao?.nome ?? null,
+              valorPotencial: valorPot,
+            }}
+            onSaved={(status) => {
+              // Se marcou como enviada, garante que status de prospecção também avance
+              if (status === "enviada" && propostaProsp.status_prospeccao !== "Proposta enviada") {
+                (supabase.from("prospeccoes") as unknown as { update: (p: object) => { eq: (k: string, v: string) => Promise<unknown> } })
+                  .update({ status_prospeccao: "Proposta enviada" })
+                  .eq("id", propostaProsp.id)
+                  .then(() => fetchAll());
+              } else {
+                fetchAll();
+              }
             }}
           />
         );

@@ -23,6 +23,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const MinhasTarefas = lazy(() => import("./pages/MinhasTarefas"));
 const EquipeTarefas = lazy(() => import("./pages/tarefas/EquipeView"));
 const TemplatesTarefas = lazy(() => import("./pages/tarefas/TemplatesAdmin"));
+const PropostasTemplates = lazy(() => import("./pages/PropostasTemplates"));
 const MinhaAgenda = lazy(() => import("./pages/MinhaAgenda"));
 const MinhaSemana = lazy(() => import("./pages/MinhaSemana"));
 const MeuEspaco = lazy(() => import("./pages/MeuEspaco"));
@@ -119,6 +120,7 @@ function AppRoutes() {
           <Route path="/minhas-tarefas" element={<MinhasTarefas />} />
           <Route path="/tarefas/equipe" element={<EquipeTarefas />} />
           <Route path="/tarefas/templates" element={<TemplatesTarefas />} />
+          <Route path="/propostas/templates" element={<PropostasTemplates />} />
           <Route path="/minha-agenda" element={<MinhaAgenda />} />
           <Route path="/minha-semana" element={<MinhaSemana />} />
           <Route path="/analise-rfb" element={<AnaliseRFB />} />

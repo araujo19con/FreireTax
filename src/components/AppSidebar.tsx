@@ -17,6 +17,7 @@ import {
   Scale3d,
   Filter,
   FileStack,
+  FileText,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -77,9 +78,10 @@ const workspaceItems: ItemDef[] = [
 ];
 
 const adminItems: ItemDef[] = [
-  { title: "Administração", url: "/admin",     icon: Settings },
-  { title: "Usuários",      url: "/usuarios",  icon: Users, adminOnly: true },
-  { title: "Auditoria",     url: "/auditoria", icon: Shield },
+  { title: "Administração",          url: "/admin",                  icon: Settings },
+  { title: "Templates de Proposta",  url: "/propostas/templates",    icon: FileText, gestorOrAdmin: true },
+  { title: "Usuários",               url: "/usuarios",               icon: Users, adminOnly: true },
+  { title: "Auditoria",              url: "/auditoria",              icon: Shield },
 ];
 
 type CountState = {
