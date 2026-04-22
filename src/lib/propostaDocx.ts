@@ -27,6 +27,54 @@ function fmtBRL(n: number | null | undefined): string {
   }).format(n);
 }
 
+/**
+ * Pré-processa XML de Word pra consertar placeholders quebrados em múltiplos
+ * runs. Word adiciona <w:proofErr/> (spell-check) e separa cada caractere
+ * digitado em diferentes momentos em runs próprios — então `{empresa_nome}`
+ * digitado no Word vira algo como:
+ *   <w:r><w:t>{</w:t></w:r>
+ *   <w:proofErr w:type="spellStart"/>
+ *   <w:r><w:t>empresa_nome</w:t></w:r>
+ *   <w:proofErr w:type="spellEnd"/>
+ *   <w:r><w:t>}</w:t></w:r>
+ * docxtemplater não consegue casar `{...}` quebrado assim. Esta função:
+ * 1) Remove todas as tags <w:proofErr/>
+ * 2) Mescla pares de <w:t>...</w:t></w:r><w:r...><w:rPr>...</w:rPr><w:t>...</w:t>
+ *    iterativamente até nada mais merge.
+ */
+function fixSplitPlaceholders(xml: string): string {
+  // 1) Remove proofErr (auto-fechado E par open/close)
+  let out = xml.replace(/<w:proofErr[^/]*\/>/g, "");
+
+  // 2) Merge runs adjacentes idênticos. Padrão:
+  //    <w:r ATTR><w:rPr>RPR</w:rPr><w:t XATTR>A</w:t></w:r><w:r ATTR><w:rPr>RPR</w:rPr><w:t YATTR>B</w:t></w:r>
+  // → <w:r ATTR><w:rPr>RPR</w:rPr><w:t YATTR>AB</w:t></w:r>
+  // Backreferences \1 e \2 garantem mesmo ATTR e mesmo RPR (formatação idêntica).
+  const mergeRegex =
+    /<w:r([^>]*)><w:rPr>([^]*?)<\/w:rPr><w:t[^>]*>([^<]*)<\/w:t><\/w:r><w:r\1><w:rPr>\2<\/w:rPr><w:t([^>]*)>([^<]*)<\/w:t><\/w:r>/g;
+
+  let prev = "";
+  let iterations = 0;
+  while (out !== prev && iterations < 50) {
+    prev = out;
+    out = out.replace(mergeRegex, "<w:r$1><w:rPr>$2</w:rPr><w:t$4>$3$5</w:t></w:r>");
+    iterations++;
+  }
+
+  // 3) Caso runs sem rPr (texto cru) também precisem merge
+  const mergeNoRprRegex =
+    /<w:r([^>]*)><w:t[^>]*>([^<]*)<\/w:t><\/w:r><w:r\1><w:t([^>]*)>([^<]*)<\/w:t><\/w:r>/g;
+  prev = "";
+  iterations = 0;
+  while (out !== prev && iterations < 50) {
+    prev = out;
+    out = out.replace(mergeNoRprRegex, "<w:r$1><w:t$3>$2$4</w:t></w:r>");
+    iterations++;
+  }
+
+  return out;
+}
+
 function htmlParaTexto(html: string): string {
   // Tira tags HTML mantendo quebras de linha por <p>/<br>.
   // O .docx final fica em texto cru — formatação rica do template é preservada
@@ -69,6 +117,24 @@ export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<voi
 
   // 2) Abre o .docx (zip + xml interno) com pizzip
   const zip = new PizZip(buf);
+
+  // 2.1) Conserta placeholders quebrados em multiple runs em todos os XMLs
+  // do Word (document, headers, footers). Word adiciona <w:proofErr/> e
+  // separa cada caractere em runs próprios, impedindo docxtemplater de
+  // casar `{empresa_nome}`. fixSplitPlaceholders() resolve isso.
+  const xmlFiles = Object.keys(zip.files).filter(
+    (name) => name.startsWith("word/") && name.endsWith(".xml") &&
+              (name.includes("document") || name.includes("header") || name.includes("footer"))
+  );
+  for (const fname of xmlFiles) {
+    const file = zip.file(fname);
+    if (!file) continue;
+    const original = file.asText();
+    const fixed = fixSplitPlaceholders(original);
+    if (fixed !== original) {
+      zip.file(fname, fixed);
+    }
+  }
 
   // 3) Configura docxtemplater
   const doc = new Docxtemplater(zip, {
