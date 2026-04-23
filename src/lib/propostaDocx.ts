@@ -18,7 +18,7 @@ import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import { saveAs } from "file-saver";
 import type { ProposalSection, ProposalContext } from "./proposta";
-import { ESCRITORIO_DEFAULT } from "./proposta";
+import { ESCRITORIO_DEFAULT, renderVariaveis } from "./proposta";
 
 function fmtBRL(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -211,9 +211,11 @@ export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<voi
     introducao: params.textoIntroducao,
 
     // Loop de seções: no .docx use {#secoes}{titulo}\n{conteudo_texto}{/secoes}
+    // IMPORTANTE: renderVariaveis substitui {{empresa.nome}}, {{honorarios.entrada}}
+    // etc. (seed dos templates usa double-brace + dot notation) ANTES de virar texto.
     secoes: params.secoes.map((s) => ({
-      titulo: s.titulo,
-      conteudo_texto: htmlParaTexto(s.conteudo),
+      titulo: renderVariaveis(s.titulo, params.context),
+      conteudo_texto: htmlParaTexto(renderVariaveis(s.conteudo, params.context)),
     })),
 
     // Assinatura + escritório
