@@ -535,7 +535,7 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Casa empresas com valor exato OU porte RFB compatível (MEI/ME/EPP/DEMAIS). Clique no preset ativo pra desmarcar.
+                Filtra pelo número exato de funcionários (manual ou importado). Clique no preset ativo pra desmarcar.
               </p>
             </section>
 

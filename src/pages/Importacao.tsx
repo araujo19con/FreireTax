@@ -8,8 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
-import { aplicarInferencias } from "@/lib/inferencias";
-import type { Empresa } from "@/hooks/useEmpresas";
 
 type ImportMode = "nova" | "atualizar" | "invalido";
 
@@ -432,17 +430,8 @@ export default function Importacao() {
                   errors += 1;
                   return;
                 }
-                // Após enriquecimento RFB, aplica inferências determinísticas
-                // (faixa funcionários/faturamento + regime tributário) nos campos vazios.
-                const { data: empAtualizada } = await supabase
-                  .from("empresas").select("*").eq("id", emp.id).maybeSingle();
-                if (empAtualizada) {
-                  const inf = aplicarInferencias(empAtualizada as Empresa);
-                  if (Object.keys(inf.patch).length > 0) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    await (supabase.from("empresas") as any).update(inf.patch).eq("id", emp.id);
-                  }
-                }
+                // Faixa de Funcionários, Faixa de Faturamento e Regime Tributário
+                // vêm apenas da planilha importada — não são inferidos automaticamente.
               } catch {
                 errors += 1;
               } finally {

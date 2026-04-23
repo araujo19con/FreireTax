@@ -19,7 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCurrency, formatDate, formatDateTime, formatRelativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { humanizeRegime, getRegimeEffective, regimeColor } from "@/lib/regimeTributario";
+import { humanizeRegime, regimeColor } from "@/lib/regimeTributario";
 
 interface EmpresaDetailSheetProps {
   empresa: Empresa | null;
@@ -242,25 +242,33 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                     <Field label="Valor potencial" value={formatCurrency(empresa.valor_potencial_total)} />
                     <Field label="Data abertura" value={formatDate(empresa.data_abertura)} />
                     <Field
+                      label="Faixa de Faturamento"
+                      value={
+                        empresa.metadados?.["Faixa de Faturamento"] ??
+                        (empresa.faturamento_anual != null ? formatCurrency(empresa.faturamento_anual) : null)
+                      }
+                    />
+                    <Field
+                      label="Faixa de Funcionários"
+                      value={
+                        empresa.metadados?.["Faixa de Funcionários"] ??
+                        (empresa.quantidade_funcionarios != null ? empresa.quantidade_funcionarios.toString() : null)
+                      }
+                    />
+                    <Field
                       label="Regime tributário"
                       value={(() => {
-                        const eff = getRegimeEffective(empresa);
-                        if (!eff) return "—";
+                        // Só exibe se for manual — dados da RFB (opção Simples/MEI) não preenchem este campo automaticamente
+                        const val = empresa.regime_tributario;
+                        if (!val) return "—";
                         return (
-                          <Badge variant="outline" className={`text-[10px] ${regimeColor(eff)}`}>
-                            {humanizeRegime(eff)}
+                          <Badge variant="outline" className={`text-[10px] ${regimeColor(val)}`}>
+                            {humanizeRegime(val)}
                           </Badge>
                         );
                       })()}
                     />
                   </div>
-                  {/* Funcionários + Faturamento (campos manuais/importáveis) */}
-                  {(empresa.quantidade_funcionarios != null || empresa.faturamento_anual != null) && (
-                    <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 gap-x-4 gap-y-3">
-                      <Field label="Funcionários" value={empresa.quantidade_funcionarios?.toString() ?? null} />
-                      <Field label="Faturamento anual" value={formatCurrency(empresa.faturamento_anual)} />
-                    </div>
-                  )}
                   {empresa.obs && (
                     <div className="mt-4 pt-3 border-t border-border">
                       <Label>Observações</Label>
@@ -269,19 +277,25 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                   )}
                 </Card>
 
-                {/* Campos personalizados (metadados) */}
-                {empresa.metadados && Object.keys(empresa.metadados).length > 0 && (
-                  <Card className="p-4">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                      <FileText className="h-3.5 w-3.5" /> Campos personalizados
-                    </h3>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                      {Object.entries(empresa.metadados).map(([k, v]) => (
-                        <Field key={k} label={k} value={v} />
-                      ))}
-                    </div>
-                  </Card>
-                )}
+                {/* Campos personalizados (metadados) — exclui chaves já exibidas no Resumo */}
+                {(() => {
+                  const extras = Object.entries(empresa.metadados ?? {}).filter(
+                    ([k]) => k !== "Faixa de Funcionários" && k !== "Faixa de Faturamento"
+                  );
+                  if (extras.length === 0) return null;
+                  return (
+                    <Card className="p-4">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                        <FileText className="h-3.5 w-3.5" /> Campos personalizados
+                      </h3>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                        {extras.map(([k, v]) => (
+                          <Field key={k} label={k} value={v} />
+                        ))}
+                      </div>
+                    </Card>
+                  );
+                })()}
 
                 {/* Botão pra editar (atalho — também tem o botão no topo) */}
                 <Button

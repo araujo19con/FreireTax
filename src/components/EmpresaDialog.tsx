@@ -10,7 +10,6 @@ import { Plus, Search, CheckCircle2, MapPin, Users, FileText, Calendar, Building
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCNPJ as validateCNPJReal, validateCNPJMessage, maskCNPJ } from "@/lib/cnpj";
-import { aplicarInferencias } from "@/lib/inferencias";
 
 // Payload que vai pro banco — inclui campos RFB (todos opcionais)
 export interface EmpresaFormData {
@@ -149,21 +148,8 @@ export function EmpresaDialog({
           : `Dados da Receita carregados: ${rfb.razao_social}`
       );
 
-      // Auto-inferências baseadas em porte/CNAE/regime RFB.
-      // Só preenche campos VAZIOS — dados manuais nunca são sobrescritos.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inferencias = aplicarInferencias({ ...form, ...rfb } as any);
-      if (Object.keys(inferencias.patch).length > 0) {
-        setForm((curr) => ({
-          ...curr,
-          regime_tributario: curr.regime_tributario ?? inferencias.patch.regime_tributario ?? null,
-          metadados: { ...(curr.metadados ?? {}), ...(inferencias.patch.metadados ?? {}) },
-        }));
-        toast.info(
-          `Inferidos automaticamente: ${inferencias.fontes.join("; ")}. Confirme antes de salvar.`,
-          { duration: 6000 }
-        );
-      }
+      // Faixa de Funcionários, Faixa de Faturamento e Regime Tributário não são
+      // inferidos automaticamente — devem ser preenchidos manualmente ou via importação.
     } catch (e: any) {
       toast.error("Erro: " + (e?.message ?? "falha ao consultar Receita"));
     } finally {
