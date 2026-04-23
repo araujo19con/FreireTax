@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { CalendarCheck, Send, XCircle, CalendarPlus } from "lucide-react";
+import { CalendarCheck, XCircle, CalendarPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -480,12 +480,8 @@ export function ReuniaoDialog({
             </Button>
           )}
           <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>Fechar</Button>
-          <Button variant="secondary" type="button" onClick={() => handleSave({ enviar: false })} disabled={saving || enviandoConvite}>
-            {saving ? "Salvando..." : "Salvar sem enviar"}
-          </Button>
-          <Button type="button" onClick={() => handleSave({ enviar: true })} disabled={saving || enviandoConvite}>
-            <Send className="mr-2 h-3 w-3" aria-hidden="true" />
-            {enviandoConvite ? "Enviando..." : "Salvar e enviar convite"}
+          <Button type="button" onClick={() => handleSave({ enviar: false })} disabled={saving || enviandoConvite}>
+            {saving ? "Salvando..." : "Salvar"}
           </Button>
         </DialogFooter>
       </DialogContent>
