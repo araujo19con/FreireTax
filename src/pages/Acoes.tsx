@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks } from "lucide-react";
+import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks, FileSpreadsheet, Upload, CheckCircle2, XCircle } from "lucide-react";
+import * as XLSX from "xlsx";
+import { maskCNPJ, validateCNPJ } from "@/lib/cnpj";
 import { CriteriosAdmin } from "./elegibilidade/CriteriosAdmin";
 import { AcaoDialog } from "@/components/AcaoDialog";
 import { PageHeader } from "@/components/PageHeader";
@@ -115,11 +117,23 @@ export default function Acoes() {
   // Elegibilidade dialog
   const [elegDialogOpen, setElegDialogOpen] = useState(false);
   const [elegAcaoId, setElegAcaoId] = useState("");
-  const [elegMode, setElegMode] = useState<"individual" | "pasta">("individual");
+  const [elegMode, setElegMode] = useState<"individual" | "pasta" | "planilha">("individual");
   const [elegSelectedEmpresas, setElegSelectedEmpresas] = useState<Set<string>>(new Set());
   const [elegSelectedPasta, setElegSelectedPasta] = useState("");
   const [elegElegivel, setElegElegivel] = useState("true");
   const [elegJustificativa, setElegJustificativa] = useState("");
+
+  // Planilha mode — linhas parseadas do arquivo
+  interface PlanilhaRow {
+    cnpj: string;
+    nome: string;
+    existing_id: string | null;
+    valid: boolean;
+    errors: string[];
+  }
+  const [planilhaRows, setPlanilhaRows] = useState<PlanilhaRow[]>([]);
+  const [planilhaFileName, setPlanilhaFileName] = useState("");
+  const [planilhaProcessing, setPlanilhaProcessing] = useState(false);
 
   // Processo dialog
   const [procDialogOpen, setProcDialogOpen] = useState(false);
@@ -225,15 +239,117 @@ export default function Acoes() {
     setElegSelectedPasta("");
     setElegElegivel("true");
     setElegJustificativa("");
+    setPlanilhaRows([]);
+    setPlanilhaFileName("");
     setElegDialogOpen(true);
+  };
+
+  // Parse de planilha .xlsx/.csv para o modo "planilha"
+  const handlePlanilhaUpload = async (file: File) => {
+    setPlanilhaFileName(file.name);
+    setPlanilhaProcessing(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+      if (json.length < 2) { toast.error("Planilha vazia"); return; }
+
+      const headers = (json[0] as string[]).map((h) => String(h).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+      const cnpjCol = headers.findIndex((h) => h.includes("cnpj"));
+      const nomeCol = headers.findIndex((h) => h.includes("nome") || h.includes("razao") || h.includes("empresa"));
+      if (cnpjCol === -1) { toast.error("Coluna CNPJ não encontrada"); return; }
+
+      const draft: Array<Omit<PlanilhaRow, "existing_id">> = [];
+      const seen = new Set<string>();
+      for (let i = 1; i < json.length; i++) {
+        const row = json[i] as unknown[];
+        if (!row || row.length === 0) continue;
+        const rawCnpj = String(row[cnpjCol] ?? "").trim();
+        const cnpj = maskCNPJ(rawCnpj);
+        const nome = nomeCol !== -1 ? String(row[nomeCol] ?? "").trim() : "";
+        const errors: string[] = [];
+        if (!validateCNPJ(rawCnpj)) errors.push("CNPJ inválido");
+        const key = cnpj.replace(/\D/g, "");
+        if (seen.has(key)) errors.push("Duplicado no arquivo");
+        else if (key) seen.add(key);
+        draft.push({ cnpj, nome, valid: errors.length === 0, errors });
+      }
+
+      // Match contra empresas existentes
+      const cnpjsValidos = draft.filter((r) => r.valid).map((r) => r.cnpj);
+      const existingByCnpj = new Map<string, string>();
+      if (cnpjsValidos.length > 0) {
+        const CHUNK = 500;
+        for (let i = 0; i < cnpjsValidos.length; i += CHUNK) {
+          const slice = cnpjsValidos.slice(i, i + CHUNK);
+          const { data } = await supabase.from("empresas").select("id, cnpj").in("cnpj", slice);
+          for (const e of (data ?? []) as Array<{ id: string; cnpj: string }>) {
+            existingByCnpj.set(e.cnpj, e.id);
+          }
+        }
+      }
+
+      const final: PlanilhaRow[] = draft.map((r) => ({
+        ...r,
+        existing_id: existingByCnpj.get(r.cnpj) ?? null,
+      }));
+      setPlanilhaRows(final);
+      const novas = final.filter((r) => r.valid && !r.existing_id).length;
+      const exist = final.filter((r) => r.valid && r.existing_id).length;
+      const erros = final.filter((r) => !r.valid).length;
+      toast.success(`${final.length} linhas: ${novas} novas, ${exist} existentes, ${erros} com erro`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao processar planilha");
+    } finally {
+      setPlanilhaProcessing(false);
+    }
   };
 
   const empresaIdsInPasta = (pastaId: string) => new Set(pastaItems.filter((i) => i.pasta_id === pastaId).map((i) => i.empresa_id));
 
   const handleSaveElegibilidade = async () => {
     let empresaIds: string[] = [];
-    if (elegMode === "individual") { empresaIds = Array.from(elegSelectedEmpresas); }
-    else if (elegMode === "pasta" && elegSelectedPasta) { empresaIds = Array.from(empresaIdsInPasta(elegSelectedPasta)); }
+
+    if (elegMode === "individual") {
+      empresaIds = Array.from(elegSelectedEmpresas);
+    } else if (elegMode === "pasta" && elegSelectedPasta) {
+      empresaIds = Array.from(empresaIdsInPasta(elegSelectedPasta));
+    } else if (elegMode === "planilha") {
+      // 1) Cria empresas novas (CNPJs sem match) e enriquece via Receita
+      const validRows = planilhaRows.filter((r) => r.valid);
+      if (validRows.length === 0) { toast.error("Nenhuma linha válida na planilha"); return; }
+
+      const novasParaCriar = validRows.filter((r) => !r.existing_id);
+      let criadasIds: string[] = [];
+      if (novasParaCriar.length > 0) {
+        const insertData = novasParaCriar.map((r) => ({
+          cnpj: r.cnpj,
+          nome: r.nome || "Importação — pendente RFB",
+          status: "prospect",
+          obs: "",
+          user_id: user!.id,
+        }));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: ins, error } = await (supabase.from("empresas") as any)
+          .insert(insertData)
+          .select("id, cnpj");
+        if (error) { toast.error("Erro ao criar empresas: " + error.message); return; }
+        criadasIds = (ins ?? []).map((e: { id: string }) => e.id);
+
+        // Dispara enriquecimento async (fire-and-forget — não bloqueia o save)
+        for (const e of (ins ?? []) as Array<{ id: string; cnpj: string }>) {
+          supabase.functions.invoke("enriquecer-cnpj", {
+            body: { cnpj: e.cnpj, empresa_id: e.id },
+          }).catch(() => {/* silently */});
+        }
+      }
+      // 2) Junta IDs existentes + recém-criados
+      const existentesIds = validRows.filter((r) => r.existing_id).map((r) => r.existing_id!);
+      empresaIds = [...existentesIds, ...criadasIds];
+    }
+
     if (empresaIds.length === 0) { toast.error("Selecione ao menos uma empresa"); return; }
 
     const existingPairs = new Set(elegibilidades.filter((e) => e.acao_id === elegAcaoId).map((e) => e.empresa_id));
@@ -246,7 +362,10 @@ export default function Acoes() {
 
     const { error } = await supabase.from("elegibilidade").insert(items);
     if (error) { toast.error("Erro ao salvar"); console.error(error); return; }
-    toast.success(`${newIds.length} elegibilidade(s) adicionada(s)!`);
+    const novasEmpresasMsg = elegMode === "planilha"
+      ? ` (${planilhaRows.filter(r => r.valid && !r.existing_id).length} empresas novas criadas + RFB sendo enriquecida em background)`
+      : "";
+    toast.success(`${newIds.length} elegibilidade(s) adicionada(s)!${novasEmpresasMsg}`);
     setElegDialogOpen(false);
     fetchAll();
   };
@@ -682,15 +801,18 @@ export default function Acoes() {
             <DialogTitle className="font-heading">Adicionar Elegibilidade — {acoes.find((a) => a.id === elegAcaoId)?.nome}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant={elegMode === "individual" ? "default" : "outline"} size="sm" onClick={() => setElegMode("individual")}>
                 <Users className="mr-2 h-3 w-3" />Individual
               </Button>
               <Button variant={elegMode === "pasta" ? "default" : "outline"} size="sm" onClick={() => setElegMode("pasta")}>
                 <Folder className="mr-2 h-3 w-3" />Por Pasta
               </Button>
+              <Button variant={elegMode === "planilha" ? "default" : "outline"} size="sm" onClick={() => setElegMode("planilha")}>
+                <FileSpreadsheet className="mr-2 h-3 w-3" />Planilha
+              </Button>
             </div>
-            {elegMode === "individual" ? (
+            {elegMode === "individual" && (
               <div className="space-y-2 overflow-y-auto max-h-[30vh]">
                 <Label>Selecione as empresas</Label>
                 {empresas.map((e) => (
@@ -703,7 +825,8 @@ export default function Acoes() {
                   </label>
                 ))}
               </div>
-            ) : (
+            )}
+            {elegMode === "pasta" && (
               <div className="space-y-2">
                 <Label>Selecione a pasta</Label>
                 <Select value={elegSelectedPasta} onValueChange={setElegSelectedPasta}>
@@ -714,6 +837,75 @@ export default function Acoes() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {elegMode === "planilha" && (
+              <div className="space-y-3">
+                <div className="border-2 border-dashed border-border rounded-lg p-4 text-center hover:border-muted-foreground/30 transition-colors">
+                  <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm font-medium mb-1">{planilhaFileName || "Selecione um arquivo"}</p>
+                  <p className="text-[11px] text-muted-foreground mb-2">CSV ou XLSX com coluna CNPJ (e Nome opcional)</p>
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx,.xls"
+                    className="hidden"
+                    id="planilha-eleg-input"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePlanilhaUpload(f); }}
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("planilha-eleg-input")?.click()} disabled={planilhaProcessing}>
+                    <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+                    {planilhaProcessing ? "Processando..." : "Escolher arquivo"}
+                  </Button>
+                </div>
+
+                {planilhaRows.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      <Badge variant="outline" className="bg-info/10 text-info border-0 gap-1">
+                        <Plus className="h-2.5 w-2.5" />
+                        {planilhaRows.filter(r => r.valid && !r.existing_id).length} novas
+                      </Badge>
+                      <Badge variant="outline" className="bg-success/10 text-success border-0 gap-1">
+                        <CheckCircle2 className="h-2.5 w-2.5" />
+                        {planilhaRows.filter(r => r.valid && r.existing_id).length} existentes
+                      </Badge>
+                      {planilhaRows.some(r => !r.valid) && (
+                        <Badge variant="outline" className="bg-destructive/10 text-destructive border-0 gap-1">
+                          <XCircle className="h-2.5 w-2.5" />
+                          {planilhaRows.filter(r => !r.valid).length} com erro
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="border border-border rounded-md overflow-y-auto max-h-[28vh]">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/30 sticky top-0">
+                          <tr>
+                            <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">CNPJ</th>
+                            <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Nome</th>
+                            <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {planilhaRows.map((r, i) => (
+                            <tr key={i} className="border-t border-border">
+                              <td className="py-1 px-2 font-mono text-[10px]">{r.cnpj || "—"}</td>
+                              <td className="py-1 px-2 truncate max-w-[140px]">{r.nome || "—"}</td>
+                              <td className="py-1 px-2">
+                                {!r.valid ? <span className="text-destructive">{r.errors.join(", ")}</span>
+                                  : r.existing_id ? <span className="text-success">existente</span>
+                                  : <span className="text-info">nova</span>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Empresas novas serão criadas com nome da planilha (ou "Importação — pendente RFB" se vazio)
+                      e enriquecidas via Receita Federal automaticamente em background.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             <div className="space-y-2">
