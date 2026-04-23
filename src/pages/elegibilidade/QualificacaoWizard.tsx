@@ -171,7 +171,7 @@ export function QualificacaoWizard({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl w-[calc(100vw-2rem)] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="font-heading flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -180,16 +180,20 @@ export function QualificacaoWizard({
         </DialogHeader>
 
         {/* Contexto fixo no topo */}
-        <Card className="p-3 bg-muted/30 space-y-1.5 text-sm">
+        <Card className="p-3 bg-muted/30 space-y-1.5 text-sm overflow-hidden">
           <div className="flex items-center gap-2 min-w-0">
             <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-medium truncate">{empresa.nome}</span>
-            <span className="text-xs text-muted-foreground font-mono ml-auto shrink-0">{empresa.cnpj}</span>
+            <span className="font-medium truncate flex-1 min-w-0" title={empresa.nome}>
+              {empresa.nome}
+            </span>
+            <span className="text-xs text-muted-foreground font-mono shrink-0">{empresa.cnpj}</span>
           </div>
           <div className="flex items-center gap-2 min-w-0">
             <Gavel className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-medium truncate">{acao.nome}</span>
-            {acao.tipo && <Badge variant="outline" className="text-[10px] ml-auto">{acao.tipo}</Badge>}
+            <span className="font-medium truncate flex-1 min-w-0" title={acao.nome}>
+              {acao.nome}
+            </span>
+            {acao.tipo && <Badge variant="outline" className="text-[10px] shrink-0">{acao.tipo}</Badge>}
           </div>
         </Card>
 
