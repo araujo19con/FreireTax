@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Building2, Filter, MapPin, FileText, Search, RefreshCw,
-  CheckCircle2, XCircle, TrendingUp, Users, Download,
+  CheckCircle2, XCircle, TrendingUp, Users, Download, BookOpen,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -296,9 +296,11 @@ export default function AnaliseRFB() {
 
       {empresas.length === 0 ? (
         <EmptyState
-          icon={<Building2 className="h-10 w-10" />}
+          icon={Building2}
           title="Nenhuma empresa"
           description="Cadastre empresas na aba Empresas para ver análises aqui."
+          action={{ label: "Ir para Empresas", to: "/empresas", icon: Building2 }}
+          secondaryAction={{ label: "Ver tutorial", to: "/tutorial?tab=fluxo", icon: BookOpen }}
         />
       ) : (
         <>

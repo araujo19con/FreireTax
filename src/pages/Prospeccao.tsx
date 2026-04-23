@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Handshake, Phone, Mail, Building2, Scale, Pencil, DollarSign,
   ArrowRight, Search, Filter, Plus, MessageSquare, AlertTriangle,
-  TrendingUp, Clock, Zap, FileText,
+  TrendingUp, Clock, Zap, FileText, BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -565,6 +565,7 @@ export default function Prospeccao() {
           title="Nenhuma prospecção cadastrada"
           description="Comece criando uma prospecção a partir das empresas elegíveis. As empresas com maior valor potencial aparecem primeiro."
           action={{ label: "Nova Prospecção", onClick: openCreateDialog, icon: Plus }}
+          secondaryAction={{ label: "Ver tutorial", to: "/tutorial?tab=fluxo", icon: BookOpen }}
         />
       ) : (
       <KanbanWithNav

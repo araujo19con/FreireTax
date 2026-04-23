@@ -13,7 +13,7 @@ import { AcaoDialog } from "@/components/AcaoDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
-import { Scale } from "lucide-react";
+import { Scale, BookOpen } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -525,7 +525,8 @@ export default function Acoes() {
         <EmptyState
           icon={Scale}
           title="Nenhuma ação cadastrada"
-          description="Cadastre ações tributárias (iniciais e rescisórias) para começar a vincular empresas via elegibilidade."
+          description="Ações são as teses jurídicas do escritório. Ao cadastrar, defina regras de elegibilidade e o sistema calcula automaticamente quais empresas do banco são candidatas."
+          secondaryAction={{ label: "Ver tutorial", to: "/tutorial?tab=fluxo", icon: BookOpen }}
         />
       )}
 
