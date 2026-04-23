@@ -18,6 +18,7 @@ import {
   Filter,
   FileStack,
   FileText,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -75,6 +76,7 @@ const workspaceItems: ItemDef[] = [
     icon: UsersRound,
     gestorOrAdmin: true,
   },
+  { title: "Tutorial", url: "/tutorial", icon: BookOpen },
 ];
 
 const adminItems: ItemDef[] = [

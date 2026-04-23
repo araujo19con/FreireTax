@@ -29,6 +29,7 @@ const MinhaSemana = lazy(() => import("./pages/MinhaSemana"));
 const MeuEspaco = lazy(() => import("./pages/MeuEspaco"));
 const Usuarios = lazy(() => import("./pages/Usuarios"));
 const AnaliseRFB = lazy(() => import("./pages/AnaliseRFB"));
+const Tutorial = lazy(() => import("./pages/Tutorial"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -124,6 +125,7 @@ function AppRoutes() {
           <Route path="/minha-agenda" element={<MinhaAgenda />} />
           <Route path="/minha-semana" element={<MinhaSemana />} />
           <Route path="/analise-rfb" element={<AnaliseRFB />} />
+          <Route path="/tutorial" element={<Tutorial />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/auth" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />
