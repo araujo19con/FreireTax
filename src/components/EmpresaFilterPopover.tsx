@@ -12,7 +12,7 @@ import { Filter, Search, X } from "lucide-react";
 import type {
   EmpresaFilters, EmpresaStatus, EmpresaPorte, EmpresaSituacao,
 } from "@/hooks/useEmpresas";
-import { useFaixasDistintas } from "@/hooks/useEmpresas";
+import { useFaixasDistintas, faixaSobrepoe } from "@/hooks/useEmpresas";
 import { REGIMES_TRIBUTARIOS } from "@/lib/regimeTributario";
 
 const STATUS_OPTIONS: Array<{ value: EmpresaStatus; label: string }> = [
@@ -534,13 +534,20 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                     <button
                       key={preset.label}
                       type="button"
-                      onClick={() =>
-                        onChange({
-                          ...filters,
-                          funcionariosMin: active ? null : preset.min,
-                          funcionariosMax: active ? null : preset.max,
-                        })
-                      }
+                      onClick={() => {
+                        if (active) {
+                          onChange({ ...filters, funcionariosMin: null, funcionariosMax: null, faixaFuncionarios: undefined });
+                        } else {
+                          // Auto-inclui faixas textuais que têm sobreposição com o preset
+                          const overlapping = faixasFunc.filter((v) => faixaSobrepoe(v, preset.min, preset.max));
+                          onChange({
+                            ...filters,
+                            funcionariosMin: preset.min,
+                            funcionariosMax: preset.max,
+                            faixaFuncionarios: overlapping.length ? overlapping : undefined,
+                          });
+                        }
+                      }}
                       className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                         active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
                       }`}
@@ -550,8 +557,34 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                   );
                 })}
               </div>
+              {faixasFunc.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                    Faixas importadas da planilha
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                    {faixasFunc.map((v) => {
+                      const active = filters.faixaFuncionarios?.includes(v) ?? false;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() =>
+                            onChange({ ...filters, faixaFuncionarios: toggleArrayValue(filters.faixaFuncionarios, v) })
+                          }
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                            active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <p className="text-[10px] text-muted-foreground mt-1">
-                Filtra pelo número exato de funcionários (manual ou importado). Clique no preset ativo pra desmarcar.
+                Presets numéricos auto-incluem faixas da planilha que se sobrepõem. Clique no ativo pra desmarcar.
               </p>
             </section>
 
@@ -593,13 +626,19 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                     <button
                       key={preset.label}
                       type="button"
-                      onClick={() =>
-                        onChange({
-                          ...filters,
-                          faturamentoMin: active ? null : preset.min,
-                          faturamentoMax: active ? null : preset.max,
-                        })
-                      }
+                      onClick={() => {
+                        if (active) {
+                          onChange({ ...filters, faturamentoMin: null, faturamentoMax: null, faixaFaturamento: undefined });
+                        } else {
+                          const overlapping = faixasFat.filter((v) => faixaSobrepoe(v, preset.min, preset.max));
+                          onChange({
+                            ...filters,
+                            faturamentoMin: preset.min,
+                            faturamentoMax: preset.max,
+                            faixaFaturamento: overlapping.length ? overlapping : undefined,
+                          });
+                        }
+                      }}
                       className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                         active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
                       }`}
@@ -609,70 +648,36 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                   );
                 })}
               </div>
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Presets seguem faixas do Simples Nacional e LP. Filtro numérico estrito sobre valor manual/importado.
-              </p>
-            </section>
-
-            {faixasFunc.length > 0 && (
-              <section>
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">
-                  Faixa de Funcionários (importada)
-                </Label>
-                <div className="mt-2 flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                  {faixasFunc.map((v) => {
-                    const active = filters.faixaFuncionarios?.includes(v) ?? false;
-                    return (
-                      <label
-                        key={v}
-                        className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-border hover:bg-muted cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={active}
-                          onCheckedChange={() =>
-                            onChange({ ...filters, faixaFuncionarios: toggleArrayValue(filters.faixaFuncionarios, v) })
-                          }
-                        />
-                        <span>{v}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Valores textuais vindos da planilha importada (match exato).
-                </p>
-              </section>
-            )}
-
-            {faixasFat.length > 0 && (
-              <section>
-                <Label className="text-xs font-semibold uppercase text-muted-foreground">
-                  Faixa de Faturamento (importada)
-                </Label>
-                <div className="mt-2 flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                  {faixasFat.map((v) => {
-                    const active = filters.faixaFaturamento?.includes(v) ?? false;
-                    return (
-                      <label
-                        key={v}
-                        className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-border hover:bg-muted cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={active}
-                          onCheckedChange={() =>
+              {faixasFat.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                    Faixas importadas da planilha
+                  </div>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                    {faixasFat.map((v) => {
+                      const active = filters.faixaFaturamento?.includes(v) ?? false;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() =>
                             onChange({ ...filters, faixaFaturamento: toggleArrayValue(filters.faixaFaturamento, v) })
                           }
-                        />
-                        <span>{v}</span>
-                      </label>
-                    );
-                  })}
+                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+                            active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1">
-                  Valores textuais vindos da planilha importada (match exato).
-                </p>
-              </section>
-            )}
+              )}
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Presets numéricos auto-incluem faixas da planilha que se sobrepõem. Clique no ativo pra desmarcar.
+              </p>
+            </section>
 
             <section>
               <Label className="text-xs font-semibold uppercase text-muted-foreground">Cidade (município)</Label>

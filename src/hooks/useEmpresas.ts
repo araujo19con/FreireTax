@@ -127,6 +127,46 @@ function applySort(query: QB, sort: EmpresaSort) {
   }
 }
 
+/** Combina range numérico e faixa textual (metadados) em um único filtro OR.
+ *  Numérico e texto se complementam: a mesma empresa pode ter só um dos dois. */
+function aplicarFiltroFaixa(
+  query: QB,
+  colunaNum: string,
+  chaveMeta: string,
+  min: number | null | undefined,
+  max: number | null | undefined,
+  faixasTexto: string[] | undefined,
+): QB {
+  const temNum = min != null || max != null;
+  const temTxt = (faixasTexto?.length ?? 0) > 0;
+  if (!temNum && !temTxt) return query;
+
+  const partes: string[] = [];
+  if (temNum) {
+    if (min != null && max != null) partes.push(`and(${colunaNum}.gte.${min},${colunaNum}.lte.${max})`);
+    else if (min != null) partes.push(`${colunaNum}.gte.${min}`);
+    else if (max != null) partes.push(`${colunaNum}.lte.${max}`);
+  }
+  if (temTxt) {
+    // metadados->>key com espaços funciona; valores com vírgula viram risco,
+    // mas faixas importadas ("500 A 999") não costumam ter vírgula
+    const valores = faixasTexto!.map((v) => `"${v.replace(/"/g, '\\"')}"`).join(",");
+    partes.push(`metadados->>${chaveMeta}.in.(${valores})`);
+  }
+  if (partes.length === 1) {
+    // Um só — aplica direto sem OR (mais eficiente e evita edge-cases de sintaxe)
+    if (temNum && !temTxt) {
+      if (min != null) query = query.gte(colunaNum, min);
+      if (max != null) query = query.lte(colunaNum, max);
+      return query;
+    }
+    if (temTxt && !temNum) {
+      return query.in(`metadados->>${chaveMeta}`, faixasTexto!);
+    }
+  }
+  return query.or(partes.join(","));
+}
+
 function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.status?.length) query = query.in("status", filters.status);
   if (filters.porte?.length) query = query.in("porte", filters.porte);
@@ -136,20 +176,25 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.opcaoSimples === false) query = query.eq("opcao_simples", false);
   if (filters.capitalMin != null) query = query.gte("capital_social", filters.capitalMin);
   if (filters.capitalMax != null) query = query.lte("capital_social", filters.capitalMax);
-  // Funcionários e Faturamento: filtro estrito pelo valor numérico manual/importado.
-  // Sem fallback por porte RFB — inferência por porte colocava a mesma empresa em
-  // múltiplas faixas (ex.: DEMAIS em 11-50, 51-200 e 201-1000 simultaneamente).
-  if (filters.funcionariosMin != null) query = query.gte("quantidade_funcionarios", filters.funcionariosMin);
-  if (filters.funcionariosMax != null) query = query.lte("quantidade_funcionarios", filters.funcionariosMax);
-  if (filters.faturamentoMin != null) query = query.gte("faturamento_anual", filters.faturamentoMin);
-  if (filters.faturamentoMax != null) query = query.lte("faturamento_anual", filters.faturamentoMax);
-  // Faixas como texto em metadados — match exato no valor importado da planilha
-  if (filters.faixaFuncionarios?.length) {
-    query = query.in("metadados->>Faixa de Funcionários", filters.faixaFuncionarios);
-  }
-  if (filters.faixaFaturamento?.length) {
-    query = query.in("metadados->>Faixa de Faturamento", filters.faixaFaturamento);
-  }
+  // Funcionários e Faturamento: combina range numérico (manual/importado)
+  // com faixa textual (metadados vindo da planilha) via OR. Assim empresas
+  // sem valor numérico mas com texto "500 A 999" também casam.
+  query = aplicarFiltroFaixa(
+    query,
+    "quantidade_funcionarios",
+    "Faixa de Funcionários",
+    filters.funcionariosMin,
+    filters.funcionariosMax,
+    filters.faixaFuncionarios,
+  );
+  query = aplicarFiltroFaixa(
+    query,
+    "faturamento_anual",
+    "Faixa de Faturamento",
+    filters.faturamentoMin,
+    filters.faturamentoMax,
+    filters.faixaFaturamento,
+  );
   if (filters.regimeTributario?.length) query = query.in("regime_tributario", filters.regimeTributario);
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
@@ -382,13 +427,62 @@ function ordenarFaixas(values: string[]): string[] {
 function extrairPrimeiroNumero(s: string): number | null {
   const m = s.match(/(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?/i);
   if (!m) return null;
-  const num = Number(m[1].replace(/\./g, "").replace(",", "."));
-  if (!Number.isFinite(num)) return null;
-  const suf = (m[2] || "").toLowerCase();
-  if (suf.startsWith("b")) return num * 1_000_000_000;
-  if (suf.startsWith("mi") || suf === "m") return num * 1_000_000;
-  if (suf.startsWith("mil") || suf === "k") return num * 1_000;
-  return num;
+  return aplicarSufixo(m[1], m[2]);
+}
+
+function aplicarSufixo(num: string, suf: string | undefined): number | null {
+  const n = Number(num.replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  const s = (suf || "").toLowerCase();
+  if (s.startsWith("b")) return n * 1_000_000_000;
+  if (s.startsWith("mi") || s === "m") return n * 1_000_000;
+  if (s.startsWith("mil") || s === "k") return n * 1_000;
+  return n;
+}
+
+/** Parseia uma faixa textual pra [min, max]. Aceita "500 A 999", "10M-20M",
+ *  "acima de 1000", "até 10". Retorna null se não reconhecer. */
+export function parseFaixaRange(text: string | null | undefined): [number, number] | null {
+  if (!text) return null;
+  const t = text.trim().toLowerCase();
+  // Padrão range: "N [sufixo] A|até|- M [sufixo]"
+  const rng = t.match(/(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*(?:a|at[ée]|-|–|—|to)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?/i);
+  if (rng) {
+    const min = aplicarSufixo(rng[1], rng[2]);
+    const max = aplicarSufixo(rng[3], rng[4]);
+    if (min != null && max != null) return [Math.min(min, max), Math.max(min, max)];
+  }
+  // "acima de 1000", "mais de 1000", "1000+"
+  const acima = t.match(/(?:acima de|mais de|>\s*|superior a)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?|(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*\+/i);
+  if (acima) {
+    const num = acima[1] ?? acima[3];
+    const suf = acima[2] ?? acima[4];
+    const n = aplicarSufixo(num, suf);
+    if (n != null) return [n + 1, Number.MAX_SAFE_INTEGER];
+  }
+  // "até 10", "menos de 10", "<10"
+  const ate = t.match(/(?:at[ée]|menos de|<\s*|inferior a)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?/i);
+  if (ate) {
+    const n = aplicarSufixo(ate[1], ate[2]);
+    if (n != null) return [0, n];
+  }
+  // Valor único ("50 funcionários")
+  const uni = t.match(/^(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\b/i);
+  if (uni) {
+    const n = aplicarSufixo(uni[1], uni[2]);
+    if (n != null) return [n, n];
+  }
+  return null;
+}
+
+/** Verifica se a faixa textual se sobrepõe ao range [min, max] (bounds null = abertos). */
+export function faixaSobrepoe(text: string, min: number | null, max: number | null): boolean {
+  const r = parseFaixaRange(text);
+  if (!r) return false;
+  const [a, b] = r;
+  const lo = min ?? Number.NEGATIVE_INFINITY;
+  const hi = max ?? Number.POSITIVE_INFINITY;
+  return a <= hi && b >= lo;
 }
 
 /** Lista simples (sem paginação) — usado em selects de combobox. */
