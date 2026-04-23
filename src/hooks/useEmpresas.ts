@@ -123,6 +123,53 @@ function applySort(query: QB, sort: EmpresaSort) {
   }
 }
 
+/**
+ * Dado um range [min, max] de funcionários, retorna os portes RFB cujas faixas
+ * tipicas se sobrepõem ao range. Usado pra filtrar empresas que só têm porte
+ * inferido (sem quantidade_funcionarios numérica).
+ * Retorna null se NÃO há filtro ativo.
+ */
+function mapearRangeFuncionariosParaPortes(min: number | null | undefined, max: number | null | undefined): string[] | null {
+  if (min == null && max == null) return null;
+  const portes: string[] = [];
+  // MEI ≈ 1
+  if ((min == null || min <= 1) && (max == null || max >= 1)) portes.push("MEI");
+  // ME = 1-9
+  if ((min == null || min <= 9) && (max == null || max >= 1)) portes.push("ME");
+  // EPP = 10-49
+  if ((min == null || min <= 49) && (max == null || max >= 10)) portes.push("EPP");
+  // DEMAIS = 50+
+  if (max == null || max >= 50) portes.push("DEMAIS");
+  return portes;
+}
+
+/** Mesma ideia pra faturamento (limites SN/LP). */
+function mapearRangeFaturamentoParaPortes(min: number | null | undefined, max: number | null | undefined): string[] | null {
+  if (min == null && max == null) return null;
+  const portes: string[] = [];
+  if ((min == null || min <= 81_000) && (max == null || max >= 0)) portes.push("MEI");
+  if ((min == null || min <= 360_000) && (max == null || max >= 0)) portes.push("ME");
+  if ((min == null || min <= 4_800_000) && (max == null || max >= 360_000)) portes.push("EPP");
+  if (max == null || max >= 4_800_000) portes.push("DEMAIS");
+  return portes;
+}
+
+/** Constrói clausula `or(...)` PostgREST: range numérico OR porte in (...). */
+function montarRangeOrPorte(coluna: string, min: number | null | undefined, max: number | null | undefined, portes: string[]): string | null {
+  const parts: string[] = [];
+  if (min != null && max != null) {
+    parts.push(`and(${coluna}.gte.${min},${coluna}.lte.${max})`);
+  } else if (min != null) {
+    parts.push(`${coluna}.gte.${min}`);
+  } else if (max != null) {
+    parts.push(`${coluna}.lte.${max}`);
+  }
+  if (portes.length > 0) {
+    parts.push(`porte.in.(${portes.join(",")})`);
+  }
+  return parts.length > 0 ? parts.join(",") : null;
+}
+
 function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.status?.length) query = query.in("status", filters.status);
   if (filters.porte?.length) query = query.in("porte", filters.porte);
@@ -132,10 +179,19 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.opcaoSimples === false) query = query.eq("opcao_simples", false);
   if (filters.capitalMin != null) query = query.gte("capital_social", filters.capitalMin);
   if (filters.capitalMax != null) query = query.lte("capital_social", filters.capitalMax);
-  if (filters.funcionariosMin != null) query = query.gte("quantidade_funcionarios", filters.funcionariosMin);
-  if (filters.funcionariosMax != null) query = query.lte("quantidade_funcionarios", filters.funcionariosMax);
-  if (filters.faturamentoMin != null) query = query.gte("faturamento_anual", filters.faturamentoMin);
-  if (filters.faturamentoMax != null) query = query.lte("faturamento_anual", filters.faturamentoMax);
+  // Funcionários e Faturamento: filtro híbrido — combina range numérico
+  // (pra empresas com valor exato) OR match por porte RFB (pra empresas
+  // que só têm faixa textual inferida). Cobre os 2 casos sem perder dados.
+  const portesFunc = mapearRangeFuncionariosParaPortes(filters.funcionariosMin, filters.funcionariosMax);
+  if (portesFunc !== null) {
+    const orClauses = montarRangeOrPorte("quantidade_funcionarios", filters.funcionariosMin, filters.funcionariosMax, portesFunc);
+    if (orClauses) query = query.or(orClauses);
+  }
+  const portesFat = mapearRangeFaturamentoParaPortes(filters.faturamentoMin, filters.faturamentoMax);
+  if (portesFat !== null) {
+    const orClauses = montarRangeOrPorte("faturamento_anual", filters.faturamentoMin, filters.faturamentoMax, portesFat);
+    if (orClauses) query = query.or(orClauses);
+  }
   if (filters.regimeTributario?.length) query = query.in("regime_tributario", filters.regimeTributario);
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);

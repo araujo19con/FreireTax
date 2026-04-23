@@ -462,7 +462,11 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                       key={preset.label}
                       type="button"
                       onClick={() =>
-                        onChange({ ...filters, capitalMin: preset.min, capitalMax: preset.max })
+                        onChange({
+                          ...filters,
+                          capitalMin: active ? null : preset.min,
+                          capitalMax: active ? null : preset.max,
+                        })
                       }
                       className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                         active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
@@ -515,7 +519,11 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                       key={preset.label}
                       type="button"
                       onClick={() =>
-                        onChange({ ...filters, funcionariosMin: preset.min, funcionariosMax: preset.max })
+                        onChange({
+                          ...filters,
+                          funcionariosMin: active ? null : preset.min,
+                          funcionariosMax: active ? null : preset.max,
+                        })
                       }
                       className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                         active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
@@ -527,7 +535,7 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Filtro numérico. Faixas importadas como texto ("100 A 999") ficam como campos personalizados na empresa.
+                Casa empresas com valor exato OU porte RFB compatível (MEI/ME/EPP/DEMAIS). Clique no preset ativo pra desmarcar.
               </p>
             </section>
 
@@ -570,7 +578,11 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                       key={preset.label}
                       type="button"
                       onClick={() =>
-                        onChange({ ...filters, faturamentoMin: preset.min, faturamentoMax: preset.max })
+                        onChange({
+                          ...filters,
+                          faturamentoMin: active ? null : preset.min,
+                          faturamentoMax: active ? null : preset.max,
+                        })
                       }
                       className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
                         active ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted border-border"
