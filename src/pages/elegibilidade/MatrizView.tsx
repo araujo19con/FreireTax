@@ -12,8 +12,9 @@ import {
 } from "@/components/ui/pagination";
 import {
   Search, CheckCircle2, XCircle, Circle, AlertCircle, Gavel, Building2,
-  X, Play,
+  X, Play, BookOpen, Upload,
 } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Acao } from "@/hooks/useAcoes";
@@ -160,16 +161,21 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
         )}
 
         {acoes.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Gavel className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-            <p className="text-sm text-muted-foreground">Nenhuma ação tributária cadastrada.</p>
-            <p className="text-xs text-muted-foreground mt-1">Cadastre ações em <strong>Ações Tributárias</strong> pra começar a qualificar.</p>
-          </Card>
+          <EmptyState
+            icon={Gavel}
+            title="Nenhuma ação tributária cadastrada"
+            description="A Elegibilidade qualifica empresas contra ações (teses). Cadastre pelo menos uma ação primeiro — assim a matriz tem colunas pra preencher."
+            action={{ label: "Ir para Ações Tributárias", to: "/acoes", icon: Gavel }}
+            secondaryAction={{ label: "Ver tutorial", to: "/tutorial?tab=fluxo", icon: BookOpen }}
+          />
         ) : rows.length === 0 && !empresasQ.isLoading ? (
-          <Card className="p-12 text-center">
-            <Building2 className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-            <p className="text-sm text-muted-foreground">Nenhuma empresa encontrada.</p>
-          </Card>
+          <EmptyState
+            icon={Building2}
+            title="Nenhuma empresa cadastrada"
+            description="A matriz precisa de empresas nas linhas. Cadastre manualmente ou importe uma planilha pra popular a base."
+            action={{ label: "Ir para Empresas", to: "/empresas", icon: Building2 }}
+            secondaryAction={{ label: "Importar planilha", to: "/importacao", icon: Upload }}
+          />
         ) : (
           <Card className="shadow-card overflow-hidden">
             <div className="overflow-x-auto">
