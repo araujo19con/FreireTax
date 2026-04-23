@@ -17,10 +17,27 @@ const FAIXA_FUNC_POR_PORTE: Record<string, string> = {
   DEMAIS: "50+ funcionários",
 };
 
+/**
+ * Proxy numérico (midpoint de cada faixa) para popular `quantidade_funcionarios`.
+ * Permite que filtros numéricos por range funcionem com dados inferidos.
+ */
+const FUNC_NUMERICO_POR_PORTE: Record<string, number> = {
+  MEI:    1,
+  ME:     5,    // midpoint de 1-9
+  EPP:    30,   // midpoint de 10-49
+  DEMAIS: 100,  // lower bound (não há limite superior)
+};
+
 export function inferirFaixaFuncionarios(emp: Pick<Empresa, "porte">): string | null {
   const porte = emp.porte;
   if (!porte || porte === "NAO_INFORMADO") return null;
   return FAIXA_FUNC_POR_PORTE[porte] ?? null;
+}
+
+export function inferirNumeroFuncionarios(emp: Pick<Empresa, "porte">): number | null {
+  const porte = emp.porte;
+  if (!porte || porte === "NAO_INFORMADO") return null;
+  return FUNC_NUMERICO_POR_PORTE[porte] ?? null;
 }
 
 // =========================================================================
@@ -33,6 +50,30 @@ const FAIXA_FAT_POR_PORTE: Record<string, string> = {
   EPP:    "R$ 360.000–4.800.000/ano (faixa EPP no SN)",
   DEMAIS: "Acima de R$ 4.800.000/ano (fora do Simples)",
 };
+
+/**
+ * Proxy numérico (midpoint/upper-bound) pra popular `faturamento_anual`
+ * — permite filtros por range funcionarem com dados inferidos.
+ */
+const FAT_NUMERICO_POR_PORTE: Record<string, number> = {
+  MEI:    81_000,         // limite máximo
+  ME:     360_000,        // limite máximo
+  EPP:    2_580_000,      // midpoint de 360k–4,8M
+  DEMAIS: 5_000_000,      // lower bound (sem teto)
+};
+
+export function inferirNumeroFaturamento(emp: Pick<Empresa, "porte" | "capital_social">): number | null {
+  if (emp.porte && emp.porte !== "NAO_INFORMADO" && FAT_NUMERICO_POR_PORTE[emp.porte]) {
+    return FAT_NUMERICO_POR_PORTE[emp.porte];
+  }
+  // Fallback por capital social
+  const cap = Number(emp.capital_social ?? 0);
+  if (cap >= 5_000_000) return 5_000_000;
+  if (cap >= 500_000) return 2_580_000;
+  if (cap >= 50_000) return 360_000;
+  if (cap > 0) return 81_000;
+  return null;
+}
 
 export function inferirFaixaFaturamento(emp: Pick<Empresa, "porte" | "capital_social">): string | null {
   const porte = emp.porte;
@@ -141,6 +182,8 @@ export interface InferenciaResultado {
   /** Patch para aplicar no banco (só campos a serem atualizados; vazios não sobrescritos). */
   patch: {
     regime_tributario?: string | null;
+    quantidade_funcionarios?: number | null;
+    faturamento_anual?: number | null;
     metadados?: Record<string, string>;
   };
   /** Lista humana de fontes pra mostrar em toast. */
@@ -196,6 +239,25 @@ export function aplicarInferencias(emp: Empresa): InferenciaResultado {
 
   if (Object.keys(novoMeta).length > 0) {
     patch.metadados = { ...metaAtual, ...novoMeta };
+  }
+
+  // Numéricos proxy — necessários pros filtros por range (gte/lte) funcionarem.
+  // Só preenche se ainda estiver vazio. Detail sheet/dialog mostra a faixa
+  // textual original em metadados (preserva nuance), enquanto o número é o
+  // midpoint pra possibilitar filtragem.
+  if (emp.quantidade_funcionarios == null) {
+    const n = inferirNumeroFuncionarios(emp);
+    if (n != null) {
+      patch.quantidade_funcionarios = n;
+      // Não duplica em fontes (já registramos a faixa textual acima)
+    }
+  }
+
+  if (emp.faturamento_anual == null) {
+    const v = inferirNumeroFaturamento(emp);
+    if (v != null) {
+      patch.faturamento_anual = v;
+    }
   }
 
   return { patch, fontes, confianca: menorConfianca };
