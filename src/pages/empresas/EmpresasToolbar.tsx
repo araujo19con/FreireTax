@@ -11,7 +11,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Search, X, LayoutGrid, Table as TableIcon, Kanban,
-  Download, FolderPlus, Gavel, Trash2, ChevronDown, FileSpreadsheet, FileText,
+  Download, FolderPlus, Gavel, Trash2, ChevronDown, FileSpreadsheet, FileText, Sparkles,
 } from "lucide-react";
 import type { EmpresaFilters, EmpresaSort } from "@/hooks/useEmpresas";
 import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
@@ -31,6 +31,8 @@ interface EmpresasToolbarProps {
   onBulkMovePasta: () => void;
   onBulkVincularAcao: () => void;
   onBulkDelete: () => void;
+  onBulkInferir?: () => void;
+  inferindo?: boolean;
   onExport: (format: "csv" | "xlsx") => void;
   onClearSelection: () => void;
   totalCount: number;
@@ -47,7 +49,7 @@ export function EmpresasToolbar({
   sort, onSortChange,
   view, onViewChange,
   selectedIds,
-  onBulkMovePasta, onBulkVincularAcao, onBulkDelete, onExport, onClearSelection,
+  onBulkMovePasta, onBulkVincularAcao, onBulkDelete, onBulkInferir, inferindo, onExport, onClearSelection,
   totalCount,
 }: EmpresasToolbarProps) {
   const selCount = selectedIds.length;
@@ -152,6 +154,12 @@ export function EmpresasToolbar({
           <Button variant="ghost" size="sm" onClick={onBulkVincularAcao} className="h-8">
             <Gavel className="mr-1.5 h-3.5 w-3.5" />Vincular ação
           </Button>
+          {onBulkInferir && (
+            <Button variant="ghost" size="sm" onClick={onBulkInferir} className="h-8" disabled={inferindo}>
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {inferindo ? "Inferindo..." : "Inferir dados"}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={() => onExport("xlsx")} className="h-8">
             <Download className="mr-1.5 h-3.5 w-3.5" />Exportar seleção
           </Button>

@@ -41,6 +41,7 @@ import {
 import { useAcoes } from "@/hooks/useAcoes";
 import { useElegibilidades, useCreateElegibilidade, useDeleteElegibilidade } from "@/hooks/useElegibilidades";
 import { formatCNPJ } from "@/lib/format";
+import { aplicarInferencias } from "@/lib/inferencias";
 
 export default function Empresas() {
   // --- Filters, search, sort, view, paging
@@ -276,6 +277,50 @@ export default function Empresas() {
     clearSelection();
   };
 
+  // --- Bulk inferir dados RFB
+  const [bulkInferirOpen, setBulkInferirOpen] = useState(false);
+  const [inferindo, setInferindo] = useState(false);
+  const handleBulkInferir = () => {
+    if (selectedIds.size === 0) return;
+    setBulkInferirOpen(true);
+  };
+  const confirmBulkInferir = async () => {
+    setInferindo(true);
+    setBulkInferirOpen(false);
+    const ids = Array.from(selectedIds);
+    let atualizadas = 0;
+    let camposPreenchidos = 0;
+    const CHUNK = 8;
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK);
+        await Promise.all(slice.map(async (id) => {
+          const { data: emp } = await supabase.from("empresas").select("*").eq("id", id).maybeSingle();
+          if (!emp) return;
+          const inf = aplicarInferencias(emp as Empresa);
+          if (Object.keys(inf.patch).length === 0) return;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error } = await (supabase.from("empresas") as any).update(inf.patch).eq("id", id);
+          if (!error) {
+            atualizadas++;
+            camposPreenchidos += Object.keys(inf.patch).length +
+              (inf.patch.metadados ? Object.keys(inf.patch.metadados).length - 1 : 0);
+          }
+        }));
+      }
+      toast.success(
+        `${atualizadas} empresa${atualizadas === 1 ? "" : "s"} atualizada${atualizadas === 1 ? "" : "s"} ` +
+        `(${camposPreenchidos} campo${camposPreenchidos === 1 ? "" : "s"} preenchido${camposPreenchidos === 1 ? "" : "s"})`
+      );
+      empresasQ.refetch();
+      clearSelection();
+    } catch (e) {
+      toast.error("Erro ao inferir: " + (e instanceof Error ? e.message : "falha"));
+    } finally {
+      setInferindo(false);
+    }
+  };
+
   // --- Export
   const [exporting, setExporting] = useState(false);
   const handleExport = async (format: "csv" | "xlsx") => {
@@ -484,6 +529,8 @@ export default function Empresas() {
             onBulkMovePasta={handleBulkMovePasta}
             onBulkVincularAcao={handleBulkVincularAcao}
             onBulkDelete={handleBulkDelete}
+            onBulkInferir={handleBulkInferir}
+            inferindo={inferindo}
             onExport={handleExport}
             onClearSelection={clearSelection}
             totalCount={total}
@@ -681,6 +728,29 @@ export default function Empresas() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               Excluir todas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk inferir dados RFB */}
+      <AlertDialog open={bulkInferirOpen} onOpenChange={setBulkInferirOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Inferir dados em {selectedIds.size} empresa(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vai preencher <strong>Faixa de Funcionários</strong>, <strong>Faixa de Faturamento</strong> e{" "}
+              <strong>Regime Tributário</strong> nas empresas selecionadas, baseado em dados RFB já enriquecidos
+              (porte, opção pelo Simples/MEI, capital social, CNAE).
+              <br/><br/>
+              <strong>Não sobrescreve dados manuais</strong> — só preenche campos vazios. Empresas sem dados RFB
+              suficientes são puladas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkInferir}>
+              Inferir agora
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
