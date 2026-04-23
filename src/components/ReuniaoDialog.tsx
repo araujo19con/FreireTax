@@ -188,10 +188,29 @@ export function ReuniaoDialog({
   const enviarConvite = async (reuniaoId: string, metodo: "REQUEST" | "CANCEL" = "REQUEST") => {
     setEnviandoConvite(true);
     try {
-      const { error } = await supabase.functions.invoke("enviar-convite-reuniao", {
-        body: { reuniao_id: reuniaoId, metodo },
-      });
-      if (error) throw error;
+      // invoke() envolve a resposta: quando non-2xx, error é genérico mas
+      // `data` ainda contém o body JSON do erro. Extraímos o detalhe pra
+      // mostrar a causa real (ex: SMTP não configurado).
+      const { data, error } = await supabase.functions.invoke<{ error?: string; detail?: string }>(
+        "enviar-convite-reuniao",
+        { body: { reuniao_id: reuniaoId, metodo } },
+      );
+      if (error || data?.error) {
+        const detalhe = data?.error ?? error?.message ?? "desconhecido";
+        const extra = data?.detail ? ` (${data.detail})` : "";
+        const full = detalhe + extra;
+
+        // Erro típico: SMTP não configurado. Oferece Calendar como alternativa.
+        if (/GMAIL|SMTP|senha.*app/i.test(full)) {
+          toast.error(
+            "Envio por email não configurado no servidor. Use 'Criar no Google Calendar' — o Calendar convida os emails automaticamente.",
+            { duration: 8000 },
+          );
+        } else {
+          toast.error("Erro ao enviar convite: " + full);
+        }
+        return;
+      }
       toast.success(metodo === "CANCEL" ? "Cancelamento enviado por email" : "Convite enviado para advogado e lead");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "desconhecido";
