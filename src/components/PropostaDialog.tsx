@@ -246,7 +246,7 @@ export function PropostaDialog({ open, onClose, prospeccaoId, context, onSaved }
         signatarioNome,
         signatarioCargo,
       });
-      toast.success("Word baixado. Pra gerar PDF: abra o arquivo e use 'Arquivo → Salvar como PDF'.", { duration: 6000 });
+      toast.success(`Word baixado (template: ${templateUrl}). Pra PDF: abra o arquivo e use 'Arquivo → Salvar como PDF'.`, { duration: 8000 });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "falha desconhecida";
       toast.error("Erro ao gerar Word: " + msg, { duration: 8000 });

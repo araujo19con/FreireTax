@@ -108,12 +108,15 @@ export interface PropostaDocxParams {
  * Lança erro com mensagem clara se template não puder ser carregado/processado.
  */
 export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<void> {
-  // 1) Baixa o template
-  const resp = await fetch(params.templateUrl);
+  // 1) Baixa o template — cache-bust pra evitar versão antiga em CDN/browser
+  const cacheBust = `${params.templateUrl}${params.templateUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+  console.info("[propostaDocx] Fetching template:", cacheBust);
+  const resp = await fetch(cacheBust, { cache: "no-store" });
   if (!resp.ok) {
     throw new Error(`Template não encontrado em ${params.templateUrl} (HTTP ${resp.status})`);
   }
   const buf = await resp.arrayBuffer();
+  console.info("[propostaDocx] Template baixado:", buf.byteLength, "bytes");
 
   // 2) Abre o .docx (zip + xml interno) com pizzip
   const zip = new PizZip(buf);
@@ -126,6 +129,7 @@ export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<voi
     (name) => name.startsWith("word/") && name.endsWith(".xml") &&
               (name.includes("document") || name.includes("header") || name.includes("footer"))
   );
+  let totalPlaceholdersIntegros = 0;
   for (const fname of xmlFiles) {
     const file = zip.file(fname);
     if (!file) continue;
@@ -134,6 +138,17 @@ export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<voi
     if (fixed !== original) {
       zip.file(fname, fixed);
     }
+    // Conta placeholders íntegros para debug
+    const phs = (fixed.match(/\{[#/]?[a-zA-Z_]+\}/g) || []);
+    totalPlaceholdersIntegros += phs.length;
+    if (phs.length > 0) console.info(`[propostaDocx] ${fname}: ${phs.length} placeholders íntegros`, [...new Set(phs)]);
+  }
+  if (totalPlaceholdersIntegros === 0) {
+    throw new Error(
+      "Template não contém placeholders ({empresa_nome}, {contato_nome}, etc.) — " +
+      "o arquivo .docx baixado é o template oficial do escritório SEM marcadores. " +
+      "Edite o template no Word e adicione os placeholders, ou troque o caminho em /propostas/templates."
+    );
   }
 
   // 3) Configura docxtemplater
