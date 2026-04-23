@@ -59,6 +59,7 @@ export function activeFiltersCount(f: EmpresaFilters): number {
   if (f.enriquecida) n++;
   if (f.temAcao != null) n++;
   if (f.pastaId) n++;
+  if (f.acaoId) n++;
   if (f.capitalMin != null || f.capitalMax != null) n++;
   if (f.funcionariosMin != null || f.funcionariosMax != null) n++;
   if (f.faturamentoMin != null || f.faturamentoMax != null) n++;

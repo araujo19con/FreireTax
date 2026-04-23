@@ -18,6 +18,8 @@ export interface EmpresaFilters {
   enriquecida?: "yes" | "no" | "error" | null;
   temAcao?: boolean | null;
   pastaId?: string | null;
+  /** Restringe a empresas vinculadas a esta ação (via elegibilidade). */
+  acaoId?: string | null;
   capitalMin?: number | null;
   capitalMax?: number | null;
   /** Busca substring (ilike) em `municipio` */
@@ -228,7 +230,7 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
     queryKey: ["empresas", { search, filters, sort, page, pageSize }],
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      // 1) Se tem filtro por pasta ou "tem ação", pré-resolve IDs elegíveis
+      // 1) Se tem filtro por pasta, ação ou "tem ação", pré-resolve IDs elegíveis
       let restrictIds: Set<string> | null = null;
       if (filters.pastaId) {
         const { data } = await supabase
@@ -236,6 +238,16 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
           .select("empresa_id")
           .eq("pasta_id", filters.pastaId);
         restrictIds = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
+      }
+      if (filters.acaoId) {
+        const { data } = await supabase
+          .from("elegibilidade")
+          .select("empresa_id")
+          .eq("acao_id", filters.acaoId);
+        const idsInAcao = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
+        restrictIds = restrictIds
+          ? new Set(Array.from(restrictIds).filter((id) => idsInAcao.has(id)))
+          : idsInAcao;
       }
       if (filters.temAcao != null) {
         const { data } = await supabase.from("elegibilidade").select("empresa_id");
@@ -315,6 +327,14 @@ export async function fetchAllEmpresas(params: Omit<UseEmpresasParams, "page" | 
     const { data } = await supabase
       .from("pasta_empresa_items").select("empresa_id").eq("pasta_id", filters.pastaId);
     restrictIds = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
+  }
+  if (filters.acaoId) {
+    const { data } = await supabase
+      .from("elegibilidade").select("empresa_id").eq("acao_id", filters.acaoId);
+    const idsInAcao = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
+    restrictIds = restrictIds
+      ? new Set(Array.from(restrictIds).filter((id) => idsInAcao.has(id)))
+      : idsInAcao;
   }
   if (filters.temAcao === true) {
     const { data } = await supabase.from("elegibilidade").select("empresa_id");

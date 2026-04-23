@@ -97,7 +97,6 @@ export default function Empresas() {
 
   const [pastaDialogOpen, setPastaDialogOpen] = useState(false);
   const [newPastaName, setNewPastaName] = useState("");
-  const [expandedAcaoId, setExpandedAcaoId] = useState<string | null>(null);
   const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
 
   // drag-drop to pasta/ação
@@ -564,61 +563,36 @@ export default function Empresas() {
           {acoes.map((a) => {
             const idsInAcao = empresaIdsInAcao(a.id);
             const isOver = dragOverAcaoId === a.id;
-            const isExpanded = expandedAcaoId === a.id;
-            const elegsForAcao = elegs.filter((el) => el.acao_id === a.id);
+            const isSelected = filters.acaoId === a.id;
 
             return (
-              <div key={a.id}>
-                <div
-                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm ${
-                    isOver ? "bg-accent/20 ring-2 ring-accent scale-[1.02]" :
-                    isExpanded ? "bg-accent/10 text-accent-foreground" :
-                    "hover:bg-muted/50 text-muted-foreground"
-                  }`}
-                  onClick={() => setExpandedAcaoId(isExpanded ? null : a.id)}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverAcaoId(a.id); }}
-                  onDragLeave={() => setDragOverAcaoId(null)}
-                  onDrop={(e) => handleDropAcao(e, a.id)}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Gavel className={`h-4 w-4 shrink-0 ${isOver ? "text-accent-foreground" : ""}`} />
-                    <div className="min-w-0">
-                      <span className="truncate block text-xs font-medium">{a.nome}</span>
-                      <span className="text-[10px] text-muted-foreground">{a.tipo}</span>
-                    </div>
+              <div
+                key={a.id}
+                className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm ${
+                  isOver ? "bg-accent/20 ring-2 ring-accent scale-[1.02]" :
+                  isSelected ? "bg-primary/10 text-primary font-medium" :
+                  "hover:bg-muted/50 text-muted-foreground"
+                }`}
+                onClick={() => setFilters({ ...filters, acaoId: isSelected ? null : a.id })}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverAcaoId(a.id); }}
+                onDragLeave={() => setDragOverAcaoId(null)}
+                onDrop={(e) => handleDropAcao(e, a.id)}
+                title={`Filtrar por: ${a.nome}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Gavel className={`h-4 w-4 shrink-0 ${isOver ? "text-accent-foreground" : ""}`} />
+                  <div className="min-w-0">
+                    <span className="truncate block text-xs font-medium">{a.nome}</span>
+                    <span className="text-[10px] text-muted-foreground">{a.tipo}</span>
                   </div>
-                  <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
-                    <Users className="mr-0.5 h-2.5 w-2.5" />{idsInAcao.size}
-                  </Badge>
                 </div>
+                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
+                  <Users className="mr-0.5 h-2.5 w-2.5" />{idsInAcao.size}
+                </Badge>
 
                 {isOver && draggingId && (
-                  <div className="mx-3 mt-1 text-[10px] text-accent-foreground font-medium text-center py-1 border border-dashed border-accent rounded">
+                  <div className="absolute left-0 right-0 -bottom-5 mx-3 text-[10px] text-accent-foreground font-medium text-center py-1 border border-dashed border-accent rounded bg-background">
                     Solte para vincular
-                  </div>
-                )}
-
-                {isExpanded && elegsForAcao.length > 0 && (
-                  <div className="ml-6 mt-1 space-y-0.5 max-h-40 overflow-y-auto">
-                    {elegsForAcao.map((el) => {
-                      const emp = rows.find((r) => r.id === el.empresa_id);
-                      return (
-                        <div key={el.id} className="flex items-center justify-between text-[11px] px-2 py-1 rounded hover:bg-muted/50">
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="truncate text-muted-foreground">{emp?.nome || "—"}</span>
-                            <span className={`text-[9px] px-1 rounded ${el.elegivel ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                              {el.elegivel ? "E" : "NE"}
-                            </span>
-                          </div>
-                          <Button
-                            variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive"
-                            onClick={(e) => { e.stopPropagation(); deleteEleg.mutate(el.id); }}
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </Button>
-                        </div>
-                      );
-                    })}
                   </div>
                 )}
               </div>
