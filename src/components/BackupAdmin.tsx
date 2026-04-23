@@ -73,39 +73,57 @@ export function BackupAdmin() {
     carregarBackups();
   }, []);
 
+  /**
+   * Chama edge function via fetch direto (preserva query string e devolve
+   * o erro real do gateway). `supabase.functions.invoke` não aceita query
+   * params no nome da função, então fetch direto é o caminho confiável.
+   */
+  const callBackupFunction = async (mode: "download" | "storage", motivo: string): Promise<Response> => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const apiKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!supabaseUrl) throw new Error("VITE_SUPABASE_URL não configurada");
+
+    const url = `${supabaseUrl}/functions/v1/backup-completo?mode=${mode}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ motivo }),
+    });
+
+    if (!res.ok) {
+      // Diagnóstico melhor — distingue função-não-deployada de erro interno
+      let detalhe = "";
+      try { detalhe = await res.text(); } catch { /* ignore */ }
+      const trecho = detalhe.slice(0, 300);
+      if (res.status === 404) {
+        throw new Error(
+          `Edge function "backup-completo" não foi deployada ainda. ` +
+          `Vá em Supabase Dashboard → Edge Functions e crie/deploye a função (instruções no chat).`
+        );
+      }
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`Sem permissão (${res.status}): ${trecho}`);
+      }
+      throw new Error(`HTTP ${res.status}: ${trecho || res.statusText}`);
+    }
+    return res;
+  };
+
   const handleBaixarLocal = async () => {
     setBaixandoLocal(true);
     try {
-      // Pega session pra mandar token no header (edge function valida admin)
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) {
-        toast.error("Sessão expirada. Faça login novamente.");
-        return;
-      }
-
-      // Edge function URL — mesmo padrão do enriquecer-cnpj
-      const supabaseUrl = (supabase as unknown as { supabaseUrl: string }).supabaseUrl;
-      const url = `${supabaseUrl}/functions/v1/backup-completo?mode=download`;
-
       toast.info("Gerando backup… isso pode levar 10-30 segundos");
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ motivo: "manual-download" }),
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`HTTP ${res.status}: ${txt.slice(0, 200)}`);
-      }
+      const res = await callBackupFunction("download", "manual-download");
 
       const blob = await res.blob();
-      // Nome de arquivo vem no Content-Disposition; fallback se vier sem
       const cd = res.headers.get("content-disposition") ?? "";
       const m = cd.match(/filename="?([^"]+)"?/i);
       const filename = m?.[1] ?? `tax-trakker-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -122,7 +140,8 @@ export function BackupAdmin() {
       logAudit({ tabela: "backups", acao: "Baixou backup local", detalhes: { filename, tamanho: blob.size } });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "erro desconhecido";
-      toast.error(`Falha no backup: ${msg}`);
+      console.error("[backup local]", e);
+      toast.error(msg, { duration: 8000 });
     } finally {
       setBaixandoLocal(false);
     }
@@ -132,12 +151,8 @@ export function BackupAdmin() {
     setSalvandoStorage(true);
     try {
       toast.info("Gerando snapshot e enviando pro storage…");
-
-      const { data, error } = await supabase.functions.invoke("backup-completo?mode=storage", {
-        body: { motivo: "manual" },
-      });
-
-      if (error) throw error;
+      const res = await callBackupFunction("storage", "manual");
+      const data = await res.json();
       if (!data?.ok) throw new Error(data?.error ?? "Resposta inválida da função");
 
       const tamanhoKb = ((data.tamanho_bytes as number) / 1024).toFixed(1);
@@ -146,7 +161,8 @@ export function BackupAdmin() {
       await carregarBackups();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "erro desconhecido";
-      toast.error(`Falha no backup: ${msg}`);
+      console.error("[backup storage]", e);
+      toast.error(msg, { duration: 8000 });
     } finally {
       setSalvandoStorage(false);
     }
