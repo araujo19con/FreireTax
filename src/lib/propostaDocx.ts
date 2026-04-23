@@ -43,32 +43,36 @@ function fmtBRL(n: number | null | undefined): string {
  *    iterativamente até nada mais merge.
  */
 function fixSplitPlaceholders(xml: string): string {
-  // 1) Remove proofErr (auto-fechado E par open/close)
+  // 1) Remove proofErr (auto-fechado, com qualquer atributo)
   let out = xml.replace(/<w:proofErr[^/]*\/>/g, "");
 
-  // 2) Merge runs adjacentes idênticos. Padrão:
-  //    <w:r ATTR><w:rPr>RPR</w:rPr><w:t XATTR>A</w:t></w:r><w:r ATTR><w:rPr>RPR</w:rPr><w:t YATTR>B</w:t></w:r>
-  // → <w:r ATTR><w:rPr>RPR</w:rPr><w:t YATTR>AB</w:t></w:r>
-  // Backreferences \1 e \2 garantem mesmo ATTR e mesmo RPR (formatação idêntica).
-  const mergeRegex =
-    /<w:r([^>]*)><w:rPr>([^]*?)<\/w:rPr><w:t[^>]*>([^<]*)<\/w:t><\/w:r><w:r\1><w:rPr>\2<\/w:rPr><w:t([^>]*)>([^<]*)<\/w:t><\/w:r>/g;
+  // 2) Merge SELETIVO: só junta dois runs adjacentes quando o texto resultante
+  //    ajuda a completar um placeholder ({...}). Não exige backref de atributos
+  //    (que variam por deploy / Word version) nem rPr idêntico — usa o
+  //    primeiro run como base. Faz N iterações até estabilizar.
+  const adjacentRunsPair =
+    /<w:r([^>]*)>((?:<w:rPr>[^]*?<\/w:rPr>)?)<w:t([^>]*)>([^<]*)<\/w:t><\/w:r><w:r[^>]*>(?:<w:rPr>[^]*?<\/w:rPr>)?<w:t[^>]*>([^<]*)<\/w:t><\/w:r>/g;
+
+  const helpsPlaceholder = (a: string, b: string): boolean => {
+    // a termina sem fechar { ainda aberto, OU b começa fechando } pendente,
+    // OU um deles é exatamente '{' ou '}', OU a junção forma {x}
+    const opens = (a.match(/\{/g) || []).length - (a.match(/\}/g) || []).length;
+    const closes = (b.match(/\}/g) || []).length - (b.match(/\{/g) || []).length;
+    if (opens > 0 && closes >= 0) return true;
+    if (a === "{" || b === "}" || a.endsWith("{") || b.startsWith("}")) return true;
+    // A junção forma um placeholder válido?
+    if (/\{[#/]?[a-zA-Z_][a-zA-Z0-9_]*\}/.test(a + b)) return true;
+    return false;
+  };
 
   let prev = "";
   let iterations = 0;
-  while (out !== prev && iterations < 50) {
+  while (out !== prev && iterations < 100) {
     prev = out;
-    out = out.replace(mergeRegex, "<w:r$1><w:rPr>$2</w:rPr><w:t$4>$3$5</w:t></w:r>");
-    iterations++;
-  }
-
-  // 3) Caso runs sem rPr (texto cru) também precisem merge
-  const mergeNoRprRegex =
-    /<w:r([^>]*)><w:t[^>]*>([^<]*)<\/w:t><\/w:r><w:r\1><w:t([^>]*)>([^<]*)<\/w:t><\/w:r>/g;
-  prev = "";
-  iterations = 0;
-  while (out !== prev && iterations < 50) {
-    prev = out;
-    out = out.replace(mergeNoRprRegex, "<w:r$1><w:t$3>$2$4</w:t></w:r>");
+    out = out.replace(adjacentRunsPair, (match, attr, rpr, tAttr, t1, t2) => {
+      if (!helpsPlaceholder(t1, t2)) return match;
+      return `<w:r${attr}>${rpr}<w:t${tAttr}>${t1}${t2}</w:t></w:r>`;
+    });
     iterations++;
   }
 
@@ -137,11 +141,25 @@ export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<voi
     const fixed = fixSplitPlaceholders(original);
     if (fixed !== original) {
       zip.file(fname, fixed);
+      console.info(`[propostaDocx] ${fname}: XML modificado pelo fix (${original.length} → ${fixed.length} chars)`);
+    } else if (fname.endsWith("document.xml")) {
+      console.warn(`[propostaDocx] ${fname}: fix NÃO modificou o XML — possível problema no regex ou formato inesperado`);
     }
     // Conta placeholders íntegros para debug
     const phs = (fixed.match(/\{[#/]?[a-zA-Z_]+\}/g) || []);
     totalPlaceholdersIntegros += phs.length;
     if (phs.length > 0) console.info(`[propostaDocx] ${fname}: ${phs.length} placeholders íntegros`, [...new Set(phs)]);
+    // Se for document.xml e ainda estiver quebrado, dump um trecho pra debug
+    if (fname.endsWith("document.xml") && phs.length === 0) {
+      // Procura por sequência típica de placeholder quebrado
+      const idx = fixed.indexOf("empresa_nome");
+      if (idx >= 0) {
+        console.warn(`[propostaDocx] Trecho ao redor de 'empresa_nome' (não casou regex):`,
+          fixed.substring(Math.max(0, idx - 300), Math.min(fixed.length, idx + 200)));
+      } else {
+        console.warn(`[propostaDocx] 'empresa_nome' não encontrado no XML — template não tem placeholders mesmo`);
+      }
+    }
   }
   if (totalPlaceholdersIntegros === 0) {
     throw new Error(
