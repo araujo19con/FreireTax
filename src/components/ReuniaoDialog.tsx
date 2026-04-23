@@ -7,13 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { CalendarCheck, Send, XCircle } from "lucide-react";
+import { CalendarCheck, Send, XCircle, CalendarPlus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import type { Database } from "@/integrations/supabase/types";
 import { format, addMinutes } from "date-fns";
+import { buildGoogleCalendarUrl } from "@/lib/googleCalendar";
 
 type Reuniao = Database["public"]["Tables"]["reunioes"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -198,6 +199,36 @@ export function ReuniaoDialog({
     } finally {
       setEnviandoConvite(false);
     }
+  };
+
+  const abrirGoogleCalendar = () => {
+    if (!titulo.trim()) return toast.error("Informe o título");
+    if (!dataInicio) return toast.error("Informe a data de início");
+
+    const inicio = new Date(dataInicio);
+    const fim = addMinutes(inicio, duracaoMin || 60);
+
+    const advogado = advogados.find((a) => a.id === advogadoId);
+    const attendees = [advogado?.email, leadEmail].filter(Boolean);
+
+    // Monta descrição com contexto útil que vai pro evento
+    const desc: string[] = [];
+    if (descricao.trim()) desc.push(descricao.trim());
+    if (leadNome.trim()) desc.push(`Lead: ${leadNome.trim()}`);
+    if (advogado?.nome) desc.push(`Responsável: ${advogado.nome}`);
+    if (notas.trim()) desc.push(`\nNotas: ${notas.trim()}`);
+
+    const url = buildGoogleCalendarUrl({
+      title: titulo.trim(),
+      description: desc.join("\n"),
+      start: inicio,
+      end: fim,
+      location: local.trim() || undefined,
+      attendees,
+    });
+
+    window.open(url, "_blank", "noopener,noreferrer");
+    toast.info("Google Calendar aberto em nova aba. Ative 'Adicionar Google Meet' no evento e cole o link aqui.");
   };
 
   const handleSave = async (opts: { enviar: boolean }) => {
@@ -390,8 +421,25 @@ export function ReuniaoDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Link da reunião (Meet, Zoom, Teams...)</Label>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <Label>Link da reunião (Meet, Zoom, Teams...)</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={abrirGoogleCalendar}
+                disabled={!titulo.trim() || !dataInicio}
+                title="Abre o Google Calendar preenchido — adicione 'Google Meet' lá e cole o link gerado aqui"
+              >
+                <CalendarPlus className="mr-1.5 h-3.5 w-3.5" />
+                Criar no Google Calendar
+              </Button>
+            </div>
             <Input value={linkReuniao} onChange={(e) => setLinkReuniao(e.target.value)} placeholder="https://meet.google.com/..." />
+            <p className="text-[10px] text-muted-foreground">
+              Dica: clique em "Criar no Google Calendar" → ative "Adicionar Google Meet" no evento → copie o link de volta pra cá.
+            </p>
           </div>
 
           <div className="space-y-2">
