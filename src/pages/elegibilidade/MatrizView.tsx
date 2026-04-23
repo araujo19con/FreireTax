@@ -193,12 +193,18 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                       Empresa
                     </th>
                     {acoes.map((a) => (
-                      <th key={a.id} className="py-2 px-2 font-medium text-center min-w-[90px] max-w-[140px]" title={a.nome}>
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider truncate">
+                      <th
+                        key={a.id}
+                        className="py-2 px-2 font-medium text-center align-bottom min-w-[120px] max-w-[160px]"
+                        title={a.nome}
+                      >
+                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider leading-tight line-clamp-3 break-words">
                           {a.nome}
                         </div>
                         {a.tipo && (
-                          <div className="text-[9px] text-muted-foreground/70 font-normal normal-case">{a.tipo}</div>
+                          <div className="text-[9px] text-muted-foreground/70 font-normal normal-case mt-0.5">
+                            {a.tipo}
+                          </div>
                         )}
                       </th>
                     ))}
@@ -229,9 +235,13 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                           />
                         </td>
                         <td className="sticky left-8 z-10 bg-background py-2 px-3">
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-sm font-medium truncate">{emp.nome}</span>
-                            <span className="text-[10px] text-muted-foreground font-mono">{formatCNPJ(emp.cnpj)}</span>
+                          <div className="flex flex-col min-w-0" title={emp.nome}>
+                            <span className="text-sm font-medium leading-tight line-clamp-2 break-words">
+                              {emp.nome}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                              {formatCNPJ(emp.cnpj)}
+                            </span>
                           </div>
                         </td>
                         {acoes.map((a) => {
