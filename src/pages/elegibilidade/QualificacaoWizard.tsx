@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ArrowLeft, ArrowRight, CheckCircle2, XCircle, AlertCircle, Sparkles, Gavel, Building2,
 } from "lucide-react";
@@ -212,8 +213,9 @@ export function QualificacaoWizard({
               <div className="text-center space-y-3">
                 <AlertCircle className="h-10 w-10 text-warning mx-auto" />
                 <p className="text-sm font-medium">Esta ação não tem critérios cadastrados</p>
-                <p className="text-xs text-muted-foreground">
-                  Vá em <strong>Ações Tributárias → Critérios</strong> pra cadastrar perguntas que estruturem a qualificação.
+                <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                  Critérios são as perguntas que guiam a qualificação — cada uma tem peso e pode ser excludente.
+                  Cadastre-as em <strong>Ações Tributárias → Critérios</strong> antes de qualificar empresas nesta tese.
                 </p>
               </div>
             ) : (
@@ -242,14 +244,35 @@ export function QualificacaoWizard({
                     <p className="text-xs text-muted-foreground mt-1">{current.descricao}</p>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  {current.eh_excludente && (
-                    <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/30">
-                      excludente
-                    </Badge>
-                  )}
-                  <Badge variant="secondary" className="text-[10px]">peso {current.peso}</Badge>
-                </div>
+                <TooltipProvider delayDuration={200}>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {current.eh_excludente && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-destructive/10 text-destructive border-destructive/30 cursor-help"
+                          >
+                            excludente
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                          Critério excludente — se a resposta desatende a regra, a empresa é desqualificada automaticamente, independente do score das outras perguntas.
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge variant="secondary" className="text-[10px] cursor-help">
+                          peso {current.peso}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                        Peso na composição do score. Respostas positivas somam o peso; score final = (soma dos pesos positivos) ÷ (soma total de pesos) × 100.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
               </div>
 
               <div className="pt-1">
@@ -289,7 +312,18 @@ export function QualificacaoWizard({
                       {evaluated.elegivel ? "Elegível" : "Não elegível"}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Score: <strong>{evaluated.score}%</strong>
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="cursor-help underline decoration-dotted decoration-muted-foreground/50">
+                              Score: <strong>{evaluated.score}%</strong>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs leading-relaxed">
+                            Soma dos pesos das respostas positivas ÷ soma total de pesos × 100. Score ≥ 70% + nenhum excludente falhou = elegível.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                       {evaluated.valor && <> · Valor estimado: <strong>{formatCurrency(evaluated.valor)}</strong></>}
                     </p>
                   </div>
