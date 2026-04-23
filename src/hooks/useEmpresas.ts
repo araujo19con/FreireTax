@@ -24,12 +24,16 @@ export interface EmpresaFilters {
   municipio?: string | null;
   /** Busca em `cnae_principal` (código) OU `cnae_principal_desc` (descrição) via ilike */
   cnae?: string | null;
-  /** Quantidade de funcionários — range numérico */
+  /** Quantidade de funcionários — range numérico (só casa empresas com valor manual/importado numérico) */
   funcionariosMin?: number | null;
   funcionariosMax?: number | null;
-  /** Faturamento anual em R$ — range numérico */
+  /** Faturamento anual em R$ — range numérico (só casa empresas com valor manual/importado numérico) */
   faturamentoMin?: number | null;
   faturamentoMax?: number | null;
+  /** Faixa de funcionários como texto (vindo da planilha — ex: "500 A 999") */
+  faixaFuncionarios?: string[];
+  /** Faixa de faturamento como texto (vindo da planilha — ex: "10M A 20M") */
+  faixaFaturamento?: string[];
   /** Regime tributário (simples/mei/lucro_presumido/lucro_real/imune_isento) */
   regimeTributario?: string[];
 }
@@ -139,6 +143,13 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.funcionariosMax != null) query = query.lte("quantidade_funcionarios", filters.funcionariosMax);
   if (filters.faturamentoMin != null) query = query.gte("faturamento_anual", filters.faturamentoMin);
   if (filters.faturamentoMax != null) query = query.lte("faturamento_anual", filters.faturamentoMax);
+  // Faixas como texto em metadados — match exato no valor importado da planilha
+  if (filters.faixaFuncionarios?.length) {
+    query = query.in("metadados->>Faixa de Funcionários", filters.faixaFuncionarios);
+  }
+  if (filters.faixaFaturamento?.length) {
+    query = query.in("metadados->>Faixa de Faturamento", filters.faixaFaturamento);
+  }
   if (filters.regimeTributario?.length) query = query.in("regime_tributario", filters.regimeTributario);
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
@@ -315,6 +326,69 @@ export async function fetchAllEmpresas(params: Omit<UseEmpresasParams, "page" | 
     return all.filter((e) => !withAcao.has(e.id));
   }
   return all;
+}
+
+/**
+ * Retorna os valores textuais distintos de "Faixa de Funcionários" e "Faixa de Faturamento"
+ * em metadados — usado pra montar multiselect dos filtros. Ordenação por nome alfabético
+ * (o parser tenta numericamente quando detecta padrão "N A M").
+ */
+export function useFaixasDistintas() {
+  return useQuery({
+    queryKey: ["empresas", "faixas-distintas"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const funcSet = new Set<string>();
+      const fatSet = new Set<string>();
+      const PAGE = 1000;
+      let from = 0;
+      for (;;) {
+        const { data, error } = await supabase
+          .from("empresas")
+          .select("metadados")
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const batch = ((data || []) as unknown) as Array<{ metadados: Record<string, string> | null }>;
+        for (const r of batch) {
+          const f = r.metadados?.["Faixa de Funcionários"];
+          const g = r.metadados?.["Faixa de Faturamento"];
+          if (f) funcSet.add(f);
+          if (g) fatSet.add(g);
+        }
+        if (batch.length < PAGE) break;
+        from += PAGE;
+        if (from > 50_000) break;
+      }
+      return {
+        funcionarios: ordenarFaixas(Array.from(funcSet)),
+        faturamento: ordenarFaixas(Array.from(fatSet)),
+      };
+    },
+  });
+}
+
+/** Ordena faixas textuais pelo primeiro número encontrado (fallback alfabético). */
+function ordenarFaixas(values: string[]): string[] {
+  return values.sort((a, b) => {
+    const na = extrairPrimeiroNumero(a);
+    const nb = extrairPrimeiroNumero(b);
+    if (na != null && nb != null) return na - nb;
+    if (na != null) return -1;
+    if (nb != null) return 1;
+    return a.localeCompare(b, "pt-BR");
+  });
+}
+
+function extrairPrimeiroNumero(s: string): number | null {
+  const m = s.match(/(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?/i);
+  if (!m) return null;
+  const num = Number(m[1].replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(num)) return null;
+  const suf = (m[2] || "").toLowerCase();
+  if (suf.startsWith("b")) return num * 1_000_000_000;
+  if (suf.startsWith("mi") || suf === "m") return num * 1_000_000;
+  if (suf.startsWith("mil") || suf === "k") return num * 1_000;
+  return num;
 }
 
 /** Lista simples (sem paginação) — usado em selects de combobox. */

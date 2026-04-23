@@ -12,6 +12,7 @@ import { Filter, Search, X } from "lucide-react";
 import type {
   EmpresaFilters, EmpresaStatus, EmpresaPorte, EmpresaSituacao,
 } from "@/hooks/useEmpresas";
+import { useFaixasDistintas } from "@/hooks/useEmpresas";
 import { REGIMES_TRIBUTARIOS } from "@/lib/regimeTributario";
 
 const STATUS_OPTIONS: Array<{ value: EmpresaStatus; label: string }> = [
@@ -61,6 +62,8 @@ export function activeFiltersCount(f: EmpresaFilters): number {
   if (f.capitalMin != null || f.capitalMax != null) n++;
   if (f.funcionariosMin != null || f.funcionariosMax != null) n++;
   if (f.faturamentoMin != null || f.faturamentoMax != null) n++;
+  if (f.faixaFuncionarios?.length) n += f.faixaFuncionarios.length;
+  if (f.faixaFaturamento?.length) n += f.faixaFaturamento.length;
   if (f.regimeTributario?.length) n += f.regimeTributario.length;
   if (f.municipio?.trim()) n++;
   if (f.cnae?.trim()) n++;
@@ -149,6 +152,16 @@ export function EmpresaFilterChips({
       : `Faturamento ≤ ${formatBRLCompact(max)}`;
     chips.push({ label, onRemove: () => onChange({ ...filters, faturamentoMin: null, faturamentoMax: null }) });
   }
+  filters.faixaFuncionarios?.forEach((v) =>
+    chips.push({
+      label: `Faixa func.: ${v}`,
+      onRemove: () => onChange({ ...filters, faixaFuncionarios: (filters.faixaFuncionarios || []).filter((x) => x !== v) }),
+    }));
+  filters.faixaFaturamento?.forEach((v) =>
+    chips.push({
+      label: `Faixa fat.: ${v}`,
+      onRemove: () => onChange({ ...filters, faixaFaturamento: (filters.faixaFaturamento || []).filter((x) => x !== v) }),
+    }));
   if (filters.municipio?.trim()) {
     chips.push({
       label: `Cidade: "${filters.municipio.trim()}"`,
@@ -206,6 +219,9 @@ interface EmpresaFilterPopoverProps {
 export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopoverProps) {
   const [open, setOpen] = useState(false);
   const nActive = activeFiltersCount(filters);
+  const faixasQ = useFaixasDistintas();
+  const faixasFunc = faixasQ.data?.funcionarios ?? [];
+  const faixasFat = faixasQ.data?.faturamento ?? [];
 
   const toggleArrayValue = <T,>(arr: T[] | undefined, value: T): T[] | undefined => {
     const cur = arr ?? [];
@@ -594,9 +610,69 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                Presets seguem faixas do Simples Nacional e LP. Filtro numérico; faixas importadas como texto viram campos personalizados.
+                Presets seguem faixas do Simples Nacional e LP. Filtro numérico estrito sobre valor manual/importado.
               </p>
             </section>
+
+            {faixasFunc.length > 0 && (
+              <section>
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">
+                  Faixa de Funcionários (importada)
+                </Label>
+                <div className="mt-2 flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                  {faixasFunc.map((v) => {
+                    const active = filters.faixaFuncionarios?.includes(v) ?? false;
+                    return (
+                      <label
+                        key={v}
+                        className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-border hover:bg-muted cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={active}
+                          onCheckedChange={() =>
+                            onChange({ ...filters, faixaFuncionarios: toggleArrayValue(filters.faixaFuncionarios, v) })
+                          }
+                        />
+                        <span>{v}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Valores textuais vindos da planilha importada (match exato).
+                </p>
+              </section>
+            )}
+
+            {faixasFat.length > 0 && (
+              <section>
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">
+                  Faixa de Faturamento (importada)
+                </Label>
+                <div className="mt-2 flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                  {faixasFat.map((v) => {
+                    const active = filters.faixaFaturamento?.includes(v) ?? false;
+                    return (
+                      <label
+                        key={v}
+                        className="flex items-center gap-1.5 text-xs px-2 py-1 rounded border border-border hover:bg-muted cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={active}
+                          onCheckedChange={() =>
+                            onChange({ ...filters, faixaFaturamento: toggleArrayValue(filters.faixaFaturamento, v) })
+                          }
+                        />
+                        <span>{v}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Valores textuais vindos da planilha importada (match exato).
+                </p>
+              </section>
+            )}
 
             <section>
               <Label className="text-xs font-semibold uppercase text-muted-foreground">Cidade (município)</Label>
