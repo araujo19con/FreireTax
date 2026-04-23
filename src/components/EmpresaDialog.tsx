@@ -10,6 +10,7 @@ import { Plus, Search, CheckCircle2, MapPin, Users, FileText, Calendar, Building
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCNPJ as validateCNPJReal, validateCNPJMessage, maskCNPJ } from "@/lib/cnpj";
+import { FieldHelp } from "@/components/FieldHelp";
 
 // Payload que vai pro banco — inclui campos RFB (todos opcionais)
 export interface EmpresaFormData {
@@ -271,7 +272,13 @@ export function EmpresaDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="status">Status no CRM</Label>
+            <Label htmlFor="status">
+              Status no CRM
+              <FieldHelp>
+                Prospect = ainda não é cliente. Cliente = contrato assinado em pelo menos uma tese.
+                Inativo = relacionamento encerrado. Independe do estado de elegibilidade em cada ação.
+              </FieldHelp>
+            </Label>
             <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
               <SelectTrigger>
                 <SelectValue />
@@ -287,7 +294,13 @@ export function EmpresaDialog({
           {/* Dados operacionais (manuais ou via importação) */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="qtd_func">Quantidade de funcionários</Label>
+              <Label htmlFor="qtd_func">
+                Quantidade de funcionários
+                <FieldHelp>
+                  Campo manual ou preenchido via importação de planilha. Se sua planilha trouxe uma faixa
+                  textual ("500 A 999"), ela fica em "Campos personalizados" — deixe este campo em branco.
+                </FieldHelp>
+              </Label>
               <Input
                 id="qtd_func"
                 type="number"
@@ -422,7 +435,13 @@ export function EmpresaDialog({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Regime tributário</Label>
+                <Label>
+                  Regime tributário
+                  <FieldHelp>
+                    Preenchimento manual — o sistema não infere. Simples e MEI vêm da opção na Receita,
+                    mas Lucro Presumido vs Real precisa ser informado. Se não souber, deixe "não informado".
+                  </FieldHelp>
+                </Label>
                 <Select
                   value={form.regime_tributario ?? "_none"}
                   onValueChange={(v) => {

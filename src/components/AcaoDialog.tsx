@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import { FieldHelp } from "@/components/FieldHelp";
 
 interface AcaoFormData {
   nome: string;
@@ -67,7 +68,14 @@ export function AcaoDialog({ onSave, trigger, initialData, title = "Nova Ação"
             <Input id="nome-acao" placeholder="Ex: Exclusão do ICMS da base de cálculo do PIS/COFINS" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tipo">Tipo</Label>
+            <Label htmlFor="tipo">
+              Tipo
+              <FieldHelp>
+                Inicial = ação judicial primária (ex.: declaração de inconstitucionalidade, repetição de indébito).
+                Rescisória = ação pra desfazer uma decisão transitada em julgado baseada em tese superveniente
+                — sempre vinculada a uma inicial.
+              </FieldHelp>
+            </Label>
             <Select value={form.tipo} onValueChange={(v) => setForm({ ...form, tipo: v, vinculo: v === "INICIAL" ? "" : form.vinculo })}>
               <SelectTrigger>
                 <SelectValue />
@@ -80,7 +88,13 @@ export function AcaoDialog({ onSave, trigger, initialData, title = "Nova Ação"
           </div>
           {form.tipo === "RESCISÓRIA" && (
             <div className="space-y-2">
-              <Label htmlFor="vinculo">Ação Inicial Vinculada</Label>
+              <Label htmlFor="vinculo">
+                Ação Inicial Vinculada
+                <FieldHelp>
+                  A rescisória precisa apontar qual tese (ação inicial) está sendo usada como fundamento
+                  pra desfazer a decisão anterior.
+                </FieldHelp>
+              </Label>
               <Select value={form.vinculo} onValueChange={(v) => setForm({ ...form, vinculo: v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione a ação inicial..." />
