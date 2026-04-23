@@ -615,13 +615,13 @@ export default function Prospeccao() {
 
                         {/* Company + value */}
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-1.5 text-sm font-medium truncate min-w-0">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                          <div className="flex items-center gap-2 text-sm font-medium truncate min-w-0">
+                            <Building2 className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
                             <span className="truncate">{emp?.nome || "—"}</span>
                           </div>
                           {/* QW2: valor potencial em destaque */}
                           {valorPot > 0 && (
-                            <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary flex-shrink-0" title="Valor potencial estimado">
+                            <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary shrink-0" title="Valor potencial estimado">
                               {formatCompactCurrency(valorPot)}
                             </Badge>
                           )}
@@ -629,8 +629,8 @@ export default function Prospeccao() {
 
                         {/* Ação */}
                         {acao && (
-                          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                            <Scale className="h-3 w-3 flex-shrink-0" />
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                            <Scale className="h-3.5 w-3.5 shrink-0" aria-hidden />
                             <span className="truncate">{acao.nome}</span>
                           </div>
                         )}
@@ -646,10 +646,10 @@ export default function Prospeccao() {
                         {/* Contact info */}
                         <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                           {p.contato_telefone && (
-                            <span className="flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{p.contato_telefone}</span>
+                            <span className="flex items-center gap-1.5"><Phone className="h-3 w-3 shrink-0" aria-hidden />{p.contato_telefone}</span>
                           )}
                           {p.contato_email && (
-                            <span className="flex items-center gap-1 truncate"><Mail className="h-2.5 w-2.5" />{p.contato_email}</span>
+                            <span className="flex items-center gap-1.5 truncate"><Mail className="h-3 w-3 shrink-0" aria-hidden />{p.contato_email}</span>
                           )}
                         </div>
 
@@ -673,13 +673,13 @@ export default function Prospeccao() {
 
                         {/* QW3: badge cadência + último contato */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="secondary" className={`text-[10px] flex items-center gap-1 ${cadencia.color}`}>
-                            <Zap className="h-2.5 w-2.5" />Toque {cadencia.label}
+                          <Badge variant="secondary" className={`text-[10px] flex items-center gap-1.5 px-2 py-0.5 ${cadencia.color}`}>
+                            <Zap className="h-3 w-3 shrink-0" aria-hidden />Toque {cadencia.label}
                           </Badge>
                           {diasSemContato !== null && diasSemContato >= 7 &&
                            p.status_prospeccao !== "Contrato assinado" && p.status_prospeccao !== "Perdido" && (
-                            <span className="text-[10px] text-destructive flex items-center gap-1">
-                              <Clock className="h-2.5 w-2.5" />parado {diasSemContato}d
+                            <span className="text-[10px] text-destructive flex items-center gap-1.5">
+                              <Clock className="h-3 w-3 shrink-0" aria-hidden />parado {diasSemContato}d
                             </span>
                           )}
                         </div>
@@ -703,30 +703,31 @@ export default function Prospeccao() {
                         <div className="flex gap-1 pt-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="outline" size="sm"
-                            className="h-7 text-[11px] flex-1"
+                            className="h-7 text-[11px] flex-1 gap-1.5"
                             onClick={() => openContatos(p)}
                             title="Registrar toque de contato"
                           >
-                            <MessageSquare className="mr-1 h-3 w-3" />
+                            <MessageSquare className="h-3.5 w-3.5 shrink-0" aria-hidden />
                             Contato
                           </Button>
                           <Button
                             variant="outline" size="sm"
-                            className="h-7 text-[11px] flex-1"
+                            className="h-7 text-[11px] flex-1 gap-1.5"
                             onClick={() => openProposta(p)}
                             title="Criar / editar proposta comercial"
                           >
-                            <FileText className="mr-1 h-3 w-3" />
+                            <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
                             Proposta
                           </Button>
                           {nextCol && (
                             <Button
                               variant="outline" size="sm"
-                              className="h-7 text-[11px] flex-1"
+                              className="h-7 text-[11px] flex-1 gap-1.5"
                               onClick={() => handleQuickStatusChange(p, nextCol.key)}
+                              title={`Avançar pra: ${nextCol.label}`}
                             >
-                              <ArrowRight className="mr-1 h-3 w-3" />
-                              {nextCol.label.split(" ")[0]}
+                              <ArrowRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                              Avançar
                             </Button>
                           )}
                           <Button
