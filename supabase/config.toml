@@ -13,3 +13,6 @@ verify_jwt = false
 
 [functions.gerar-tarefas-recorrentes]
 verify_jwt = false
+
+[functions.backup-completo]
+verify_jwt = false
