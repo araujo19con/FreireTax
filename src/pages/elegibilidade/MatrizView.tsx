@@ -189,7 +189,7 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                         aria-label="Selecionar todas as empresas da página"
                       />
                     </th>
-                    <th className="sticky left-8 z-10 bg-muted/30 text-left py-2 px-3 font-medium text-xs uppercase tracking-wider text-muted-foreground min-w-[220px]">
+                    <th className="sticky left-8 z-10 bg-muted/30 text-left py-2 px-3 font-medium text-xs uppercase tracking-wider text-muted-foreground min-w-[280px] max-w-[320px]">
                       Empresa
                     </th>
                     {acoes.map((a) => (
@@ -234,9 +234,9 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                             aria-label={`Selecionar ${emp.nome}`}
                           />
                         </td>
-                        <td className="sticky left-8 z-10 bg-background py-2 px-3">
+                        <td className="sticky left-8 z-10 bg-background py-2 px-3 max-w-[320px]">
                           <div className="flex flex-col min-w-0" title={emp.nome}>
-                            <span className="text-sm font-medium leading-tight line-clamp-2 break-words">
+                            <span className="text-sm font-medium leading-tight break-words">
                               {emp.nome}
                             </span>
                             <span className="text-[10px] text-muted-foreground font-mono mt-0.5">
