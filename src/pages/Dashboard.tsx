@@ -17,6 +17,7 @@ import * as XLSX from "xlsx";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
 import { FunilHormozi } from "@/components/FunilHormozi";
+import { TutorialWelcomeBanner } from "@/components/TutorialWelcomeBanner";
 
 interface Acao { id: string; nome: string; tipo: string; status: string; }
 interface ElegibilidadeRow { id: string; empresa_id: string; acao_id: string; elegivel: boolean; }
@@ -347,6 +348,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      <TutorialWelcomeBanner />
       <PageHeader
         title="Dashboard"
         description="Visão geral do acompanhamento tributário"

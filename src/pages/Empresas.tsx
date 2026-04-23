@@ -354,6 +354,8 @@ export default function Empresas() {
       <PageHeader
         title="Empresas"
         description="Gerencie empresas: busque, filtre, arraste para pastas ou ações tributárias."
+        helpTutorialTab="fluxo"
+        helpTooltip="Fluxo: Cadastrar empresas"
         actions={
           <>
             <Button variant="outline" onClick={() => setBulkEnrichOpen(true)} title="Atualizar dados da Receita Federal em lote">

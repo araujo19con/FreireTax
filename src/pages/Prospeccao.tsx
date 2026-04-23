@@ -483,6 +483,8 @@ export default function Prospeccao() {
         title="Prospecção"
         description="Pipeline comercial — cadência 7 toques, foco em alto valor"
         icon={<Handshake className="h-7 w-7" />}
+        helpTutorialTab="fluxo"
+        helpTooltip="Fluxo: Conduzir a prospecção"
         actions={
           <Button onClick={openCreateDialog}>
             <Plus className="mr-2 h-4 w-4" aria-hidden="true" />Nova Prospecção

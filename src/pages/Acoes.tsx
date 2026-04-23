@@ -516,6 +516,8 @@ export default function Acoes() {
         title="Ações Tributárias"
         description="Gestão de ações iniciais e rescisórias"
         icon={<Scale className="h-7 w-7" />}
+        helpTutorialTab="fluxo"
+        helpTooltip="Fluxo: Criar ações tributárias"
         actions={<AcaoDialog onSave={handleCreate} acoesIniciais={acoesIniciais} />}
       />
 

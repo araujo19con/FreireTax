@@ -70,6 +70,8 @@ export default function Elegibilidade() {
         title="Elegibilidade"
         description="Qualifique empresas para ações tributárias via critérios estruturados. Clique em uma célula da matriz para abrir o wizard."
         icon={<FileCheck className="h-7 w-7" />}
+        helpTutorialTab="fluxo"
+        helpTooltip="Fluxo: Qualificar elegibilidade"
       />
 
       {/* KPIs */}
