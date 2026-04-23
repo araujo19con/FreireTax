@@ -81,8 +81,6 @@ function fixSplitPlaceholders(xml: string): string {
 
 function htmlParaTexto(html: string): string {
   // Tira tags HTML mantendo quebras de linha por <p>/<br>.
-  // O .docx final fica em texto cru — formatação rica do template é preservada
-  // pelo próprio Word (estilos de parágrafo aplicados via {styles} no template).
   if (!html) return "";
   const tmp = document.createElement("div");
   tmp.innerHTML = html
@@ -90,8 +88,33 @@ function htmlParaTexto(html: string): string {
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<li>/gi, "• ")
     .replace(/<\/li>/gi, "\n");
-  // Remove tags restantes
   return (tmp.textContent || tmp.innerText || "").trim();
+}
+
+/**
+ * Quebra HTML em array de parágrafos (cada item é texto plano).
+ * Cada <p> vira um item; quebras simples <br> ficam dentro do mesmo item.
+ * Usado pra alimentar o loop {#paragrafos}{texto}{/paragrafos} no template,
+ * garantindo que cada parágrafo no Word seja um <w:p> de verdade
+ * (e portanto receba o pPr completo, incluindo recuo de 1ª linha).
+ */
+function htmlParaParagrafos(html: string): Array<{ texto: string }> {
+  if (!html) return [];
+  // Divide por </p> e processa cada bloco
+  const blocos = html.split(/<\/p>/i);
+  const out: Array<{ texto: string }> = [];
+  for (const bloco of blocos) {
+    if (!bloco.trim()) continue;
+    const tmp = document.createElement("div");
+    // Mantém <br> como newline, listas com bullet
+    tmp.innerHTML = bloco
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<li>/gi, "• ")
+      .replace(/<\/li>/gi, "\n");
+    const txt = (tmp.textContent || tmp.innerText || "").trim();
+    if (txt) out.push({ texto: txt });
+  }
+  return out.length > 0 ? out : [{ texto: "" }];
 }
 
 export interface PropostaDocxParams {
@@ -210,11 +233,15 @@ export async function gerarPropostaDocx(params: PropostaDocxParams): Promise<voi
     destinatario_att: params.destinatarioAtt,
     introducao: params.textoIntroducao,
 
-    // Loop de seções: no .docx use {#secoes}{titulo}\n{conteudo_texto}{/secoes}
-    // IMPORTANTE: renderVariaveis substitui {{empresa.nome}}, {{honorarios.entrada}}
-    // etc. (seed dos templates usa double-brace + dot notation) ANTES de virar texto.
+    // Loop de seções: template usa {#secoes}{titulo}{#paragrafos}{texto}{/paragrafos}{/secoes}
+    // Cada parágrafo do conteúdo vira um <w:p> separado no Word, ganhando o
+    // recuo de 1ª linha do template. Variáveis {{empresa.nome}} etc são
+    // substituídas via renderVariaveis ANTES de quebrar em parágrafos.
     secoes: params.secoes.map((s) => ({
       titulo: renderVariaveis(s.titulo, params.context),
+      paragrafos: htmlParaParagrafos(renderVariaveis(s.conteudo, params.context)),
+      // Compatibilidade: mantém conteudo_texto pra templates antigos que
+      // ainda não foram migrados pra estrutura de loop
       conteudo_texto: htmlParaTexto(renderVariaveis(s.conteudo, params.context)),
     })),
 
