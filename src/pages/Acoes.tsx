@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +114,7 @@ export default function Acoes() {
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
   const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
   const { user } = useAuth();
+  const qc = useQueryClient();
 
   // Elegibilidade dialog
   const [elegDialogOpen, setElegDialogOpen] = useState(false);
@@ -213,6 +215,15 @@ export default function Acoes() {
     if (error) { toast.error("Erro ao remover ação"); } else {
       toast.success("Ação removida");
       logAudit({ tabela: "acoes_tributarias", acao: "Removeu ação", registro_id: id, detalhes: { nome: acao?.nome } });
+      // CASCADE no DB já remove elegibilidades/prospeccoes/criterios. Mas outras
+      // páginas usam React Query com cache próprio — precisa invalidar pra que
+      // /elegibilidade, /empresas, /prospeccao, /dashboard reflitam a remoção.
+      qc.invalidateQueries({ queryKey: ["elegibilidade"] });
+      qc.invalidateQueries({ queryKey: ["elegibilidade-recentes"] });
+      qc.invalidateQueries({ queryKey: ["acoes"] });
+      qc.invalidateQueries({ queryKey: ["empresas"] });
+      qc.invalidateQueries({ queryKey: ["prospeccoes"] });
+      qc.invalidateQueries({ queryKey: ["criterios"] });
       fetchAll();
     }
   };
