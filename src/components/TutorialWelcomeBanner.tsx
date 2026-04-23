@@ -3,33 +3,54 @@ import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BookOpen, ArrowRight, X } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 const STORAGE_KEY = "tt_tutorial_seen_v1";
 
 /**
  * Banner de boas-vindas que aponta o tutorial pra novos usuários.
- * Persiste no localStorage após primeira dispensa — não volta a aparecer.
- * Some imediato se o user já tiver dispensado.
+ * Dispensa é persistida em dois lugares:
+ *   1. localStorage (instantâneo, offline-friendly)
+ *   2. profiles.tutorial_seen_at (cross-device — volta a aparecer no próximo
+ *      device até que o user dispense lá também, ou até que o primeiro sync
+ *      puxe o profile)
+ * Some imediato se qualquer um dos dois já estiver setado.
  */
 export function TutorialWelcomeBanner() {
+  const { user, profile, refreshProfile } = useAuth();
   const [show, setShow] = useState(false);
 
   useEffect(() => {
+    // Profile vindo do banco já tem tutorial_seen_at? Esconde.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((profile as any)?.tutorial_seen_at) {
+      setShow(false);
+      return;
+    }
     try {
       const seen = localStorage.getItem(STORAGE_KEY);
       if (!seen) setShow(true);
     } catch {
       // localStorage indisponível (modo privado antigo etc) — não mostra pra não irritar
     }
-  }, []);
+  }, [profile]);
 
-  const dismiss = () => {
+  const dismiss = async () => {
     try {
       localStorage.setItem(STORAGE_KEY, new Date().toISOString());
     } catch {
       // ignora
     }
     setShow(false);
+    // Sync cross-device — best-effort, não bloqueia UX
+    if (user) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from("profiles") as any)
+        .update({ tutorial_seen_at: new Date().toISOString() })
+        .eq("id", user.id);
+      await refreshProfile();
+    }
   };
 
   if (!show) return null;
