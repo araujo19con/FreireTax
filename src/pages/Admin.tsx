@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
 import { TemplatesAdmin } from "@/components/TemplatesAdmin";
 import TemplatesTarefaAdmin from "./tarefas/TemplatesAdmin";
+import { BackupAdmin } from "@/components/BackupAdmin";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -184,6 +185,7 @@ export default function Admin() {
           <TabsTrigger value="status">Status</TabsTrigger>
           <TabsTrigger value="usuarios">Usuários</TabsTrigger>
           <TabsTrigger value="criterios">Critérios</TabsTrigger>
+          <TabsTrigger value="backup">Backup</TabsTrigger>
         </TabsList>
 
         {/* === TEMPLATES DE MENSAGEM (Hormozi Sprint 2) === */}
@@ -310,6 +312,11 @@ export default function Admin() {
               <p className="text-xs text-muted-foreground mt-1">ID: {user?.id?.slice(0, 8)}...</p>
             </div>
           </Card>
+        </TabsContent>
+
+        {/* === BACKUP TAB === */}
+        <TabsContent value="backup" className="mt-4">
+          <BackupAdmin />
         </TabsContent>
 
         {/* === CRITÉRIOS TAB === */}
