@@ -18,6 +18,8 @@ import { logAudit } from "@/lib/audit";
 import type { Database } from "@/integrations/supabase/types";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
+import { X } from "lucide-react";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -264,9 +266,12 @@ export default function Usuarios() {
       {loading ? (
         <LoadingState variant="table" count={5} />
       ) : filtered.length === 0 ? (
-        <Card className="p-8 text-center text-muted-foreground shadow-card">
-          Nenhum usuário encontrado.
-        </Card>
+        <EmptyState
+          icon={Search}
+          title="Nenhum usuário encontrado"
+          description="A busca não retornou resultados. Ajuste o termo ou veja todos os usuários cadastrados."
+          action={{ label: "Limpar busca", icon: X, onClick: () => setSearch("") }}
+        />
       ) : (
         <Card className="shadow-card">
           <div className="divide-y divide-border">

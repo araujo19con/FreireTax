@@ -18,6 +18,7 @@ import {
 import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
 
 type Reuniao = Database["public"]["Tables"]["reunioes"]["Row"];
 type ReuniaoStatus = Database["public"]["Enums"]["reuniao_status"];
@@ -294,11 +295,17 @@ export default function MinhaAgenda({ embedded = false }: MinhaAgendaProps = {})
           </div>
         </Card>
       ) : (
+        reunioes.length === 0 ? (
+          <EmptyState
+            icon={CalendarCheck}
+            title="Nenhuma reunião agendada"
+            description="Comece agendando sua primeira reunião — convites são enviados automaticamente por email com .ics anexado."
+            action={{ label: "Agendar reunião", icon: Plus, onClick: openNew }}
+          />
+        ) : (
         <Card className="shadow-card">
           <div className="divide-y divide-border">
-            {reunioes.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">Nenhuma reunião.</div>
-            ) : reunioes.map((r) => (
+            {reunioes.map((r) => (
               <button
                 key={r.id}
                 type="button"
@@ -327,6 +334,7 @@ export default function MinhaAgenda({ embedded = false }: MinhaAgendaProps = {})
             ))}
           </div>
         </Card>
+        )
       )}
 
       {/* Próximas reuniões */}

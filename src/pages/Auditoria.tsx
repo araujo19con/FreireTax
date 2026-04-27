@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Shield, Search } from "lucide-react";
+import { Shield, Search, X, ScrollText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
 
 interface AuditLog {
   id: string;
@@ -82,6 +83,22 @@ export default function Auditoria() {
         <Input placeholder="Buscar nos logs..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
       </div>
 
+      {filtered.length === 0 ? (
+        logs.length === 0 ? (
+          <EmptyState
+            icon={ScrollText}
+            title="Nenhum log registrado ainda"
+            description="Toda alteração relevante (criação, edição, exclusão) é registrada aqui automaticamente conforme o sistema for sendo usado."
+          />
+        ) : (
+          <EmptyState
+            icon={Search}
+            title="Nenhum log encontrado"
+            description="A busca não retornou logs. Ajuste o termo ou veja todos os registros."
+            action={{ label: "Limpar busca", icon: X, onClick: () => setSearch("") }}
+          />
+        )
+      ) : (
       <Card className="shadow-card">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -94,11 +111,6 @@ export default function Auditoria() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={4} className="py-8 text-center text-muted-foreground">
-                  {logs.length === 0 ? "Nenhum log registrado ainda." : "Nenhum resultado encontrado."}
-                </td></tr>
-              )}
               {filtered.map((l) => (
                 <tr key={l.id} className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors">
                   <td className="py-3 px-4 text-muted-foreground font-mono text-xs whitespace-nowrap">
@@ -121,6 +133,7 @@ export default function Auditoria() {
           </table>
         </div>
       </Card>
+      )}
     </div>
   );
 }

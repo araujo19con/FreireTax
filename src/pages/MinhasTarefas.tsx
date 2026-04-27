@@ -24,6 +24,8 @@ import { format, isPast, isToday, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
+import { X, ListChecks } from "lucide-react";
 
 type Tarefa = Database["public"]["Tables"]["tarefas"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -329,6 +331,43 @@ export default function MinhasTarefas({ embedded = false }: MinhasTarefasProps =
       {/* Render por view */}
       {loading ? (
         <LoadingState variant="kanban" count={4} />
+      ) : filtered.length === 0 ? (
+        (() => {
+          const hasActiveFilters = search.trim() !== "" || filterPrioridade !== "all";
+          if (hasActiveFilters) {
+            return (
+              <EmptyState
+                icon={Search}
+                title="Nenhuma tarefa encontrada"
+                description="Os filtros aplicados não bateram com nenhuma tarefa. Ajuste a busca ou comece do zero."
+                action={{
+                  label: "Limpar filtros",
+                  icon: X,
+                  onClick: () => { setSearch(""); setFilterPrioridade("all"); },
+                }}
+              />
+            );
+          }
+          if (escopo === "minhas") {
+            return (
+              <EmptyState
+                icon={ClipboardList}
+                title="Você não tem tarefas atribuídas"
+                description="Nenhuma tarefa está com você como responsável. Veja as tarefas da equipe ou crie uma nova."
+                action={{ label: "Nova tarefa", icon: Plus, onClick: openNew }}
+                secondaryAction={{ label: "Ver todas", icon: ListChecks, onClick: () => setEscopo("todas") }}
+              />
+            );
+          }
+          return (
+            <EmptyState
+              icon={ClipboardList}
+              title="Nenhuma tarefa criada ainda"
+              description="Comece criando uma tarefa para você ou pra equipe — recursos como prioridade, prazo e templates já estão prontos."
+              action={{ label: "Nova tarefa", icon: Plus, onClick: openNew }}
+            />
+          );
+        })()
       ) : view === "lista" ? (
         <TarefasListaView tarefas={filtered} openEdit={openEdit} />
       ) : view === "timeline" ? (

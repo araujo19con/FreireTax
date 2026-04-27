@@ -15,6 +15,7 @@ import {
   FileText, Plus, Pencil, Trash2, ArrowUp, ArrowDown, AlertCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useAcoes } from "@/hooks/useAcoes";
 import {
@@ -66,16 +67,12 @@ export default function PropostasTemplates({ embedded = false }: PropostasTempla
       {tplsQ.isLoading ? (
         <Card className="p-8 text-center text-sm text-muted-foreground">Carregando…</Card>
       ) : templates.length === 0 ? (
-        <Card className="p-12 text-center">
-          <AlertCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
-          <p className="text-sm font-medium">Nenhum template cadastrado</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Os 2 templates de exemplo (Lucro Presumido + Diagnóstico) são criados automaticamente pela migration. Se não vê, rode a migration no Supabase.
-          </p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={openNew}>
-            Criar primeiro template
-          </Button>
-        </Card>
+        <EmptyState
+          icon={FileText}
+          title="Nenhum template cadastrado"
+          description="Templates aceleram a criação de propostas — defina seções, variáveis e formate uma vez para reutilizar em todas as oportunidades. Os 2 exemplos (Lucro Presumido + Diagnóstico) deveriam vir da migration; se não estão aqui, rode a migration no Supabase."
+          action={{ label: "Criar primeiro template", icon: Plus, onClick: openNew }}
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {templates.map((t) => {
