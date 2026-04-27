@@ -11,12 +11,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Eye, Pencil, RefreshCw, Phone, Mail, MapPin, Building2, Folder, Search,
+  Eye, Pencil, RefreshCw, Phone, Mail, MapPin, Building2, Folder, Search, Upload, X,
 } from "lucide-react";
 import type { DragEvent } from "react";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/EmptyState";
 
 const statusColors: Record<string, string> = {
   prospect: "bg-info/10 text-info border-info/30",
@@ -32,6 +33,8 @@ interface EmpresasCardViewProps {
   pageSize: number;
   selectedIds: Set<string>;
   pastaNamesByEmpresa: Map<string, string[]>;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
   onPageChange: (p: number) => void;
   onPageSizeChange: (n: number) => void;
   onToggleSelect: (id: string) => void;
@@ -45,6 +48,7 @@ interface EmpresasCardViewProps {
 
 export function EmpresasCardView({
   rows, loading, total, page, pageSize, selectedIds, pastaNamesByEmpresa,
+  hasActiveFilters, onClearFilters,
   onPageChange, onPageSizeChange,
   onToggleSelect, onOpenDetail, onEnrichir, onEdit,
   onDragStart, onDragEnd, draggingId,
@@ -52,14 +56,20 @@ export function EmpresasCardView({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   if (!loading && rows.length === 0) {
-    return (
-      <Card className="shadow-card p-12 text-center">
-        <div className="flex flex-col items-center gap-2 text-muted-foreground">
-          <Search className="h-8 w-8 opacity-50" aria-hidden />
-          <p className="text-sm font-medium">Nenhuma empresa encontrada</p>
-          <p className="text-xs">Ajuste os filtros ou o termo de busca.</p>
-        </div>
-      </Card>
+    return hasActiveFilters ? (
+      <EmptyState
+        icon={Search}
+        title="Nenhuma empresa encontrada"
+        description="Os filtros aplicados não encontraram resultados. Ajuste a busca ou comece do zero."
+        action={{ label: "Limpar filtros", icon: X, onClick: onClearFilters }}
+      />
+    ) : (
+      <EmptyState
+        icon={Building2}
+        title="Nenhuma empresa cadastrada ainda"
+        description="Comece importando uma planilha — o sistema identifica CNPJ, faixa de funcionários e regime tributário automaticamente."
+        action={{ label: "Importar planilha", icon: Upload, to: "/importacao" }}
+      />
     );
   }
 
@@ -187,13 +197,28 @@ export function EmpresasCardView({
               )}
 
               <div className="mt-3 pt-2 border-t border-border flex items-center justify-end gap-0.5" data-card-action>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(ev) => { ev.stopPropagation(); onOpenDetail(e); }}>
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7"
+                  onClick={(ev) => { ev.stopPropagation(); onOpenDetail(e); }}
+                  aria-label={`Detalhes de ${e.nome}`}
+                  title="Ver detalhes"
+                >
                   <Eye className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(ev) => { ev.stopPropagation(); onEnrichir(e); }}>
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7"
+                  onClick={(ev) => { ev.stopPropagation(); onEnrichir(e); }}
+                  aria-label={`Atualizar RFB de ${e.nome}`}
+                  title="Atualizar RFB"
+                >
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(ev) => { ev.stopPropagation(); onEdit(e); }}>
+                <Button
+                  variant="ghost" size="icon" className="h-7 w-7"
+                  onClick={(ev) => { ev.stopPropagation(); onEdit(e); }}
+                  aria-label={`Editar ${e.nome}`}
+                  title="Editar"
+                >
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               </div>

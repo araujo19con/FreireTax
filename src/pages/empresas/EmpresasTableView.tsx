@@ -10,11 +10,12 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Eye, Pencil, Trash2, RefreshCw, GripVertical, Folder, Search } from "lucide-react";
+import { Eye, Pencil, Trash2, RefreshCw, GripVertical, Folder, Search, Building2, Upload, X } from "lucide-react";
 import type { DragEvent } from "react";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/EmptyState";
 
 const statusColors: Record<string, string> = {
   prospect: "bg-info/10 text-info",
@@ -30,6 +31,8 @@ interface EmpresasTableViewProps {
   pageSize: number;
   selectedIds: Set<string>;
   pastaNamesByEmpresa: Map<string, string[]>;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
   onPageChange: (p: number) => void;
   onPageSizeChange: (n: number) => void;
   onToggleSelect: (id: string) => void;
@@ -135,6 +138,7 @@ function TablePagination({ page, totalPages, onChange }: { page: number; totalPa
 
 export function EmpresasTableView({
   rows, loading, total, page, pageSize, selectedIds, pastaNamesByEmpresa,
+  hasActiveFilters, onClearFilters,
   onPageChange, onPageSizeChange,
   onToggleSelect, onToggleSelectAll, onOpenDetail, onEnrichir, onEdit, onDelete,
   onDragStart, onDragEnd, draggingId,
@@ -142,6 +146,24 @@ export function EmpresasTableView({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const allSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
   const someSelected = rows.some((r) => selectedIds.has(r.id));
+
+  if (!loading && rows.length === 0) {
+    return hasActiveFilters ? (
+      <EmptyState
+        icon={Search}
+        title="Nenhuma empresa encontrada"
+        description="Os filtros aplicados não encontraram resultados. Ajuste a busca ou comece do zero."
+        action={{ label: "Limpar filtros", icon: X, onClick: onClearFilters }}
+      />
+    ) : (
+      <EmptyState
+        icon={Building2}
+        title="Nenhuma empresa cadastrada ainda"
+        description="Comece importando uma planilha — o sistema identifica CNPJ, faixa de funcionários e regime tributário automaticamente."
+        action={{ label: "Importar planilha", icon: Upload, to: "/importacao" }}
+      />
+    );
+  }
 
   return (
     <Card className="shadow-card overflow-hidden">
@@ -176,18 +198,6 @@ export function EmpresasTableView({
                   </td>
                 </tr>
               ))
-            )}
-
-            {!loading && rows.length === 0 && (
-              <tr>
-                <td colSpan={9} className="py-12 text-center">
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <Search className="h-6 w-6 opacity-50" aria-hidden />
-                    <p className="text-sm font-medium">Nenhuma empresa encontrada</p>
-                    <p className="text-xs">Ajuste os filtros ou o termo de busca.</p>
-                  </div>
-                </td>
-              </tr>
             )}
 
             {rows.map((e, idx) => {

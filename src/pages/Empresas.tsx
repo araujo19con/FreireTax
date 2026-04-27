@@ -61,6 +61,22 @@ export default function Empresas() {
   const filtersKey = JSON.stringify(filters);
   useEffect(() => { setPage(1); }, [debouncedSearch, filtersKey, sort, pageSize]);
 
+  // Sinaliza pro empty state distinguir "pool vazio" (sem dados ainda) de
+  // "filtro zerou resultado". CTA muda em cada caso.
+  const hasActiveFilters =
+    debouncedSearch.trim() !== "" ||
+    Object.entries(filters).some(([, v]) => {
+      if (v == null) return false;
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === "string") return v.trim() !== "";
+      return true; // boolean true ou number
+    });
+
+  const clearAllFilters = () => {
+    setFilters({});
+    setSearch("");
+  };
+
   // --- Data queries
   const empresasQ = useEmpresas({ search: debouncedSearch, filters, sort, page, pageSize });
   const pastasQ = usePastas();
@@ -375,7 +391,12 @@ export default function Empresas() {
         <aside className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pastas</h3>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setPastaDialogOpen(true)}>
+            <Button
+              variant="ghost" size="icon" className="h-6 w-6"
+              onClick={() => setPastaDialogOpen(true)}
+              aria-label="Criar nova pasta"
+              title="Criar nova pasta"
+            >
               <FolderPlus className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -423,7 +444,12 @@ export default function Empresas() {
                   <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-5 w-5 text-destructive" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost" size="icon" className="h-5 w-5 text-destructive"
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Excluir pasta ${p.nome}`}
+                          title={`Excluir pasta ${p.nome}`}
+                        >
                           <X className="h-2.5 w-2.5" />
                         </Button>
                       </AlertDialogTrigger>
@@ -458,6 +484,8 @@ export default function Empresas() {
                         <Button
                           variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive"
                           onClick={() => removeEmpPasta.mutate({ empresaId: emp.id, pastaId: p.id })}
+                          aria-label={`Remover ${emp.nome} da pasta ${p.nome}`}
+                          title={`Remover ${emp.nome} desta pasta`}
                         >
                           <X className="h-2.5 w-2.5" />
                         </Button>
@@ -499,6 +527,8 @@ export default function Empresas() {
               pageSize={pageSize}
               selectedIds={selectedIds}
               pastaNamesByEmpresa={pastaNamesByEmpresa}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearAllFilters}
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
               onToggleSelect={toggleSelect}
@@ -522,6 +552,8 @@ export default function Empresas() {
               pageSize={pageSize}
               selectedIds={selectedIds}
               pastaNamesByEmpresa={pastaNamesByEmpresa}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearAllFilters}
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
               onToggleSelect={toggleSelect}
@@ -539,6 +571,8 @@ export default function Empresas() {
               rows={rows}
               loading={loading}
               selectedIds={selectedIds}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearAllFilters}
               onToggleSelect={toggleSelect}
               onOpenDetail={setDetailEmpresa}
               onEnrichir={(e) => enrichEmp.mutate({ id: e.id, cnpj: e.cnpj })}
