@@ -42,7 +42,8 @@ function formatCurrency(value: number) {
 
 export default function Dashboard() {
   const [acoes, setAcoes] = useState<Acao[]>([]);
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [empTotal, setEmpTotal] = useState(0);
+  const [empClientes, setEmpClientes] = useState(0);
   const [elegibilidades, setElegibilidades] = useState<ElegibilidadeRow[]>([]);
   const [processos, setProcessos] = useState<Processo[]>([]);
   const [prospeccoes, setProspeccoes] = useState<Prospeccao[]>([]);
@@ -52,14 +53,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [empRes, acoesRes, elegRes, procRes, prospRes] = await Promise.all([
-        supabase.from("empresas").select("id, nome, cnpj, status"),
+      const [empTotalRes, empClienteRes, acoesRes, elegRes, procRes, prospRes] = await Promise.all([
+        supabase.from("empresas").select("*", { count: "exact", head: true }),
+        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "cliente"),
         supabase.from("acoes_tributarias").select("id, nome, tipo, status"),
-        supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel"),
-        supabase.from("processos").select("*") as any,
-        supabase.from("prospeccoes").select("*") as any,
+        supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel").range(0, 9999),
+        (supabase.from("processos").select("*") as any).range(0, 9999),
+        (supabase.from("prospeccoes").select("*") as any).range(0, 9999),
       ]);
-      setEmpresas(empRes.data || []);
+      setEmpTotal(empTotalRes.count ?? 0);
+      setEmpClientes(empClienteRes.count ?? 0);
       setAcoes(acoesRes.data || []);
       setElegibilidades(elegRes.data || []);
       setProcessos(procRes.data || []);
@@ -201,7 +204,7 @@ export default function Dashboard() {
     // KPIs sheet
     const kpiData = [
       ["Métrica", "Valor"],
-      ["Empresas", empresas.length],
+      ["Empresas", empTotal],
       ["Ações Ativas", acoes.filter((a) => a.status === "Ativa").length],
       ["Elegíveis", stats.elegiveis.length],
       ["Total Análises", stats.filtEleg.length],
@@ -289,7 +292,7 @@ export default function Dashboard() {
         <div class="sub">${date} · Filtro: ${filterLabel}</div>
 
         <div class="kpis">
-          <div class="kpi"><div class="label">Empresas</div><div class="val">${empresas.length}</div></div>
+          <div class="kpi"><div class="label">Empresas</div><div class="val">${empTotal}</div></div>
           <div class="kpi"><div class="label">Elegíveis</div><div class="val">${stats.elegiveis.length} <span style="font-size:13px;color:#888">/ ${stats.filtEleg.length}</span></div></div>
           <div class="kpi"><div class="label">Taxa Elegibilidade</div><div class="val">${stats.filtEleg.length > 0 ? Math.round((stats.elegiveis.length / stats.filtEleg.length) * 100) : 0}%</div></div>
           <div class="kpi"><div class="label">Processos</div><div class="val">${stats.filtProc.length}</div></div>
@@ -331,7 +334,7 @@ export default function Dashboard() {
   }
 
   const kpis = [
-    { label: "Empresas", value: empresas.length, icon: Building2, sub: `${empresas.filter((e) => e.status === "cliente").length} clientes` },
+    { label: "Empresas", value: empTotal, icon: Building2, sub: `${empClientes} clientes` },
     { label: "Ações Ativas", value: acoes.filter((a) => a.status === "Ativa").length, icon: Scale, sub: `${acoes.length} total` },
     { label: "Elegíveis", value: stats.elegiveis.length, icon: FileCheck, sub: `de ${stats.filtEleg.length} análises` },
     { label: "Taxa Elegibilidade", value: stats.filtEleg.length > 0 ? `${Math.round((stats.elegiveis.length / stats.filtEleg.length) * 100)}%` : "—", icon: TrendingUp, sub: "elegíveis / total" },
