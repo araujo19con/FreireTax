@@ -526,22 +526,29 @@ export function useEmpresasKpi() {
     queryKey: ["empresas", "kpi"],
     staleTime: 60_000,
     queryFn: async () => {
-      const [allRes, enrichedRes, elegRes] = await Promise.all([
-        supabase.from("empresas").select("id, status, valor_potencial_total, receita_atualizada_em, receita_erro"),
+      // Supabase retorna no máximo 1000 linhas por query; usar count: exact evita o truncamento.
+      const [totalRes, prospectRes, clienteRes, inativoRes, enrichedRes, withErrorRes, valorRes, elegRes] = await Promise.all([
+        supabase.from("empresas").select("*", { count: "exact", head: true }),
+        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "prospect"),
+        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "cliente"),
+        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "inativo"),
         supabase.from("empresas").select("id", { count: "exact", head: true }).not("receita_atualizada_em", "is", null),
-        supabase.from("elegibilidade").select("empresa_id"),
+        supabase.from("empresas").select("*", { count: "exact", head: true }).not("receita_erro", "is", null),
+        supabase.from("empresas").select("valor_potencial_total").limit(10000),
+        supabase.from("elegibilidade").select("empresa_id").limit(10000),
       ]);
-      type KpiRow = { id: string; status: string; valor_potencial_total: number | null; receita_atualizada_em: string | null; receita_erro: string | null };
-      const rows = (allRes.data || []) as KpiRow[];
-      const total = rows.length;
-      const byStatus = rows.reduce<Record<string, number>>((acc, r) => {
-        acc[r.status] = (acc[r.status] || 0) + 1;
-        return acc;
-      }, {});
+      const total = totalRes.count ?? 0;
+      const byStatus: Record<string, number> = {
+        prospect: prospectRes.count ?? 0,
+        cliente: clienteRes.count ?? 0,
+        inativo: inativoRes.count ?? 0,
+      };
       const enriched = enrichedRes.count ?? 0;
-      const withError = rows.filter((r) => !!r.receita_erro).length;
-      const valorPotencial = rows.reduce((sum, r) => sum + (r.valor_potencial_total || 0), 0);
-      const comAcao = new Set((elegRes.data || []).map((r: { empresa_id: string }) => r.empresa_id)).size;
+      const withError = withErrorRes.count ?? 0;
+      const valorPotencial = (valorRes.data ?? []).reduce(
+        (sum, r: { valor_potencial_total: number | null }) => sum + (r.valor_potencial_total ?? 0), 0
+      );
+      const comAcao = new Set((elegRes.data ?? []).map((r: { empresa_id: string }) => r.empresa_id)).size;
       return { total, byStatus, enriched, withError, valorPotencial, comAcao };
     },
   });
