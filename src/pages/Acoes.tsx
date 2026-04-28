@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks, FileSpreadsheet, Upload, CheckCircle2, XCircle } from "lucide-react";
+import { AcaoEmpresasPanel, type ProspMin } from "./acoes/AcaoEmpresasPanel";
+import { ProspeccaoRapidaDialog } from "./acoes/ProspeccaoRapidaDialog";
 import * as XLSX from "xlsx";
 import { maskCNPJ, validateCNPJ } from "@/lib/cnpj";
 import { CriteriosAdmin } from "./elegibilidade/CriteriosAdmin";
@@ -45,6 +47,11 @@ interface Empresa {
   id: string;
   nome: string;
   cnpj: string;
+  porte: string | null;
+  uf: string | null;
+  situacao_cadastral: string | null;
+  regime_tributario: string | null;
+  municipio: string | null;
 }
 
 interface ElegibilidadeRow {
@@ -80,7 +87,9 @@ interface Processo {
 
 interface Prospeccao {
   id: string;
-  elegibilidade_id: string;
+  elegibilidade_id: string | null;
+  empresa_id: string;
+  acao_id: string;
   contato_nome: string;
   contato_telefone: string;
   contato_email: string;
@@ -115,6 +124,11 @@ export default function Acoes() {
   const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
   const { user } = useAuth();
   const qc = useQueryClient();
+
+  // Dialog rápido de prospecção
+  const [prospRapidaOpen, setProspRapidaOpen] = useState(false);
+  const [prospRapidaElegId, setProspRapidaElegId] = useState("");
+  const [prospRapidaEmpresaId, setProspRapidaEmpresaId] = useState("");
 
   // Elegibilidade dialog
   const [elegDialogOpen, setElegDialogOpen] = useState(false);
@@ -170,7 +184,7 @@ export default function Acoes() {
   const fetchAll = async () => {
     const [acoesRes, empRes, elegRes, pastasRes, itemsRes, procRes, prospRes] = await Promise.all([
       supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-      supabase.from("empresas").select("id, nome, cnpj"),
+      supabase.from("empresas").select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio").range(0, 4999),
       supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa"),
       supabase.from("pastas_empresas").select("id, nome"),
       supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
@@ -190,6 +204,14 @@ export default function Acoes() {
   useEffect(() => { fetchAll(); }, []);
 
   const acoesIniciais = acoes.filter((a) => a.tipo === "INICIAL").map((a) => ({ id: a.id, nome: a.nome }));
+
+  const empresasMap = useMemo(() => new Map(empresas.map(e => [e.id, e])), [empresas]);
+
+  const handleProspectar = (elegId: string, empresaId: string) => {
+    setProspRapidaElegId(elegId);
+    setProspRapidaEmpresaId(empresaId);
+    setProspRapidaOpen(true);
+  };
 
   // CRUD Ação
   const handleCreate = async (data: { nome: string; tipo: string; status: string; vinculo: string }) => {
@@ -622,191 +644,30 @@ export default function Acoes() {
 
               {isExpanded && (
                 <div className="border-t border-border px-5 py-4">
-                  <h4 className="text-sm font-medium text-muted-foreground mb-3">Empresas vinculadas ({acaoElegs.length})</h4>
-                  {acaoElegs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Nenhuma empresa vinculada.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {acaoElegs.map((el) => {
-                        const proc = getProcessoForEleg(el.id);
-                        const prosp = getProspeccaoForEleg(el.id);
-                        return (
-                          <div key={el.id} className="rounded-lg border border-border overflow-hidden">
-                            {/* Header */}
-                            <div className="flex items-center justify-between p-3 bg-muted/30">
-                              <div className="flex items-center gap-3">
-                                <span className="text-sm font-medium">{getEmpresaNome(el.empresa_id)}</span>
-                                <Badge variant="outline" className={`border-0 text-[10px] ${el.elegivel ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                                  {el.elegivel ? "Elegível" : "Não elegível"}
-                                </Badge>
-                                {prosp && (
-                                  <Badge variant="outline" className={`border-0 text-[10px] ${getProspStatusColor(prosp.status_prospeccao)}`}>
-                                    <Handshake className="mr-1 h-2.5 w-2.5" />{prosp.status_prospeccao}
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openProcessoDialog(el.id, proc)}>
-                                  <FileText className="mr-1 h-3 w-3" />{proc ? "Processo" : "+ Processo"}
-                                </Button>
-                                {el.elegivel && (
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openProspDialog(el.id, prosp)}>
-                                    <Handshake className="mr-1 h-3 w-3" />{prosp ? "Prospecção" : "+ Prospecção"}
-                                  </Button>
-                                )}
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive"><Trash2 className="h-3 w-3" /></Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Remover elegibilidade?</AlertDialogTitle>
-                                      <AlertDialogDescription>Remover {getEmpresaNome(el.empresa_id)} desta ação?</AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => handleDeleteEleg(el.id)}>Excluir</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </div>
-                            </div>
-
-                            {/* Processo info */}
-                            {proc && (
-                              <div className="p-3 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs border-t border-border bg-background">
-                                <div>
-                                  <span className="text-muted-foreground">Nº Processo</span>
-                                  <p className="font-medium font-mono">{proc.numero_processo || "—"}</p>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Tribunal</span>
-                                  <p className="font-medium">{proc.tribunal || "—"}</p>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Data</span>
-                                  <p className="font-medium">{proc.data_processo ? new Date(proc.data_processo + "T00:00:00").toLocaleDateString("pt-BR") : "—"}</p>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Valor Estimado</span>
-                                  <p className="font-medium">{formatCurrency(Number(proc.valor_estimado) || 0)}</p>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Valor Ganho</span>
-                                  <p className="font-medium text-success">{formatCurrency(Number(proc.valor_ganho) || 0)}</p>
-                                </div>
-                                <div className="col-span-2">
-                                  <span className="text-muted-foreground">Status</span>
-                                  <p>
-                                    <Badge variant="outline" className={`text-[10px] border-0 ${
-                                      proc.status === "Favorável" ? "bg-success/10 text-success" :
-                                      proc.status === "Desfavorável" ? "bg-destructive/10 text-destructive" :
-                                      proc.status === "Suspenso" ? "bg-warning/10 text-warning" :
-                                      proc.status === "Finalizado" ? "bg-muted text-muted-foreground" :
-                                      "bg-primary/10 text-primary"
-                                    }`}>{proc.status}</Badge>
-                                  </p>
-                                </div>
-                                {proc.observacoes && (
-                                  <div className="col-span-2">
-                                    <span className="text-muted-foreground">Observações</span>
-                                    <p className="font-medium">{proc.observacoes}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Prospecção info — only for eligible */}
-                            {el.elegivel && prosp && (
-                              <div className="p-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs border-t border-border bg-accent/5">
-                                <div className="col-span-full flex items-center gap-2 mb-1">
-                                  <Handshake className="h-3.5 w-3.5 text-muted-foreground" />
-                                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Prospecção</span>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Contato</span>
-                                  <p className="font-medium">{prosp.contato_nome || "—"}</p>
-                                  {prosp.contato_cargo && <p className="text-muted-foreground">{prosp.contato_cargo}</p>}
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Telefone / Email</span>
-                                  {prosp.contato_telefone && <p className="font-medium flex items-center gap-1"><Phone className="h-2.5 w-2.5" />{prosp.contato_telefone}</p>}
-                                  {prosp.contato_email && <p className="font-medium flex items-center gap-1"><Mail className="h-2.5 w-2.5" />{prosp.contato_email}</p>}
-                                  {!prosp.contato_telefone && !prosp.contato_email && <p>—</p>}
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Status</span>
-                                  <p><Badge variant="outline" className={`text-[10px] border-0 ${getProspStatusColor(prosp.status_prospeccao)}`}>{prosp.status_prospeccao}</Badge></p>
-                                </div>
-                                <div>
-                                  <span className="text-muted-foreground">Valor Contrato</span>
-                                  <p className="font-medium">{Number(prosp.valor_contrato) ? formatCurrency(Number(prosp.valor_contrato)) : "—"}</p>
-                                </div>
-                                {prosp.tipo_contrato && (
-                                  <div>
-                                    <span className="text-muted-foreground">Tipo</span>
-                                    <p className="font-medium">{prosp.tipo_contrato}</p>
-                                  </div>
-                                )}
-                                {prosp.data_contrato && (
-                                  <div>
-                                    <span className="text-muted-foreground">Data Contrato</span>
-                                    <p className="font-medium">{new Date(prosp.data_contrato).toLocaleDateString("pt-BR")}</p>
-                                  </div>
-                                )}
-                                {prosp.data_assinatura && (
-                                  <div>
-                                    <span className="text-muted-foreground">Assinatura</span>
-                                    <p className="font-medium">{new Date(prosp.data_assinatura).toLocaleDateString("pt-BR")}</p>
-                                  </div>
-                                )}
-                                {prosp.notas_prospeccao && (
-                                  <div className="col-span-2">
-                                    <span className="text-muted-foreground">Notas</span>
-                                    <p className="font-medium">{prosp.notas_prospeccao}</p>
-                                  </div>
-                                )}
-                                {prosp.observacoes_contrato && (
-                                  <div className="col-span-2">
-                                    <span className="text-muted-foreground">Obs. Contrato</span>
-                                    <p className="font-medium">{prosp.observacoes_contrato}</p>
-                                  </div>
-                                )}
-                                <div className="col-span-full flex justify-end gap-2">
-                                  <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => openProspDialog(el.id, prosp)}>
-                                    <Pencil className="mr-1 h-2.5 w-2.5" />Editar
-                                  </Button>
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-6 text-[10px] text-destructive">
-                                        <Trash2 className="mr-1 h-2.5 w-2.5" />Remover
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Remover prospecção?</AlertDialogTitle>
-                                        <AlertDialogDescription>Dados de contato e contrato serão removidos.</AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleDeleteProsp(prosp.id)}>Excluir</AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <AcaoEmpresasPanel
+                    acaoId={a.id}
+                    empresasMap={empresasMap}
+                    elegs={acaoElegs}
+                    prospeccoes={prospeccoes as unknown as ProspMin[]}
+                    onProspectar={handleProspectar}
+                    onOpenProcesso={(elegId) => openProcessoDialog(elegId)}
+                  />
                 </div>
               )}
             </Card>
           );
         })}
       </div>
+
+      <ProspeccaoRapidaDialog
+        open={prospRapidaOpen}
+        onOpenChange={setProspRapidaOpen}
+        elegId={prospRapidaElegId}
+        empresaId={prospRapidaEmpresaId}
+        acaoId={expandedAcao ?? ""}
+        empresaNome={empresas.find(e => e.id === prospRapidaEmpresaId)?.nome ?? ""}
+        onSuccess={fetchAll}
+      />
 
       {/* Elegibilidade Dialog */}
       <Dialog open={elegDialogOpen} onOpenChange={setElegDialogOpen}>
