@@ -151,7 +151,7 @@ export default function Importacao() {
         const statusCol = findColumnExact(headers, ["status"]);
         const funcCol = findColumn(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
         const fatCol  = findColumn(headers, ["faturamento", "receita", "revenue", "billing"]);
-        const regCol  = findColumn(headers, ["regime", "tributari"]);
+        const regCol  = findColumn(headers, ["regime", "tributa", "forma de tribut"]);
 
         if (cnpjCol === -1) {
           toast.error("Não foi possível identificar a coluna 'CNPJ' na planilha");
