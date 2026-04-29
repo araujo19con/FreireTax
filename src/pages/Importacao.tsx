@@ -445,30 +445,54 @@ export default function Importacao() {
         );
 
         // BrasilAPI: sequencial com delay — paralelo explode o rate limit (~3 req/s)
+        // Edge fn retorna 400 para tudo; a mensagem real fica em error.context.body
+        async function readEdgeErr(err: unknown): Promise<string> {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const ctx = (err as any)?.context;
+            if (!ctx?.body) return ((err as Error)?.message) ?? "";
+            const text = typeof ctx.body === "string" ? ctx.body : await new Response(ctx.body).text();
+            try {
+              const parsed = JSON.parse(text);
+              return parsed.error || parsed.detail || text;
+            } catch { return text; }
+          } catch { return ""; }
+        }
+        function isTransient(msg: string): boolean {
+          const m = msg.toLowerCase();
+          // 5xx (504/502/503), rate limit, timeout, fetch failed
+          return m.includes("rate limit")
+            || /retornou 5\d\d/.test(m)
+            || m.includes("timeout")
+            || m.includes("failed to fetch")
+            || m.includes("network");
+        }
+
         let done = 0;
         let errors = 0;
         for (let i = 0; i < inserted.length; i++) {
           const emp = inserted[i];
           let ok = false;
-          for (let attempt = 0; attempt < 3; attempt++) {
+          for (let attempt = 0; attempt < 4; attempt++) {
             try {
               const { data, error: enErr } = await supabase.functions.invoke(
                 "enriquecer-cnpj",
                 { body: { cnpj: emp.cnpj, empresa_id: emp.id } }
               );
-              // Detecta rate limit pelo body do erro (edge fn retorna 400 para tudo)
-              const errMsg: string =
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (enErr as any)?.message ?? data?.error ?? "";
-              if (errMsg.toLowerCase().includes("rate limit") && attempt < 2) {
-                await new Promise((r) => setTimeout(r, 8000 * (attempt + 1)));
+              if (!enErr && !data?.error) { ok = true; break; }
+              const errMsg = enErr ? await readEdgeErr(enErr) : (data?.error ?? "");
+              if (isTransient(errMsg) && attempt < 3) {
+                // backoff: rate limit espera mais; 5xx/timeout 2s/4s/6s
+                const isRL = errMsg.toLowerCase().includes("rate limit");
+                const wait = isRL ? 8000 * (attempt + 1) : 2000 * (attempt + 1);
+                await new Promise((r) => setTimeout(r, wait));
                 continue;
               }
-              ok = !enErr && !data?.error;
+              break; // erro permanente (404, CNPJ inválido, etc)
             } catch {
-              // rede/timeout — não retenta
+              if (attempt < 3) { await new Promise((r) => setTimeout(r, 2000)); continue; }
+              break;
             }
-            break;
           }
           if (!ok) errors += 1;
           done += 1;
