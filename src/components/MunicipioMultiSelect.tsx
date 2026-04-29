@@ -31,15 +31,23 @@ export function MunicipioMultiSelect({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Carrega lista IBGE na primeira abertura
-  useEffect(() => {
-    if (!open || allMunicipios.length > 0) return;
+  function load() {
     setLoading(true);
     setError(null);
     fetchMunicipiosIBGE()
       .then(setAllMunicipios)
-      .catch(() => setError("Erro ao carregar municípios. Tente novamente."))
+      .catch((e) => {
+        console.error("[MunicipioMultiSelect] falha ao buscar IBGE:", e);
+        setError("Erro ao carregar municípios.");
+      })
       .finally(() => setLoading(false));
+  }
+
+  // Carrega lista IBGE na primeira abertura
+  useEffect(() => {
+    if (!open || allMunicipios.length > 0) return;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, allMunicipios.length]);
 
   const options = useMemo(
@@ -108,7 +116,16 @@ export function MunicipioMultiSelect({
                 </div>
               )}
               {error && (
-                <div className="py-3 px-3 text-xs text-destructive">{error}</div>
+                <div className="py-3 px-3 text-xs text-destructive flex flex-col gap-1.5">
+                  <span>{error}</span>
+                  <button
+                    type="button"
+                    onClick={load}
+                    className="text-xs underline text-muted-foreground hover:text-foreground text-left"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
               )}
               {!loading && !error && (
                 <>

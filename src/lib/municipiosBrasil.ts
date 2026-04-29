@@ -95,17 +95,20 @@ export async function fetchMunicipiosIBGE(): Promise<IBGEMunicipio[]> {
       "https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome",
       { headers: { Accept: "application/json" } },
     );
-    if (!res.ok) throw new Error(`IBGE API ${res.status}`);
-    const raw = await res.json() as Array<{
-      id: number;
-      nome: string;
-      microrregiao: { mesorregiao: { UF: { sigla: string } } };
-    }>;
-    const data: IBGEMunicipio[] = raw.map((m) => ({
-      id: m.id,
-      nome: m.nome,
-      uf: m.microrregiao.mesorregiao.UF.sigla,
-    }));
+    if (!res.ok) throw new Error(`IBGE API status ${res.status}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = await res.json() as any[];
+    const data: IBGEMunicipio[] = raw
+      .map((m) => {
+        // A UF pode estar em microrregiao.mesorregiao.UF ou em regiao-imediata.regiao-intermediaria.UF
+        // Tentamos os dois caminhos para compatibilidade com versões do endpoint
+        const uf: string =
+          m?.microrregiao?.mesorregiao?.UF?.sigla ??
+          m?.["regiao-imediata"]?.["regiao-intermediaria"]?.UF?.sigla ??
+          "";
+        return { id: m.id as number, nome: m.nome as string, uf };
+      })
+      .filter((m) => m.uf && m.nome);
     writeCache(data);
     return data;
   })().finally(() => { _inFlight = null; });
