@@ -116,6 +116,111 @@ async function fetchBrasilAPI(cnpj: string): Promise<{ ok: true; data: BrasilAPI
   }
 }
 
+// ---------------------------------------------------------------------------
+// ReceitaWS — fallback quando BrasilAPI não tem o CNPJ
+// BrasilAPI usa snapshot mensal (Minha Receita); ReceitaWS consulta o RFB ao vivo
+// ---------------------------------------------------------------------------
+
+interface ReceitaWSResponse {
+  status?: "OK" | "ERROR";
+  message?: string;
+  cnpj?: string;
+  abertura?: string; // DD/MM/YYYY
+  situacao?: string;
+  data_situacao?: string; // DD/MM/YYYY
+  motivo_situacao?: string;
+  nome?: string;
+  fantasia?: string;
+  porte?: string;
+  natureza_juridica?: string;
+  capital_social?: string; // "100.000,00"
+  atividade_principal?: Array<{ code: string; text: string }>;
+  atividades_secundarias?: Array<{ code: string; text: string }>;
+  qsa?: Array<{ qual?: string; nome?: string }>;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  municipio?: string;
+  uf?: string;
+  cep?: string;
+  email?: string;
+  telefone?: string;
+  simples?: { optante?: boolean; data_opcao?: string };
+  simei?: { optante?: boolean };
+}
+
+async function fetchReceitaWS(cnpj: string): Promise<{ ok: true; data: ReceitaWSResponse } | { ok: false; error: string; status: number }> {
+  try {
+    const r = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (r.status === 429) return { ok: false, error: "ReceitaWS rate limit (3/min no plano grátis)", status: 429 };
+    if (r.status === 504) return { ok: false, error: "ReceitaWS timeout", status: 504 };
+    if (!r.ok) return { ok: false, error: `ReceitaWS retornou ${r.status}`, status: r.status };
+    const data = (await r.json()) as ReceitaWSResponse;
+    if (data.status === "ERROR") {
+      return { ok: false, error: data.message ?? "CNPJ não encontrado", status: 404 };
+    }
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message, status: 500 };
+  }
+}
+
+// DD/MM/YYYY → YYYY-MM-DD
+function parseDateBR(s: string | undefined | null): string | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
+// "100.000,00" → 100000.00
+function parseBRNumber(s: string | undefined | null): number | null {
+  if (!s) return null;
+  const n = Number(s.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
+// Normaliza ReceitaWS no mesmo shape da BrasilAPI (BrasilAPICNPJ) para reaproveitar normalizeForDB
+function receitaWSToBrasilAPI(r: ReceitaWSResponse): BrasilAPICNPJ {
+  const cep = r.cep?.replace(/\D/g, "") ?? "";
+  return {
+    cnpj: r.cnpj ?? "",
+    razao_social: r.nome,
+    nome_fantasia: r.fantasia,
+    data_inicio_atividade: parseDateBR(r.abertura) ?? undefined,
+    descricao_situacao_cadastral: r.situacao,
+    data_situacao_cadastral: parseDateBR(r.data_situacao) ?? undefined,
+    descricao_motivo_situacao_cadastral: r.motivo_situacao,
+    natureza_juridica: r.natureza_juridica,
+    capital_social: parseBRNumber(r.capital_social) ?? undefined,
+    porte: r.porte,
+    descricao_porte: r.porte,
+    opcao_pelo_simples: r.simples?.optante,
+    data_opcao_pelo_simples: parseDateBR(r.simples?.data_opcao ?? null),
+    opcao_pelo_mei: r.simei?.optante,
+    cnae_fiscal: r.atividade_principal?.[0]?.code?.replace(/\D/g, ""),
+    cnae_fiscal_descricao: r.atividade_principal?.[0]?.text,
+    cnaes_secundarios: (r.atividades_secundarias ?? [])
+      .filter((a) => a.code && a.code !== "00.00-0-00")
+      .map((a) => ({ codigo: a.code.replace(/\D/g, ""), descricao: a.text })),
+    logradouro: r.logradouro,
+    numero: r.numero,
+    complemento: r.complemento,
+    bairro: r.bairro,
+    municipio: r.municipio,
+    uf: r.uf,
+    cep,
+    ddd_telefone_1: r.telefone,
+    email: r.email,
+    qsa: (r.qsa ?? []).map((s) => ({
+      nome_socio: s.nome,
+      qualificacao_socio: s.qual,
+    })),
+  };
+}
+
 // Normaliza o payload da BrasilAPI para o shape que gravamos em empresas
 function normalizeForDB(raw: BrasilAPICNPJ) {
   return {
@@ -204,6 +309,7 @@ Deno.serve(async (req) => {
     let cached = false;
     let raw: BrasilAPICNPJ | null = null;
     let erroApi: string | null = null;
+    let fonte = "brasilapi";
 
     if (!force) {
       step = "read-cache";
@@ -222,41 +328,45 @@ Deno.serve(async (req) => {
         if (ageMs < ninety) {
           raw = cacheRow.payload as BrasilAPICNPJ;
           cached = true;
+          if (cacheRow.fonte) fonte = cacheRow.fonte as string;
         }
       }
     }
 
-    // 2) Se não tem cache válido, consulta BrasilAPI
+    // 2) Se não tem cache válido, consulta BrasilAPI (e cai pra ReceitaWS se 404)
     if (!raw) {
       step = "fetch-brasilapi";
       const result = await fetchBrasilAPI(cnpj);
       if (result.ok) {
         raw = result.data;
-        step = "upsert-cache-success";
-        const { error: cacheUpErr } = await admin.from("cnpj_cache").upsert({
-          cnpj,
-          payload: raw,
-          fonte: "brasilapi",
-          consultado_em: new Date().toISOString(),
-          sucesso: true,
-          erro: null,
-        });
-        if (cacheUpErr) {
-          // Não bloqueia — só loga. Cache é opcional.
-          console.warn("upsert cache failed:", cacheUpErr.message);
+      } else if (result.status === 404) {
+        // BrasilAPI usa snapshot mensal — empresas recentes podem faltar.
+        // Tenta ReceitaWS (consulta RFB ao vivo, mas tem rate limit 3/min no free).
+        step = "fetch-receitaws";
+        const fb = await fetchReceitaWS(cnpj);
+        if (fb.ok) {
+          raw = receitaWSToBrasilAPI(fb.data);
+          fonte = "receitaws";
+        } else {
+          // Se ReceitaWS deu rate limit, devolve o erro dele para o cliente retentar.
+          // Para qualquer outro erro (404 incluso), mantém o "não encontrado" original.
+          erroApi = fb.status === 429 ? fb.error : result.error;
         }
       } else {
         erroApi = result.error;
-        step = "upsert-cache-error";
-        await admin.from("cnpj_cache").upsert({
-          cnpj,
-          payload: {},
-          fonte: "brasilapi",
-          consultado_em: new Date().toISOString(),
-          sucesso: false,
-          erro: erroApi,
-        });
       }
+
+      // Cache: sucesso preserva fonte; falha grava como brasilapi (mantém compat)
+      step = raw ? "upsert-cache-success" : "upsert-cache-error";
+      const { error: cacheUpErr } = await admin.from("cnpj_cache").upsert({
+        cnpj,
+        payload: raw ?? {},
+        fonte,
+        consultado_em: new Date().toISOString(),
+        sucesso: !!raw,
+        erro: raw ? null : erroApi,
+      });
+      if (cacheUpErr) console.warn("upsert cache failed:", cacheUpErr.message);
     }
 
     // 3) Se houve erro, atualiza empresa com o erro (se empresa_id fornecido)
@@ -267,7 +377,9 @@ Deno.serve(async (req) => {
           .update({ receita_erro: erroApi, receita_atualizada_em: new Date().toISOString() })
           .eq("id", body.empresa_id);
       }
-      return json({ ok: false, error: erroApi, cnpj, step }, 400, cors);
+      // Rate limit retorna 429 para o cliente saber que vale retentar
+      const httpStatus = erroApi.toLowerCase().includes("rate limit") ? 429 : 400;
+      return json({ ok: false, error: erroApi, cnpj, step }, httpStatus, cors);
     }
 
     if (!raw) {
@@ -308,7 +420,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, cached, data: normalized, raw }, 200, cors);
+    return json({ ok: true, cached, fonte, data: normalized, raw }, 200, cors);
   } catch (e) {
     const err = e as Error;
     console.error(`[enriquecer-cnpj] step=${step} error=${err.message}\n${err.stack}`);
