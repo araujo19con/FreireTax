@@ -205,13 +205,14 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
   if (filters.enriquecida === "error") query = query.not("receita_erro", "is", null);
   if (filters.municipios?.length) {
-    query = query.in("municipio", filters.municipios);
+    // ilike = case-insensitive; RFB/BrasilAPI armazena em maiúsculas, IBGE em title case
+    const orFilter = filters.municipios.map((m) => `municipio.ilike.${m}`).join(",");
+    query = query.or(orFilter);
   } else if (filters.interior && filters.uf?.length) {
     const caps = getCapitaisForUFs(filters.uf);
-    if (caps.length) {
-      // Supabase .not com operador "in" espera string no formato (v1,v2)
-      const list = caps.map((c) => `"${c}"`).join(",");
-      query = (query as unknown as { not: (col: string, op: string, val: string) => QB }).not("municipio", "in", `(${list})`);
+    // Cada .not() adiciona uma condição AND — exclui a capital independente do case
+    for (const cap of caps) {
+      query = query.not("municipio", "ilike", cap);
     }
   }
   if (filters.cnae?.trim()) {
