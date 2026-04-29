@@ -28,6 +28,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
 import type { Database } from "@/integrations/supabase/types";
 import { differenceInDays, parseISO } from "date-fns";
+import { PROSPECCAO_STATUSES as statusColumns } from "@/lib/prospeccaoStatus";
 
 type MotivoPerdido = Database["public"]["Enums"]["motivo_perdido"];
 type CargoCategoria = Database["public"]["Enums"]["cargo_categoria"];
@@ -105,16 +106,6 @@ interface Acao {
   data_limite_prescricao: string | null;
   tipo_prazo: string | null;
 }
-
-const statusColumns = [
-  { key: "Não iniciado", label: "Não Iniciado", color: "bg-muted text-muted-foreground", dotColor: "bg-muted-foreground" },
-  { key: "Contato feito", label: "Contato Feito", color: "bg-info/10 text-info", dotColor: "bg-info" },
-  { key: "Proposta enviada", label: "Proposta Enviada", color: "bg-warning/10 text-warning", dotColor: "bg-warning" },
-  { key: "Em negociação", label: "Em Negociação", color: "bg-primary/10 text-primary", dotColor: "bg-primary" },
-  { key: "Contrato assinado", label: "Contrato Assinado", color: "bg-success/10 text-success", dotColor: "bg-success" },
-  { key: "Serviço iniciado", label: "Serviço Iniciado", color: "bg-accent/15 text-accent-foreground", dotColor: "bg-accent" },
-  { key: "Perdido", label: "Perdido", color: "bg-destructive/10 text-destructive", dotColor: "bg-destructive" },
-];
 
 const MOTIVOS_PERDIDO: { value: MotivoPerdido; label: string }[] = [
   { value: "preco", label: "Preço / success fee alto" },

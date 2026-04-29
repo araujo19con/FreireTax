@@ -3,8 +3,23 @@ import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, Handshake, FileText, ArrowUpRight } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown } from "lucide-react";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
+import { prospStatusColor } from "@/lib/prospeccaoStatus";
+import {
+  AcaoEmpresasFilterPopover,
+  AcaoEmpresasFilterChips,
+} from "./AcaoEmpresasFilterPopover";
+import {
+  applyAcaoFilters,
+  applyAcaoSort,
+  type AcaoEmpresaFilters,
+  type AcaoEmpresaSort,
+  type StatusCombinadoKey,
+} from "./applyAcaoEmpresaFilters";
 
 export interface EmpresaAcao {
   id: string;
@@ -15,6 +30,13 @@ export interface EmpresaAcao {
   situacao_cadastral: string | null;
   regime_tributario: string | null;
   municipio: string | null;
+  capital_social: number | null;
+  opcao_simples: boolean | null;
+  cnae_principal: string | null;
+  cnae_principal_desc: string | null;
+  quantidade_funcionarios: number | null;
+  faturamento_anual: number | null;
+  metadados: Record<string, string> | null;
 }
 
 export interface ElegAcao {
@@ -23,6 +45,8 @@ export interface ElegAcao {
   acao_id: string;
   elegivel: boolean;
   justificativa: string | null;
+  created_at: string;
+  valor_potencial_estimado: number | null;
 }
 
 export interface ProspMin {
@@ -31,12 +55,6 @@ export interface ProspMin {
   empresa_id: string;
   acao_id: string;
   status_prospeccao: string;
-}
-
-interface Item {
-  el: ElegAcao;
-  empresa: EmpresaAcao | undefined;
-  prosp: ProspMin | undefined;
 }
 
 interface Props {
@@ -48,23 +66,47 @@ interface Props {
   onOpenProcesso: (elegId: string) => void;
 }
 
-type Tab = "todas" | "elegiveis" | "aguardando" | "em_prospeccao";
+// Presets dos chips do topo. Cada um define um conjunto de StatusCombinadoKey
+// que vai pra filters.statusCombinado (ou undefined p/ "Total").
+type PresetKey = "todas" | "elegiveis" | "aguardando" | "em_prospeccao";
 
-const PROSP_STATUS_COLOR: Record<string, string> = {
-  "Não iniciado":     "bg-muted text-muted-foreground",
-  "Contato feito":    "bg-info/10 text-info",
-  "Proposta enviada": "bg-warning/10 text-warning",
-  "Em negociação":    "bg-primary/10 text-primary",
-  "Contrato assinado":"bg-success/10 text-success",
-  "Perdido":          "bg-destructive/10 text-destructive",
+const PRESETS: Record<PresetKey, StatusCombinadoKey[] | undefined> = {
+  todas: undefined,
+  elegiveis: [
+    "aguardando", "Não iniciado", "Contato feito", "Proposta enviada",
+    "Em negociação", "Contrato assinado", "Serviço iniciado", "Perdido",
+  ],
+  aguardando: ["aguardando"],
+  em_prospeccao: [
+    "Não iniciado", "Contato feito", "Proposta enviada",
+    "Em negociação", "Contrato assinado", "Serviço iniciado",
+  ],
 };
+
+function arraysEqUnordered<T>(a: T[] | undefined, b: T[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  const sa = new Set(a);
+  for (const x of b) if (!sa.has(x)) return false;
+  return true;
+}
+
+const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
+  { value: "elegibilidade_recente", label: "Mais recentes" },
+  { value: "nome_asc",              label: "Nome A→Z" },
+  { value: "nome_desc",             label: "Nome Z→A" },
+  { value: "status_funil",          label: "Status do funil" },
+  { value: "valor_desc",            label: "Maior valor potencial" },
+];
 
 export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso }: Props) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
-  const [activeTab, setActiveTab] = useState<Tab>("todas");
+  const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
+  const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
 
-  const items = useMemo<Item[]>(() => elegs.map(el => ({
+  const items = useMemo(() => elegs.map(el => ({
     el,
     empresa: empresasMap.get(el.empresa_id),
     prosp: prospeccoes.find(p =>
@@ -73,6 +115,8 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
     ),
   })), [elegs, empresasMap, prospeccoes, acaoId]);
 
+  // Counts dos chips de topo são sempre contra `items`, não `filtered`,
+  // pra que o usuário sempre veja o "tamanho real" de cada bucket.
   const stats = useMemo(() => ({
     total:         items.length,
     elegiveis:     items.filter(i => i.el.elegivel).length,
@@ -80,38 +124,35 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
     emProspeccao:  items.filter(i => !!i.prosp && i.prosp.status_prospeccao !== "Perdido").length,
   }), [items]);
 
-  const filtered = useMemo(() => {
-    let list = items;
-    if (activeTab === "elegiveis")     list = list.filter(i => i.el.elegivel);
-    else if (activeTab === "aguardando")    list = list.filter(i => i.el.elegivel && !i.prosp);
-    else if (activeTab === "em_prospeccao") list = list.filter(i => !!i.prosp && i.prosp.status_prospeccao !== "Perdido");
-    if (q.trim()) {
-      const lower = q.toLowerCase();
-      list = list.filter(i =>
-        (i.empresa?.nome ?? "").toLowerCase().includes(lower) ||
-        (i.empresa?.cnpj ?? "").includes(lower)
-      );
-    }
-    return list;
-  }, [items, activeTab, q]);
+  const filtered = useMemo(
+    () => applyAcaoSort(applyAcaoFilters(items, filters, q), sort),
+    [items, filters, q, sort],
+  );
 
-  type StatChip = { tab: Tab; label: string; count: number; base: string; active: string };
-  const chips: StatChip[] = [
-    { tab: "todas",         label: "Total",         count: stats.total,        base: "bg-muted/60 text-foreground hover:bg-muted",                   active: "bg-muted ring-2 ring-foreground/20" },
-    { tab: "elegiveis",     label: "Elegíveis",     count: stats.elegiveis,    base: "bg-success/10 text-success hover:bg-success/20",               active: "bg-success/20 ring-2 ring-success/30" },
-    { tab: "aguardando",    label: "Aguardando",    count: stats.aguardando,   base: "bg-warning/10 text-warning hover:bg-warning/20",               active: "bg-warning/20 ring-2 ring-warning/30" },
-    { tab: "em_prospeccao", label: "Em prospecção", count: stats.emProspeccao, base: "bg-primary/10 text-primary hover:bg-primary/20",               active: "bg-primary/20 ring-2 ring-primary/30" },
+  const applyPreset = (key: PresetKey) => {
+    setFilters((prev) => ({ ...prev, statusCombinado: PRESETS[key] }));
+  };
+
+  const isPresetActive = (key: PresetKey): boolean =>
+    arraysEqUnordered(filters.statusCombinado, PRESETS[key]);
+
+  type StatChip = { key: PresetKey; label: string; count: number; base: string; active: string };
+  const presetChips: StatChip[] = [
+    { key: "todas",         label: "Total",         count: stats.total,        base: "bg-muted/60 text-foreground hover:bg-muted",     active: "bg-muted ring-2 ring-foreground/20" },
+    { key: "elegiveis",     label: "Elegíveis",     count: stats.elegiveis,    base: "bg-success/10 text-success hover:bg-success/20", active: "bg-success/20 ring-2 ring-success/30" },
+    { key: "aguardando",    label: "Aguardando",    count: stats.aguardando,   base: "bg-warning/10 text-warning hover:bg-warning/20", active: "bg-warning/20 ring-2 ring-warning/30" },
+    { key: "em_prospeccao", label: "Em prospecção", count: stats.emProspeccao, base: "bg-primary/10 text-primary hover:bg-primary/20", active: "bg-primary/20 ring-2 ring-primary/30" },
   ];
 
   return (
     <div className="space-y-3">
-      {/* Stats chips como filtro rápido */}
+      {/* Presets — escrevem em filters.statusCombinado */}
       <div className="flex flex-wrap gap-2">
-        {chips.map(chip => (
+        {presetChips.map(chip => (
           <button
-            key={chip.tab}
-            onClick={() => setActiveTab(chip.tab)}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${activeTab === chip.tab ? chip.active : chip.base}`}
+            key={chip.key}
+            onClick={() => applyPreset(chip.key)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${isPresetActive(chip.key) ? chip.active : chip.base}`}
           >
             {chip.label}
             <span className="font-bold tabular-nums">{chip.count}</span>
@@ -119,16 +160,32 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
         ))}
       </div>
 
-      {/* Busca */}
-      <div className="relative">
-        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-        <Input
-          placeholder="Buscar nome ou CNPJ..."
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          className="pl-8 h-8 text-sm"
-        />
+      {/* Linha de controles: busca + filtros + ordenação */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Buscar nome ou CNPJ..."
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            className="pl-8 h-8 text-sm"
+          />
+        </div>
+        <AcaoEmpresasFilterPopover filters={filters} onChange={setFilters} />
+        <Select value={sort} onValueChange={(v) => setSort(v as AcaoEmpresaSort)}>
+          <SelectTrigger className="h-8 w-[180px] text-xs">
+            <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SORT_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+
+      <AcaoEmpresasFilterChips filters={filters} onChange={setFilters} />
 
       {/* Tabela */}
       {filtered.length === 0 ? (
@@ -154,19 +211,16 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
                       key={el.id}
                       className={`border-t border-border transition-colors hover:bg-muted/20 ${idx % 2 !== 0 ? "bg-muted/5" : ""}`}
                     >
-                      {/* Nome + CNPJ */}
                       <td className="py-2 px-3">
                         <div className="font-medium truncate max-w-[180px] leading-tight">{empresa?.nome ?? "—"}</div>
                         <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{empresa?.cnpj ?? "—"}</div>
                       </td>
 
-                      {/* Porte · UF */}
                       <td className="py-2 px-2 hidden sm:table-cell whitespace-nowrap">
                         <span className="text-muted-foreground">{empresa?.porte ?? "—"}</span>
                         {empresa?.uf && <span className="ml-1 font-medium">{empresa.uf}</span>}
                       </td>
 
-                      {/* Regime */}
                       <td className="py-2 px-2 hidden md:table-cell">
                         {empresa?.regime_tributario ? (
                           <Badge variant="outline" className={`text-[10px] border ${regimeColor(empresa.regime_tributario)}`}>
@@ -177,12 +231,11 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
                         )}
                       </td>
 
-                      {/* Status prospecção */}
                       <td className="py-2 px-2">
                         {!el.elegivel ? (
                           <Badge variant="outline" className="text-[10px] border-0 bg-destructive/10 text-destructive">Não elegível</Badge>
                         ) : prosp ? (
-                          <Badge variant="outline" className={`text-[10px] border-0 ${PROSP_STATUS_COLOR[prosp.status_prospeccao] ?? "bg-muted text-muted-foreground"}`}>
+                          <Badge variant="outline" className={`text-[10px] border-0 ${prospStatusColor(prosp.status_prospeccao)}`}>
                             {prosp.status_prospeccao}
                           </Badge>
                         ) : (
@@ -190,7 +243,6 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
                         )}
                       </td>
 
-                      {/* Botões de ação */}
                       <td className="py-2 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Button
