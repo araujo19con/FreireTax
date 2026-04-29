@@ -182,6 +182,106 @@ function parseBRNumber(s: string | undefined | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// ---------------------------------------------------------------------------
+// CNPJa Open — fallback secundário (5 req/min, sem auth)
+// Endpoint: https://open.cnpja.com/office/{cnpj}
+// ---------------------------------------------------------------------------
+
+interface CNPJaResponse {
+  updated?: string;
+  taxId?: string;
+  alias?: string | null;
+  founded?: string; // YYYY-MM-DD
+  company?: {
+    name?: string;
+    equity?: number;
+    nature?: { id?: number; text?: string };
+    size?: { id?: number; acronym?: string; text?: string };
+    simples?: { optant?: boolean; since?: string | null };
+    simei?: { optant?: boolean; since?: string | null };
+    members?: Array<{
+      since?: string;
+      person?: { name?: string; taxId?: string };
+      role?: { text?: string };
+    }>;
+  };
+  statusDate?: string;
+  status?: { id?: number; text?: string };
+  reason?: { text?: string };
+  address?: {
+    street?: string;
+    number?: string;
+    details?: string;
+    district?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  };
+  phones?: Array<{ type?: string; area?: string; number?: string }>;
+  emails?: Array<{ address?: string }>;
+  mainActivity?: { id?: number; text?: string };
+  sideActivities?: Array<{ id?: number; text?: string }>;
+}
+
+async function fetchCNPJa(cnpj: string): Promise<{ ok: true; data: CNPJaResponse } | { ok: false; error: string; status: number }> {
+  try {
+    const r = await fetch(`https://open.cnpja.com/office/${cnpj}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (r.status === 404) return { ok: false, error: "CNPJ não encontrado (CNPJa)", status: 404 };
+    if (r.status === 429) return { ok: false, error: "CNPJa rate limit (5/min no plano grátis)", status: 429 };
+    if (r.status === 504) return { ok: false, error: "CNPJa timeout", status: 504 };
+    if (!r.ok) return { ok: false, error: `CNPJa retornou ${r.status}`, status: r.status };
+    const data = (await r.json()) as CNPJaResponse;
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message, status: 500 };
+  }
+}
+
+function cnpjaToBrasilAPI(r: CNPJaResponse): BrasilAPICNPJ {
+  const phone = r.phones?.[0];
+  const ddd = phone ? `${phone.area ?? ""}${phone.number ?? ""}` : undefined;
+  // size.acronym: "ME" | "EPP" | "MEI" | "DEMAIS" — compatível com mapPorte
+  const porteRaw = r.company?.size?.acronym ?? r.company?.size?.text;
+  return {
+    cnpj: r.taxId ?? "",
+    razao_social: r.company?.name,
+    nome_fantasia: r.alias ?? undefined,
+    data_inicio_atividade: r.founded,
+    descricao_situacao_cadastral: r.status?.text,
+    data_situacao_cadastral: r.statusDate,
+    descricao_motivo_situacao_cadastral: r.reason?.text || undefined,
+    natureza_juridica: r.company?.nature?.text,
+    capital_social: r.company?.equity ?? undefined,
+    porte: porteRaw,
+    descricao_porte: porteRaw,
+    opcao_pelo_simples: r.company?.simples?.optant,
+    data_opcao_pelo_simples: r.company?.simples?.since ?? null,
+    opcao_pelo_mei: r.company?.simei?.optant,
+    cnae_fiscal: r.mainActivity?.id != null ? String(r.mainActivity.id) : undefined,
+    cnae_fiscal_descricao: r.mainActivity?.text,
+    cnaes_secundarios: (r.sideActivities ?? [])
+      .filter((a) => a.id != null)
+      .map((a) => ({ codigo: String(a.id), descricao: a.text ?? "" })),
+    logradouro: r.address?.street,
+    numero: r.address?.number,
+    complemento: r.address?.details,
+    bairro: r.address?.district,
+    municipio: r.address?.city,
+    uf: r.address?.state,
+    cep: r.address?.zip,
+    ddd_telefone_1: ddd,
+    email: r.emails?.[0]?.address,
+    qsa: (r.company?.members ?? []).map((m) => ({
+      nome_socio: m.person?.name,
+      qualificacao_socio: m.role?.text,
+      data_entrada_sociedade: m.since,
+      cnpj_cpf_do_socio: m.person?.taxId,
+    })),
+  };
+}
+
 // Normaliza ReceitaWS no mesmo shape da BrasilAPI (BrasilAPICNPJ) para reaproveitar normalizeForDB
 function receitaWSToBrasilAPI(r: ReceitaWSResponse): BrasilAPICNPJ {
   const cep = r.cep?.replace(/\D/g, "") ?? "";
@@ -333,27 +433,40 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2) Se não tem cache válido, consulta BrasilAPI (e cai pra ReceitaWS se 404)
+    // 2) Se não tem cache válido, cascata: BrasilAPI → CNPJa → ReceitaWS (só em 404)
+    //    BrasilAPI: snapshot mensal (Minha Receita) — rápido, sem rate limit prático
+    //    CNPJa Open: live, 5 req/min — pega o que faltou
+    //    ReceitaWS: live, 3 req/min — último recurso
+    //    Erros não-404 (5xx/429/timeout) propagam pro cliente retentar com backoff
     if (!raw) {
       step = "fetch-brasilapi";
-      const result = await fetchBrasilAPI(cnpj);
-      if (result.ok) {
-        raw = result.data;
-      } else if (result.status === 404) {
-        // BrasilAPI usa snapshot mensal — empresas recentes podem faltar.
-        // Tenta ReceitaWS (consulta RFB ao vivo, mas tem rate limit 3/min no free).
-        step = "fetch-receitaws";
-        const fb = await fetchReceitaWS(cnpj);
-        if (fb.ok) {
-          raw = receitaWSToBrasilAPI(fb.data);
-          fonte = "receitaws";
+      const ba = await fetchBrasilAPI(cnpj);
+      if (ba.ok) {
+        raw = ba.data;
+      } else if (ba.status === 404) {
+        step = "fetch-cnpja";
+        const cn = await fetchCNPJa(cnpj);
+        if (cn.ok) {
+          raw = cnpjaToBrasilAPI(cn.data);
+          fonte = "cnpja";
+        } else if (cn.status === 429) {
+          // Rate limit — propaga pro cliente retentar (não tenta ReceitaWS para
+          // não compor rate limits entre serviços)
+          erroApi = cn.error;
         } else {
-          // Se ReceitaWS deu rate limit, devolve o erro dele para o cliente retentar.
-          // Para qualquer outro erro (404 incluso), mantém o "não encontrado" original.
-          erroApi = fb.status === 429 ? fb.error : result.error;
+          // CNPJa também 404 ou outro erro: tenta ReceitaWS como último recurso
+          step = "fetch-receitaws";
+          const fb = await fetchReceitaWS(cnpj);
+          if (fb.ok) {
+            raw = receitaWSToBrasilAPI(fb.data);
+            fonte = "receitaws";
+          } else {
+            // ReceitaWS rate limit propaga; outros erros mantêm "não encontrado" original
+            erroApi = fb.status === 429 ? fb.error : ba.error;
+          }
         }
       } else {
-        erroApi = result.error;
+        erroApi = ba.error;
       }
 
       // Cache: sucesso preserva fonte; falha grava como brasilapi (mantém compat)
