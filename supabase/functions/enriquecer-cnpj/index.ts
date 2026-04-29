@@ -279,10 +279,29 @@ Deno.serve(async (req) => {
 
     // 4) Se empresa_id fornecido, atualiza diretamente
     if (body.empresa_id) {
+      // Antes de gravar, lê as flags _manual pra preservar valores que o usuário
+      // setou no dialog ou importou via planilha. Se a flag for true, dropamos
+      // o campo correspondente do payload — RFB nunca sobrescreve valor manual.
+      step = "read-flags-manual";
+      const { data: existing, error: readErr } = await admin
+        .from("empresas")
+        .select("email_manual, telefone_manual")
+        .eq("id", body.empresa_id)
+        .maybeSingle();
+      if (readErr) {
+        // Falha defensiva: se a coluna ainda não existe (migration não aplicada),
+        // segue sem proteção em vez de quebrar enrichment de toda a base.
+        console.warn("[enriquecer-cnpj] read flags manual failed:", readErr.message);
+      }
+
+      const finalPayload: Record<string, unknown> = { ...normalized };
+      if (existing?.email_manual) delete finalPayload.email_receita;
+      if (existing?.telefone_manual) delete finalPayload.telefone_receita;
+
       step = "update-empresa";
       const { error: upErr } = await admin
         .from("empresas")
-        .update(normalized)
+        .update(finalPayload)
         .eq("id", body.empresa_id);
       if (upErr) {
         return json({ ok: false, error: "erro ao gravar empresa", step, detail: upErr.message }, 500, cors);

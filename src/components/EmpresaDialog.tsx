@@ -45,6 +45,10 @@ export interface EmpresaFormData {
   cep?: string | null;
   telefone_receita?: string | null;
   email_receita?: string | null;
+  /** true quando email_receita foi setado manualmente — protege da sobrescrita pela RFB */
+  email_manual?: boolean | null;
+  /** true quando telefone_receita foi setado manualmente — protege da sobrescrita pela RFB */
+  telefone_manual?: boolean | null;
   qsa?: any[];
   receita_atualizada_em?: string | null;
   // Campos manuais (importáveis via planilha)
@@ -139,6 +143,10 @@ export function EmpresaDialog({
         cep: rfb.cep,
         telefone_receita: rfb.telefone_receita,
         email_receita: rfb.email_receita,
+        // Buscar na RFB sobrescreve email/telefone com o valor oficial — desliga
+        // a flag manual pra que próximas sincronizações também atualizem.
+        email_manual: false,
+        telefone_manual: false,
         qsa: rfb.qsa,
         receita_atualizada_em: rfb.receita_atualizada_em,
       }));
@@ -528,12 +536,43 @@ export function EmpresaDialog({
           <Section title="Contato">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Telefone</Label>
-                <Input value={form.telefone_receita ?? ""} onChange={(e) => setForm({ ...form, telefone_receita: e.target.value || null })} />
+                <Label className="flex items-center gap-1.5">
+                  Telefone
+                  {form.telefone_manual && <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/10 text-primary border-0">manual</Badge>}
+                </Label>
+                <Input
+                  value={form.telefone_receita ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value || null;
+                    // Sincroniza flag: valor preenchido = manual (RFB não sobrescreve);
+                    // valor vazio = libera RFB pra preencher na próxima sincronização.
+                    setForm({ ...form, telefone_receita: v, telefone_manual: !!v });
+                  }}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {form.telefone_manual
+                    ? "Valor manual — não será sobrescrito pela Receita."
+                    : "Vazio ou da Receita — pode ser atualizado por sincronização."}
+                </p>
               </div>
               <div className="space-y-1.5">
-                <Label>E-mail</Label>
-                <Input type="email" value={form.email_receita ?? ""} onChange={(e) => setForm({ ...form, email_receita: e.target.value || null })} />
+                <Label className="flex items-center gap-1.5">
+                  E-mail
+                  {form.email_manual && <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/10 text-primary border-0">manual</Badge>}
+                </Label>
+                <Input
+                  type="email"
+                  value={form.email_receita ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value || null;
+                    setForm({ ...form, email_receita: v, email_manual: !!v });
+                  }}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {form.email_manual
+                    ? "Valor manual — não será sobrescrito pela Receita."
+                    : "Vazio ou da Receita — pode ser atualizado por sincronização."}
+                </p>
               </div>
             </div>
           </Section>

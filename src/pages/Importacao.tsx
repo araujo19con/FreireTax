@@ -21,6 +21,10 @@ interface ImportRow {
   faixa_funcionarios_texto: string | null;
   faixa_faturamento_texto: string | null;
   regime_tributario: string | null;
+  /** Contatos da planilha — quando preenchidos, marcam email_manual/telefone_manual=true
+   *  pra proteger da sobrescrita pelo enrichment RFB. */
+  email: string | null;
+  telefone: string | null;
   /** ID da empresa existente (quando o CNPJ já existe na base) */
   existing_id: string | null;
   mode: ImportMode;
@@ -152,6 +156,10 @@ export default function Importacao() {
         const funcCol = findColumn(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
         const fatCol  = findColumn(headers, ["faturamento", "receita", "revenue", "billing"]);
         const regCol  = findColumn(headers, ["regime", "tributa", "forma de tribut"]);
+        // E-mail e telefone: quando importados, marcamos a empresa como manual
+        // pra que enrichment RFB não sobrescreva esses valores.
+        const emailCol = findColumn(headers, ["e-mail", "email", "e_mail"]);
+        const telCol   = findColumn(headers, ["telefone", "fone", "celular", "contato", "whats"]);
 
         if (cnpjCol === -1) {
           toast.error("Não foi possível identificar a coluna 'CNPJ' na planilha");
@@ -182,6 +190,8 @@ export default function Importacao() {
           const faixa_funcionarios_texto = (funcCol !== -1 && rawFunc && quantidade_funcionarios == null) ? rawFunc : null;
           const faixa_faturamento_texto  = (fatCol  !== -1 && rawFat  && faturamento_anual == null)       ? rawFat  : null;
           const regime_tributario       = regCol  !== -1 ? parseRegime(row[regCol]) : null;
+          const email     = emailCol !== -1 ? (String(row[emailCol] ?? "").trim() || null) : null;
+          const telefone  = telCol   !== -1 ? (String(row[telCol]   ?? "").trim() || null) : null;
 
           const errors: string[] = [];
 
@@ -192,6 +202,7 @@ export default function Importacao() {
             quantidade_funcionarios, faturamento_anual,
             faixa_funcionarios_texto, faixa_faturamento_texto,
             regime_tributario,
+            email, telefone,
             errors,
           });
         }
@@ -305,6 +316,15 @@ export default function Importacao() {
             if (r.quantidade_funcionarios != null) base.quantidade_funcionarios = r.quantidade_funcionarios;
             if (r.faturamento_anual != null) base.faturamento_anual = r.faturamento_anual;
             if (r.regime_tributario) base.regime_tributario = r.regime_tributario;
+            // Contatos importados → marca como manual pra que enrichment RFB não sobrescreva.
+            if (r.email) {
+              base.email_receita = r.email;
+              base.email_manual = true;
+            }
+            if (r.telefone) {
+              base.telefone_receita = r.telefone;
+              base.telefone_manual = true;
+            }
             const meta: Record<string, string> = {};
             if (r.faixa_funcionarios_texto) meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
             if (r.faixa_faturamento_texto)  meta["Faixa de Faturamento"]  = r.faixa_faturamento_texto;
@@ -361,6 +381,16 @@ export default function Importacao() {
               }
               if (r.regime_tributario) {
                 patchFull.regime_tributario = r.regime_tributario;
+              }
+              // Contatos importados → marca como manual. Só sobrescreve se
+              // a planilha trouxe valor (cell vazia preserva o que estiver no DB).
+              if (r.email) {
+                patchFull.email_receita = r.email;
+                patchFull.email_manual = true;
+              }
+              if (r.telefone) {
+                patchFull.telefone_receita = r.telefone;
+                patchFull.telefone_manual = true;
               }
               // Faixas como metadados (preserva formatação original)
               const meta: Record<string, string> = {};
@@ -662,7 +692,8 @@ export default function Importacao() {
           <h3 className="font-heading font-semibold mb-3">Como usar</h3>
           <ul className="text-sm text-muted-foreground space-y-2">
             <li>• A planilha precisa ter no mínimo a coluna <strong>CNPJ</strong>.</li>
-            <li>• Colunas opcionais reconhecidas: <strong>Nome</strong>, <strong>Status</strong>, <strong>Funcionários</strong> (ou "Colaboradores"), <strong>Faturamento</strong> (ou "Receita").</li>
+            <li>• Colunas opcionais reconhecidas: <strong>Nome</strong>, <strong>Status</strong>, <strong>Funcionários</strong> (ou "Colaboradores"), <strong>Faturamento</strong> (ou "Receita"), <strong>Regime</strong>, <strong>E-mail</strong>, <strong>Telefone</strong> (ou "Fone", "Celular", "Contato").</li>
+            <li>• <strong>E-mail</strong> e <strong>Telefone</strong> importados são marcados como <strong>manuais</strong> — a sincronização com a Receita Federal não sobrescreve esses valores.</li>
             <li>• Se o CNPJ <strong>já existe</strong> na base, os campos importados (funcionários, faturamento, nome) <strong>atualizam</strong> a empresa existente.</li>
             <li>• Se o CNPJ <strong>não existe</strong>, uma empresa nova é criada (e enriquecida automaticamente via Receita Federal).</li>
             <li>• Valores monetários aceitam formato BR (R$ 1.500,00) ou US (1500.00).</li>
