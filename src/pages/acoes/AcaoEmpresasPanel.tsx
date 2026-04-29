@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown } from "lucide-react";
+import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown, Trash2, Download, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
 import { prospStatusColor } from "@/lib/prospeccaoStatus";
+import type { StatusEmpresaAcao } from "@/lib/exportEmpresasAcao";
 import {
   AcaoEmpresasFilterPopover,
   AcaoEmpresasFilterChips,
@@ -57,13 +59,27 @@ export interface ProspMin {
   status_prospeccao: string;
 }
 
+export interface AcaoEmpresasExportPayload {
+  acaoNome: string;
+  empresaIds: string[];
+  statusByEmpresaId: Map<string, StatusEmpresaAcao>;
+  elegInfoByEmpresaId: Map<string, {
+    elegivel: boolean;
+    justificativa: string | null;
+    valor_potencial_estimado: number | null;
+  }>;
+}
+
 interface Props {
   acaoId: string;
+  acaoNome: string;
   empresasMap: Map<string, EmpresaAcao>;
   elegs: ElegAcao[];
   prospeccoes: ProspMin[];
   onProspectar: (elegId: string, empresaId: string) => void;
   onOpenProcesso: (elegId: string) => void;
+  onDeleteEleg?: (elegId: string) => void;
+  onExport: (payload: AcaoEmpresasExportPayload) => Promise<void>;
 }
 
 // Presets dos chips do topo. Cada um define um conjunto de StatusCombinadoKey
@@ -100,11 +116,12 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "valor_desc",            label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso }: Props) {
+export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onExport }: Props) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
   const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
+  const [exporting, setExporting] = useState(false);
 
   const items = useMemo(() => elegs.map(el => ({
     el,
@@ -135,6 +152,37 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
 
   const isPresetActive = (key: PresetKey): boolean =>
     arraysEqUnordered(filters.statusCombinado, PRESETS[key]);
+
+  const handleExport = async () => {
+    if (filtered.length === 0) {
+      toast.info("Nenhuma empresa para exportar com os filtros atuais.");
+      return;
+    }
+    setExporting(true);
+    try {
+      const empresaIds: string[] = [];
+      const statusByEmpresaId = new Map<string, StatusEmpresaAcao>();
+      const elegInfoByEmpresaId = new Map<string, { elegivel: boolean; justificativa: string | null; valor_potencial_estimado: number | null }>();
+      for (const { el, prosp } of filtered) {
+        if (!el.empresa_id) continue;
+        empresaIds.push(el.empresa_id);
+        const st: StatusEmpresaAcao = !el.elegivel
+          ? { tipo: "nao_elegivel" }
+          : prosp
+            ? { tipo: "em_prospeccao", status: prosp.status_prospeccao }
+            : { tipo: "aguardando" };
+        statusByEmpresaId.set(el.empresa_id, st);
+        elegInfoByEmpresaId.set(el.empresa_id, {
+          elegivel: el.elegivel,
+          justificativa: el.justificativa,
+          valor_potencial_estimado: el.valor_potencial_estimado,
+        });
+      }
+      await onExport({ acaoNome, empresaIds, statusByEmpresaId, elegInfoByEmpresaId });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   type StatChip = { key: PresetKey; label: string; count: number; base: string; active: string };
   const presetChips: StatChip[] = [
@@ -183,6 +231,17 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
             ))}
           </SelectContent>
         </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 text-xs"
+          onClick={handleExport}
+          disabled={exporting || filtered.length === 0}
+          title="Exportar empresas filtradas para XLSX"
+        >
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          Exportar ({filtered.length})
+        </Button>
       </div>
 
       <AcaoEmpresasFilterChips filters={filters} onChange={setFilters} />
@@ -212,8 +271,17 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
                       className={`border-t border-border transition-colors hover:bg-muted/20 ${idx % 2 !== 0 ? "bg-muted/5" : ""}`}
                     >
                       <td className="py-2 px-3">
-                        <div className="font-medium truncate max-w-[180px] leading-tight">{empresa?.nome ?? "—"}</div>
-                        <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{empresa?.cnpj ?? "—"}</div>
+                        {empresa ? (
+                          <>
+                            <div className="font-medium truncate max-w-[180px] leading-tight">{empresa.nome}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{empresa.cnpj}</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-medium text-destructive truncate max-w-[180px] leading-tight">Empresa removida</div>
+                            <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{el.empresa_id.slice(0, 8)}…</div>
+                          </>
+                        )}
                       </td>
 
                       <td className="py-2 px-2 hidden sm:table-cell whitespace-nowrap">
@@ -245,33 +313,47 @@ export function AcaoEmpresasPanel({ acaoId, empresasMap, elegs, prospeccoes, onP
 
                       <td className="py-2 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            title="Processo"
-                            onClick={() => onOpenProcesso(el.id)}
-                          >
-                            <FileText className="h-3 w-3" />
-                          </Button>
-                          {el.elegivel && !prosp && (
+                          {!empresa && onDeleteEleg ? (
                             <Button
+                              variant="ghost"
                               size="sm"
-                              className="h-6 text-[10px] px-2 gap-1"
-                              onClick={() => onProspectar(el.id, el.empresa_id)}
+                              className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                              title="Remover elegibilidade órfã"
+                              onClick={() => onDeleteEleg(el.id)}
                             >
-                              <Handshake className="h-3 w-3" />Prospectar
+                              <Trash2 className="h-3 w-3" />
                             </Button>
-                          )}
-                          {el.elegivel && prosp && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-6 text-[10px] px-2 gap-1"
-                              onClick={() => navigate("/prospeccao")}
-                            >
-                              <ArrowUpRight className="h-3 w-3" />Ver
-                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                title="Processo"
+                                onClick={() => onOpenProcesso(el.id)}
+                              >
+                                <FileText className="h-3 w-3" />
+                              </Button>
+                              {el.elegivel && !prosp && (
+                                <Button
+                                  size="sm"
+                                  className="h-6 text-[10px] px-2 gap-1"
+                                  onClick={() => onProspectar(el.id, el.empresa_id)}
+                                >
+                                  <Handshake className="h-3 w-3" />Prospectar
+                                </Button>
+                              )}
+                              {el.elegivel && prosp && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] px-2 gap-1"
+                                  onClick={() => navigate("/prospeccao")}
+                                >
+                                  <ArrowUpRight className="h-3 w-3" />Ver
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>

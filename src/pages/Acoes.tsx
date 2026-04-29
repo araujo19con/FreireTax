@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks, FileSpreadsheet, Upload, CheckCircle2, XCircle } from "lucide-react";
-import { AcaoEmpresasPanel, type ProspMin } from "./acoes/AcaoEmpresasPanel";
+import { AcaoEmpresasPanel, type ProspMin, type AcaoEmpresasExportPayload } from "./acoes/AcaoEmpresasPanel";
+import { exportEmpresasAcaoXlsx, type ExportRow } from "@/lib/exportEmpresasAcao";
 import { ProspeccaoRapidaDialog } from "./acoes/ProspeccaoRapidaDialog";
 import * as XLSX from "xlsx";
 import { maskCNPJ, validateCNPJ } from "@/lib/cnpj";
@@ -220,6 +221,49 @@ export default function Acoes() {
     setProspRapidaElegId(elegId);
     setProspRapidaEmpresaId(empresaId);
     setProspRapidaOpen(true);
+  };
+
+  const handleExportAcao = async (payload: AcaoEmpresasExportPayload) => {
+    if (payload.empresaIds.length === 0) return;
+    try {
+      // chunk em 1000 (limite seguro de .in()) — quase sempre 1 chunk só
+      const chunks: string[][] = [];
+      for (let i = 0; i < payload.empresaIds.length; i += 1000) {
+        chunks.push(payload.empresaIds.slice(i, i + 1000));
+      }
+      const results = await Promise.all(
+        chunks.map((c) => supabase.from("empresas").select("*").in("id", c)),
+      );
+      if (results.some((r) => r.error)) throw new Error("Erro Supabase");
+      const empresasFull = results.flatMap((r) => r.data ?? []);
+      const byId = new Map(empresasFull.map((e) => [e.id, e]));
+
+      const rows: ExportRow[] = payload.empresaIds
+        .map((id) => {
+          const empresa = byId.get(id);
+          const elegInfo = payload.elegInfoByEmpresaId.get(id);
+          const status = payload.statusByEmpresaId.get(id);
+          if (!empresa || !elegInfo || !status) return null;
+          return { empresa, status, ...elegInfo } as ExportRow;
+        })
+        .filter((r): r is ExportRow => r !== null);
+
+      if (rows.length === 0) {
+        toast.error("Nenhuma empresa encontrada para exportar.");
+        return;
+      }
+
+      exportEmpresasAcaoXlsx(rows, payload.acaoNome);
+      toast.success(`Planilha gerada (${rows.length} empresas).`);
+      logAudit({
+        tabela: "acoes_tributarias",
+        acao: "Exportou empresas filtradas",
+        detalhes: { acao_nome: payload.acaoNome, total: rows.length },
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error("Falha ao exportar planilha.");
+    }
   };
 
   // CRUD Ação
@@ -655,11 +699,14 @@ export default function Acoes() {
                 <div className="border-t border-border px-5 py-4">
                   <AcaoEmpresasPanel
                     acaoId={a.id}
+                    acaoNome={a.nome}
                     empresasMap={empresasMap}
                     elegs={acaoElegs}
                     prospeccoes={prospeccoes as unknown as ProspMin[]}
                     onProspectar={handleProspectar}
                     onOpenProcesso={(elegId) => openProcessoDialog(elegId)}
+                    onDeleteEleg={handleDeleteEleg}
+                    onExport={handleExportAcao}
                   />
                 </div>
               )}
