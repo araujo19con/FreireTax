@@ -1,6 +1,14 @@
 // Capitais estaduais e helpers para o filtro de "Interior"
 // A lista completa de municípios é buscada da API do IBGE no componente MunicipioMultiSelect.
 
+/** Remove acentos e converte para maiúsculas — alinha nomes IBGE (title case c/ acento)
+ *  ao formato do banco (uppercase sem acento, vindo da RFB/BrasilAPI). */
+export function normalizeMunicipio(s: string | null | undefined): string {
+  if (!s) return "";
+  // NFD decompõe acentos em combining marks; \p{M} remove todos eles
+  return s.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase();
+}
+
 export const CAPITAIS_UF: Record<string, string> = {
   AC: "Rio Branco",
   AL: "Maceió",

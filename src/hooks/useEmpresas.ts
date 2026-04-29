@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
 import { unmaskCNPJ } from "@/lib/cnpj";
-import { getCapitaisForUFs } from "@/lib/municipiosBrasil";
+import { getCapitaisForUFs, normalizeMunicipio } from "@/lib/municipiosBrasil";
 
 export type EmpresaStatus = "prospect" | "cliente" | "inativo";
 export type EmpresaPorte = "MEI" | "ME" | "EPP" | "DEMAIS" | "NAO_INFORMADO";
@@ -205,14 +205,13 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
   if (filters.enriquecida === "error") query = query.not("receita_erro", "is", null);
   if (filters.municipios?.length) {
-    // ilike = case-insensitive; RFB/BrasilAPI armazena em maiúsculas, IBGE em title case
-    const orFilter = filters.municipios.map((m) => `municipio.ilike.${m}`).join(",");
+    // Normaliza para uppercase sem acento — banco armazena nomes da RFB (ex: "MOSSORO")
+    const orFilter = filters.municipios.map((m) => `municipio.ilike.${normalizeMunicipio(m)}`).join(",");
     query = query.or(orFilter);
   } else if (filters.interior && filters.uf?.length) {
     const caps = getCapitaisForUFs(filters.uf);
-    // Cada .not() adiciona uma condição AND — exclui a capital independente do case
     for (const cap of caps) {
-      query = query.not("municipio", "ilike", cap);
+      query = query.not("municipio", "ilike", normalizeMunicipio(cap));
     }
   }
   if (filters.cnae?.trim()) {

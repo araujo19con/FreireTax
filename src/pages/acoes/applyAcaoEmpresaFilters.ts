@@ -6,7 +6,7 @@
 import type { EmpresaAcao, ElegAcao, ProspMin } from "./AcaoEmpresasPanel";
 import type { EmpresaPorte, EmpresaSituacao } from "@/hooks/useEmpresas";
 import { prospStatusOrder, PROSPECCAO_STATUSES } from "@/lib/prospeccaoStatus";
-import { getCapitaisForUFs } from "@/lib/municipiosBrasil";
+import { getCapitaisForUFs, normalizeMunicipio } from "@/lib/municipiosBrasil";
 
 export type StatusCombinadoKey =
   | "nao_elegivel"
@@ -152,11 +152,11 @@ export function applyAcaoFilters(
   }
 
   if (filters.municipios?.length) {
-    const set = new Set(filters.municipios.map((m) => m.toLowerCase()));
-    list = list.filter((i) => set.has(lower(i.empresa?.municipio)));
+    const set = new Set(filters.municipios.map(normalizeMunicipio));
+    list = list.filter((i) => set.has(normalizeMunicipio(i.empresa?.municipio)));
   } else if (filters.interior && filters.uf?.length) {
-    const caps = new Set(getCapitaisForUFs(filters.uf).map((c) => c.toLowerCase()));
-    list = list.filter((i) => !caps.has(lower(i.empresa?.municipio)));
+    const caps = new Set(getCapitaisForUFs(filters.uf).map(normalizeMunicipio));
+    list = list.filter((i) => !caps.has(normalizeMunicipio(i.empresa?.municipio)));
   }
 
   if (filters.cnae?.trim()) {
