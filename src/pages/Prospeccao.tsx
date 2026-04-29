@@ -26,6 +26,7 @@ import { PropostaDialog } from "@/components/PropostaDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingState } from "@/components/LoadingState";
+import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import type { Database } from "@/integrations/supabase/types";
 import { differenceInDays, parseISO } from "date-fns";
 import { PROSPECCAO_STATUSES as statusColumns } from "@/lib/prospeccaoStatus";
@@ -170,6 +171,7 @@ export default function Prospeccao() {
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
+  const [detailEmpresaId, setDetailEmpresaId] = useState<string | null>(null);
   const [editProsp, setEditProsp] = useState<Prospeccao | null>(null);
   const [editStatus, setEditStatus] = useState("");
   const [editContatoNome, setEditContatoNome] = useState("");
@@ -611,7 +613,13 @@ export default function Prospeccao() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 text-sm font-medium truncate min-w-0 flex-1">
                             <Building2 className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden />
-                            <span className="truncate">{emp?.nome || "—"}</span>
+                            <button
+                              type="button"
+                              className="truncate text-left hover:underline focus-visible:underline"
+                              onClick={(e) => { e.stopPropagation(); setDetailEmpresaId(p.empresa_id); }}
+                            >
+                              {emp?.nome || "—"}
+                            </button>
                           </div>
                           <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                             {valorPot > 0 && (
@@ -1187,6 +1195,8 @@ export default function Prospeccao() {
           />
         );
       })()}
+
+      <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
     </div>
   );
 }

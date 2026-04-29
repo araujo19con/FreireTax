@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks, FileSpreadsheet, Upload, CheckCircle2, XCircle } from "lucide-react";
 import { AcaoEmpresasPanel, type ProspMin, type AcaoEmpresasExportPayload } from "./acoes/AcaoEmpresasPanel";
+import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import { exportEmpresasAcaoXlsx, type ExportRow } from "@/lib/exportEmpresasAcao";
 import { ProspeccaoRapidaDialog } from "./acoes/ProspeccaoRapidaDialog";
 import * as XLSX from "xlsx";
@@ -132,6 +133,7 @@ export default function Acoes() {
   const [loading, setLoading] = useState(true);
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
   const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
+  const [detailEmpresaId, setDetailEmpresaId] = useState<string | null>(null);
   const { user } = useAuth();
   const qc = useQueryClient();
 
@@ -707,6 +709,7 @@ export default function Acoes() {
                     onOpenProcesso={(elegId) => openProcessoDialog(elegId)}
                     onDeleteEleg={handleDeleteEleg}
                     onExport={handleExportAcao}
+                    onViewEmpresaId={setDetailEmpresaId}
                   />
                 </div>
               )}
@@ -724,6 +727,8 @@ export default function Acoes() {
         empresaNome={empresas.find(e => e.id === prospRapidaEmpresaId)?.nome ?? ""}
         onSuccess={fetchAll}
       />
+
+      <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
 
       {/* Elegibilidade Dialog */}
       <Dialog open={elegDialogOpen} onOpenChange={setElegDialogOpen}>

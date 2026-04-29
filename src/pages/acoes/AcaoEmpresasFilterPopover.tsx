@@ -16,6 +16,7 @@ import { Filter, Search, X } from "lucide-react";
 import { useFaixasDistintas, faixaSobrepoe } from "@/hooks/useEmpresas";
 import type { EmpresaPorte, EmpresaSituacao } from "@/hooks/useEmpresas";
 import { REGIMES_TRIBUTARIOS } from "@/lib/regimeTributario";
+import { MunicipioMultiSelect } from "@/components/MunicipioMultiSelect";
 import {
   STATUS_COMBINADO_OPTIONS,
   activeFiltersCount,
@@ -134,10 +135,15 @@ export function AcaoEmpresasFilterChips({ filters, onChange }: ChipsProps) {
       label: `Faixa fat.: ${v}`,
       onRemove: () => onChange({ ...filters, faixaFaturamento: (filters.faixaFaturamento || []).filter((x) => x !== v) }),
     }));
-  if (filters.municipio?.trim()) {
+  filters.municipios?.forEach((v) =>
     chips.push({
-      label: `Cidade: "${filters.municipio.trim()}"`,
-      onRemove: () => onChange({ ...filters, municipio: null }),
+      label: `Cidade: ${v}`,
+      onRemove: () => onChange({ ...filters, municipios: (filters.municipios || []).filter((x) => x !== v) }),
+    }));
+  if (filters.interior) {
+    chips.push({
+      label: "Interior (sem capital)",
+      onRemove: () => onChange({ ...filters, interior: false }),
     });
   }
   if (filters.cnae?.trim()) {
@@ -612,14 +618,25 @@ export function AcaoEmpresasFilterPopover({ filters, onChange }: PopoverProps) {
 
             <section>
               <Label className="text-xs font-semibold uppercase text-muted-foreground">Cidade (município)</Label>
-              <div className="relative mt-2">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Ex: Natal"
-                  value={filters.municipio ?? ""}
-                  onChange={(e) => onChange({ ...filters, municipio: e.target.value || null })}
-                  className="h-8 text-xs pl-7"
+              <div className="mt-2">
+                <MunicipioMultiSelect
+                  selectedUFs={filters.uf ?? []}
+                  value={filters.municipios ?? []}
+                  onChange={(v) => onChange({ ...filters, municipios: v.length ? v : undefined, interior: undefined })}
                 />
+                {(filters.uf?.length ?? 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onChange({ ...filters, interior: !filters.interior, municipios: undefined })}
+                    className={`mt-2 h-7 w-full rounded border text-xs transition-colors ${
+                      filters.interior
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted hover:bg-muted/80 border-transparent"
+                    }`}
+                  >
+                    Interior (excluir capital{(filters.uf?.length ?? 0) > 1 ? "is" : ""})
+                  </button>
+                )}
               </div>
             </section>
 

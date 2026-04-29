@@ -23,6 +23,7 @@ import { formatCompactCurrency, formatCNPJ } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
 import { BulkQualificationDialog } from "./BulkQualificationDialog";
+import { EmpresaQuickSheet } from "@/pages/empresas/EmpresaQuickSheet";
 
 interface EmpresaRow { id: string; nome: string; cnpj: string }
 interface ElegRow {
@@ -47,6 +48,7 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<EmpresaFilters>({});
   const [page, setPage] = useState(1);
+  const [detailEmpresaId, setDetailEmpresaId] = useState<string | null>(null);
   const pageSize = 20;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -236,9 +238,13 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                         </td>
                         <td className="sticky left-8 z-10 bg-background py-2 px-3 max-w-[320px]">
                           <div className="flex flex-col min-w-0" title={emp.nome}>
-                            <span className="text-sm font-medium leading-tight break-words">
+                            <button
+                              type="button"
+                              className="text-sm font-medium leading-tight break-words text-left hover:underline focus-visible:underline"
+                              onClick={() => setDetailEmpresaId(emp.id)}
+                            >
                               {emp.nome}
-                            </span>
+                            </button>
                             <span className="text-[10px] text-muted-foreground font-mono mt-0.5">
                               {formatCNPJ(emp.cnpj)}
                             </span>
@@ -300,6 +306,8 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
             empresaIds={Array.from(selected)}
           />
         )}
+
+      <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
       </div>
     </TooltipProvider>
   );

@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
 import { unmaskCNPJ } from "@/lib/cnpj";
+import { getCapitaisForUFs } from "@/lib/municipiosBrasil";
 
 export type EmpresaStatus = "prospect" | "cliente" | "inativo";
 export type EmpresaPorte = "MEI" | "ME" | "EPP" | "DEMAIS" | "NAO_INFORMADO";
@@ -22,8 +23,10 @@ export interface EmpresaFilters {
   acaoId?: string | null;
   capitalMin?: number | null;
   capitalMax?: number | null;
-  /** Busca substring (ilike) em `municipio` */
-  municipio?: string | null;
+  /** Municípios selecionados (match exato, multi-select via IBGE) */
+  municipios?: string[] | null;
+  /** Se true e `uf` estiver preenchido, exclui as capitais das UFs selecionadas */
+  interior?: boolean;
   /** Busca em `cnae_principal` (código) OU `cnae_principal_desc` (descrição) via ilike */
   cnae?: string | null;
   /** Quantidade de funcionários — range numérico (só casa empresas com valor manual/importado numérico) */
@@ -201,8 +204,15 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
   if (filters.enriquecida === "error") query = query.not("receita_erro", "is", null);
-  if (filters.municipio?.trim()) {
-    query = query.ilike("municipio", `%${filters.municipio.trim()}%`);
+  if (filters.municipios?.length) {
+    query = query.in("municipio", filters.municipios);
+  } else if (filters.interior && filters.uf?.length) {
+    const caps = getCapitaisForUFs(filters.uf);
+    if (caps.length) {
+      // Supabase .not com operador "in" espera string no formato (v1,v2)
+      const list = caps.map((c) => `"${c}"`).join(",");
+      query = (query as unknown as { not: (col: string, op: string, val: string) => QB }).not("municipio", "in", `(${list})`);
+    }
   }
   if (filters.cnae?.trim()) {
     const term = filters.cnae.trim();

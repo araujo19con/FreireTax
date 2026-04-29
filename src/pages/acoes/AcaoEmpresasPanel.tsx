@@ -80,6 +80,7 @@ interface Props {
   onOpenProcesso: (elegId: string) => void;
   onDeleteEleg?: (elegId: string) => void;
   onExport: (payload: AcaoEmpresasExportPayload) => Promise<void>;
+  onViewEmpresaId?: (id: string) => void;
 }
 
 // Presets dos chips do topo. Cada um define um conjunto de StatusCombinadoKey
@@ -116,7 +117,7 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "valor_desc",            label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onExport }: Props) {
+export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onExport, onViewEmpresaId }: Props) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
@@ -273,7 +274,13 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                       <td className="py-2 px-3">
                         {empresa ? (
                           <>
-                            <div className="font-medium truncate max-w-[180px] leading-tight">{empresa.nome}</div>
+                            <button
+                              type="button"
+                              className="font-medium truncate max-w-[180px] leading-tight text-left hover:underline focus-visible:underline"
+                              onClick={(e) => { e.stopPropagation(); onViewEmpresaId?.(el.empresa_id); }}
+                            >
+                              {empresa.nome}
+                            </button>
                             <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{empresa.cnpj}</div>
                           </>
                         ) : (
