@@ -16,6 +16,7 @@ import {
   FileText, Eye, Pencil, Send, Save, Plus, Trash2, ArrowUp, ArrowDown,
   Printer, Sparkles, Copy, Mail, Trash, FileDown,
 } from "lucide-react";
+import DOMPurify from "dompurify";
 import { RichTextEditor } from "./RichTextEditor";
 import {
   usePropostaTemplates, usePropostaByProspeccao, useUpsertProposta,
@@ -25,6 +26,24 @@ import {
   type ProposalSection, type ProposalContext, ESCRITORIO_DEFAULT,
   renderVariaveis, VARIAVEIS_DISPONIVEIS,
 } from "@/lib/proposta";
+
+// Tags/atributos permitidos no HTML do editor (Tiptap) — qualquer outra coisa
+// é stripada antes de chegar ao DOM. Bloqueia <script>, on*, iframes, etc.
+const PROPOSTA_ALLOWED_TAGS = [
+  "p", "br", "strong", "em", "u", "s", "code", "pre",
+  "ol", "ul", "li", "h1", "h2", "h3", "h4", "blockquote", "hr",
+  "table", "thead", "tbody", "tr", "th", "td", "span", "div", "a",
+];
+const PROPOSTA_ALLOWED_ATTR = ["style", "href", "target", "rel", "colspan", "rowspan"];
+
+function sanitizeProposalHTML(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: PROPOSTA_ALLOWED_TAGS,
+    ALLOWED_ATTR: PROPOSTA_ALLOWED_ATTR,
+    // Bloqueia javascript: em href
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+  });
+}
 import { gerarPropostaDocx, gerarNomeArquivoDocx } from "@/lib/propostaDocx";
 import { toast } from "sonner";
 
@@ -627,7 +646,7 @@ function PropostaPreview(p: PreviewProps) {
             <div
               className="prose prose-sm max-w-none text-justify proposta-body"
               style={{ fontSize: "11pt", lineHeight: 1.55 }}
-              dangerouslySetInnerHTML={{ __html: renderVariaveis(s.conteudo, ctx) }}
+              dangerouslySetInnerHTML={{ __html: sanitizeProposalHTML(renderVariaveis(s.conteudo, ctx)) }}
             />
           </section>
         ))}
@@ -776,7 +795,7 @@ function renderPropostaHTML(p: PreviewProps): string {
   const secoesHTML = p.secoes.map((s) => `
     <section>
       <h2>${escapeHTML(renderVariaveis(s.titulo, ctx))}</h2>
-      <div>${renderVariaveis(s.conteudo, ctx)}</div>
+      <div>${sanitizeProposalHTML(renderVariaveis(s.conteudo, ctx))}</div>
     </section>
   `).join("");
 

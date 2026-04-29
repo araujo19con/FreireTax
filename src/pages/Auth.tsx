@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { Scale3d, Loader2 } from "lucide-react";
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
+  // Auto-cadastro desativado: contas só são criadas por admin (edge fn `criar-usuario`).
+  // Defesa em profundidade — também desativar "Email signups" no painel do Supabase.
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,15 +18,9 @@ export default function Auth() {
     e.preventDefault();
     setLoading(true);
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        toast.success("Login realizado com sucesso!");
-      } else {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        toast.success("Cadastro realizado! Verifique seu e-mail para confirmar.");
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      toast.success("Login realizado com sucesso!");
     } catch (error: any) {
       toast.error(error.message || "Erro ao autenticar");
     } finally {
@@ -97,13 +92,9 @@ export default function Auth() {
           </div>
 
           <div className="mb-7">
-            <h1 className="font-heading text-h1 tracking-tight">
-              {isLogin ? "Entrar" : "Criar conta"}
-            </h1>
+            <h1 className="font-heading text-h1 tracking-tight">Entrar</h1>
             <p className="text-sm text-muted-foreground mt-1.5">
-              {isLogin
-                ? "Acesse o CRM do escritório com suas credenciais."
-                : "Cadastre-se para solicitar acesso ao sistema."}
+              Acesse o CRM do escritório com suas credenciais.
             </p>
           </div>
 
@@ -127,20 +118,13 @@ export default function Auth() {
                 <Input
                   id="password"
                   type="password"
-                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  autoComplete="current-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={6}
                   aria-required="true"
-                  aria-describedby={!isLogin ? "password-hint" : undefined}
                 />
-                {!isLogin && (
-                  <p id="password-hint" className="text-[11px] text-muted-foreground">
-                    Mínimo 8 caracteres, com letras e números.
-                  </p>
-                )}
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? (
@@ -148,20 +132,13 @@ export default function Auth() {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                     Aguarde...
                   </>
-                ) : isLogin ? "Entrar" : "Cadastrar"}
+                ) : "Entrar"}
               </Button>
             </form>
           </Card>
 
-          <p className="text-center text-sm text-muted-foreground mt-5">
-            {isLogin ? "Não tem conta?" : "Já tem conta?"}{" "}
-            <button
-              type="button"
-              className="text-primary font-medium underline-offset-4 hover:underline focus-visible:underline"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin ? "Cadastre-se" : "Faça login"}
-            </button>
+          <p className="text-center text-xs text-muted-foreground mt-5">
+            Não tem acesso? Solicite a um administrador.
           </p>
         </div>
       </main>

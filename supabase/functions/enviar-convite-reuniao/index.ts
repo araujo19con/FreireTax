@@ -15,12 +15,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
-// CORS — restrito ao(s) frontend(s) conhecido(s). Para testes locais, o
-// header ALLOWED_ORIGINS pode conter uma lista separada por vírgula.
-const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "*")
+// CORS — fail-closed. Sem ALLOWED_ORIGINS configurado, rejeita todas as origens
+// cross-domain. Em produção, setar como "https://freire-tax.vercel.app".
+const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+if (ALLOWED_ORIGINS.length === 0) {
+  console.warn("[enviar-convite-reuniao] ALLOWED_ORIGINS não configurado — CORS rejeitará todas as origens cross-domain");
+}
 
 function corsFor(req: Request) {
   const origin = req.headers.get("origin") ?? "";

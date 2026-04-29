@@ -24,8 +24,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 
-const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "*")
+// Fail-closed: sem ALLOWED_ORIGINS configurado, nenhuma origem cross-domain é aceita.
+const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
   .split(",").map((s) => s.trim()).filter(Boolean);
+if (ALLOWED_ORIGINS.length === 0) {
+  console.warn("[backup-completo] ALLOWED_ORIGINS não configurado — CORS rejeitará todas as origens cross-domain");
+}
 
 function corsFor(req: Request) {
   const origin = req.headers.get("origin") ?? "";

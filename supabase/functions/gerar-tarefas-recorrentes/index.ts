@@ -82,10 +82,14 @@ function todayIsoDate(): string {
 }
 
 Deno.serve(async (req) => {
-  // Auth simples — requer header com o SERVICE ROLE KEY ou cron com secret
+  // Auth obrigatória — sem CRON_SECRET configurada, função fica fechada (fail closed)
   const authHeader = req.headers.get("authorization") ?? "";
   const expectedKey = Deno.env.get("CRON_SECRET") ?? "";
-  if (expectedKey && authHeader !== `Bearer ${expectedKey}`) {
+  if (!expectedKey) {
+    console.error("[gerar-tarefas-recorrentes] CRON_SECRET não configurada — função fechada");
+    return new Response(JSON.stringify({ error: "function not configured" }), { status: 503 });
+  }
+  if (authHeader !== `Bearer ${expectedKey}`) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
   }
 
