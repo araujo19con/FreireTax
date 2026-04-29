@@ -616,7 +616,7 @@ export default function Prospeccao() {
                             <button
                               type="button"
                               className="truncate text-left hover:underline focus-visible:underline"
-                              onClick={(e) => { e.stopPropagation(); setDetailEmpresaId(p.empresa_id); }}
+                              onClick={(e) => { e.stopPropagation(); if (emp?.id) setDetailEmpresaId(emp.id); }}
                             >
                               {emp?.nome || "—"}
                             </button>
