@@ -444,33 +444,37 @@ export default function Importacao() {
           `Enriquecendo ${inserted.length} novas empresas com dados da Receita...`
         );
 
-        const CHUNK = 3;
+        // BrasilAPI: sequencial com delay — paralelo explode o rate limit (~3 req/s)
         let done = 0;
         let errors = 0;
-        for (let i = 0; i < inserted.length; i += CHUNK) {
-          const chunk = inserted.slice(i, i + CHUNK);
-          await Promise.all(
-            chunk.map(async (emp) => {
-              try {
-                const { data, error: enErr } = await supabase.functions.invoke(
-                  "enriquecer-cnpj",
-                  { body: { cnpj: emp.cnpj, empresa_id: emp.id } }
-                );
-                if (enErr || data?.error) {
-                  errors += 1;
-                  return;
-                }
-                // Faixa de Funcionários, Faixa de Faturamento e Regime Tributário
-                // vêm apenas da planilha importada — não são inferidos automaticamente.
-              } catch {
-                errors += 1;
-              } finally {
-                done += 1;
-                setEnrichProgress({ done, total: inserted.length, errors });
+        for (let i = 0; i < inserted.length; i++) {
+          const emp = inserted[i];
+          let ok = false;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const { data, error: enErr } = await supabase.functions.invoke(
+                "enriquecer-cnpj",
+                { body: { cnpj: emp.cnpj, empresa_id: emp.id } }
+              );
+              // Detecta rate limit pelo body do erro (edge fn retorna 400 para tudo)
+              const errMsg: string =
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (enErr as any)?.message ?? data?.error ?? "";
+              if (errMsg.toLowerCase().includes("rate limit") && attempt < 2) {
+                await new Promise((r) => setTimeout(r, 8000 * (attempt + 1)));
+                continue;
               }
-            })
-          );
-          await new Promise((r) => setTimeout(r, 300));
+              ok = !enErr && !data?.error;
+            } catch {
+              // rede/timeout — não retenta
+            }
+            break;
+          }
+          if (!ok) errors += 1;
+          done += 1;
+          setEnrichProgress({ done, total: inserted.length, errors });
+          // 450ms entre requisições — abaixo do limite ~3 req/s da BrasilAPI
+          if (i < inserted.length - 1) await new Promise((r) => setTimeout(r, 450));
         }
 
         toast.success(
