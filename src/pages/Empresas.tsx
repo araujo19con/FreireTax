@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, DragEvent } from "react";
+import { useEffect, useMemo, useState, DragEvent, lazy, Suspense } from "react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ import { EmpresasTableView } from "./empresas/EmpresasTableView";
 import { EmpresasCardView } from "./empresas/EmpresasCardView";
 import { EmpresasKanbanView } from "./empresas/EmpresasKanbanView";
 import { EmpresaDetailSheet } from "./empresas/EmpresaDetailSheet";
-import { EmpresasMapView } from "./empresas/EmpresasMapView";
+const EmpresasMapView = lazy(() => import("./empresas/EmpresasMapView").then(m => ({ default: m.EmpresasMapView })));
 
 import {
   useEmpresas, useCreateEmpresa, useUpdateEmpresa, useDeleteEmpresa,
@@ -582,7 +582,9 @@ export default function Empresas() {
           )}
 
           {view === "mapa" && (
-            <EmpresasMapView onOpenDetail={setDetailEmpresa} />
+            <Suspense fallback={<div className="flex items-center justify-center h-96 text-muted-foreground text-sm">Carregando mapa…</div>}>
+              <EmpresasMapView onOpenDetail={setDetailEmpresa} />
+            </Suspense>
           )}
         </div>
 
