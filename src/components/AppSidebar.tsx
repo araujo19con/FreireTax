@@ -83,7 +83,7 @@ const adminItems: ItemDef[] = [
   { title: "Administração",          url: "/admin",                  icon: Settings },
   { title: "Templates de Proposta",  url: "/propostas/templates",    icon: FileText, gestorOrAdmin: true },
   { title: "Usuários",               url: "/usuarios",               icon: Users, adminOnly: true },
-  { title: "Auditoria",              url: "/auditoria",              icon: Shield },
+  { title: "Auditoria",              url: "/auditoria",              icon: Shield, gestorOrAdmin: true },
 ];
 
 type CountState = {

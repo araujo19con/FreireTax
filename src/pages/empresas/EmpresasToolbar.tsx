@@ -10,13 +10,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  Search, X, LayoutGrid, Table as TableIcon, Kanban,
+  Search, X, LayoutGrid, Table as TableIcon, Kanban, Map,
   Download, FolderPlus, Gavel, Trash2, ChevronDown, FileSpreadsheet, FileText,
 } from "lucide-react";
 import type { EmpresaFilters, EmpresaSort } from "@/hooks/useEmpresas";
 import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
 
-export type EmpresasView = "table" | "cards" | "kanban";
+export type EmpresasView = "table" | "cards" | "kanban" | "mapa";
 
 interface EmpresasToolbarProps {
   search: string;
@@ -55,44 +55,50 @@ export function EmpresasToolbar({
   return (
     <div className="space-y-3">
       <div className="flex gap-2 flex-wrap items-center">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[240px] max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden />
-          <Input
-            placeholder="Buscar nome, CNPJ, razão social..."
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-9"
-          />
-          {search && (
-            <Button
-              variant="ghost" size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-              onClick={() => onSearchChange("")}
-              aria-label="Limpar busca"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
+        {/* Search — oculto no mapa (filtros ficam no painel lateral do mapa) */}
+        {view !== "mapa" && (
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden />
+            <Input
+              placeholder="Buscar nome, CNPJ, razão social..."
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="pl-9"
+            />
+            {search && (
+              <Button
+                variant="ghost" size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={() => onSearchChange("")}
+                aria-label="Limpar busca"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
 
-        {/* Filtros — componente compartilhado */}
-        <EmpresaFilterPopover filters={filters} onChange={onFiltersChange} />
+        {/* Filtros — oculto no mapa */}
+        {view !== "mapa" && (
+          <EmpresaFilterPopover filters={filters} onChange={onFiltersChange} />
+        )}
 
-        {/* Ordenação */}
-        <Select value={sort} onValueChange={(v) => onSortChange(v as EmpresaSort)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Ordenar" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="recent">Mais recentes</SelectItem>
-            <SelectItem value="nome_asc">Nome A → Z</SelectItem>
-            <SelectItem value="nome_desc">Nome Z → A</SelectItem>
-            <SelectItem value="valor_desc">Valor potencial ↓</SelectItem>
-            <SelectItem value="capital_desc">Capital social ↓</SelectItem>
-            <SelectItem value="data_abertura_desc">Data abertura ↓</SelectItem>
-          </SelectContent>
-        </Select>
+        {/* Ordenação — oculta no mapa */}
+        {view !== "mapa" && (
+          <Select value={sort} onValueChange={(v) => onSortChange(v as EmpresaSort)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Ordenar" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="recent">Mais recentes</SelectItem>
+              <SelectItem value="nome_asc">Nome A → Z</SelectItem>
+              <SelectItem value="nome_desc">Nome Z → A</SelectItem>
+              <SelectItem value="valor_desc">Valor potencial ↓</SelectItem>
+              <SelectItem value="capital_desc">Capital social ↓</SelectItem>
+              <SelectItem value="data_abertura_desc">Data abertura ↓</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
 
         {/* View toggle */}
         <ToggleGroup
@@ -109,6 +115,9 @@ export function EmpresasToolbar({
           </ToggleGroupItem>
           <ToggleGroupItem value="kanban" aria-label="Kanban" className="data-[state=on]:bg-muted">
             <Kanban className="h-4 w-4" />
+          </ToggleGroupItem>
+          <ToggleGroupItem value="mapa" aria-label="Mapa" className="data-[state=on]:bg-muted">
+            <Map className="h-4 w-4" />
           </ToggleGroupItem>
         </ToggleGroup>
 
@@ -136,8 +145,8 @@ export function EmpresasToolbar({
         </DropdownMenu>
       </div>
 
-      {/* Chips de filtros ativos — componente compartilhado */}
-      <EmpresaFilterChips filters={filters} onChange={onFiltersChange} />
+      {/* Chips de filtros ativos — ocultos no mapa */}
+      {view !== "mapa" && <EmpresaFilterChips filters={filters} onChange={onFiltersChange} />}
 
       {/* Bulk actions bar */}
       {selCount > 0 && (

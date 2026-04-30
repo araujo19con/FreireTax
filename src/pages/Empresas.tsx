@@ -28,6 +28,7 @@ import { EmpresasTableView } from "./empresas/EmpresasTableView";
 import { EmpresasCardView } from "./empresas/EmpresasCardView";
 import { EmpresasKanbanView } from "./empresas/EmpresasKanbanView";
 import { EmpresaDetailSheet } from "./empresas/EmpresaDetailSheet";
+import { EmpresasMapView } from "./empresas/EmpresasMapView";
 
 import {
   useEmpresas, useCreateEmpresa, useUpdateEmpresa, useDeleteEmpresa,
@@ -387,8 +388,8 @@ export default function Empresas() {
       <EmpresasHeader />
 
       <div className="flex gap-5 items-start">
-        {/* LEFT — Pastas sidebar */}
-        <aside className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
+        {/* LEFT — Pastas sidebar (oculta no modo mapa) */}
+        <aside className={`w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block ${view === "mapa" ? "!hidden" : ""}`}>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pastas</h3>
             <Button
@@ -579,10 +580,14 @@ export default function Empresas() {
               onEdit={setEmpresaToEdit}
             />
           )}
+
+          {view === "mapa" && (
+            <EmpresasMapView onOpenDetail={setDetailEmpresa} />
+          )}
         </div>
 
-        {/* RIGHT — Ações sidebar */}
-        <aside className="w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block">
+        {/* RIGHT — Ações sidebar (oculta no modo mapa) */}
+        <aside className={`w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block ${view === "mapa" ? "!hidden" : ""}`}>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ações Tributárias</h3>
           </div>
