@@ -64,11 +64,11 @@ export const STATE_MAP_PROJECTIONS: Record<string, { center: [number, number]; s
 };
 
 export function ibgeStatesGeoUrl(): string {
-  return "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application/json&qualidade=intermediario&resolucao=2";
+  return "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application/json&qualidade=intermediaria&resolucao=3";
 }
 
 export function ibgeMunicipiosGeoUrl(ufCode: number): string {
-  return `https://servicodados.ibge.gov.br/api/v3/malhas/estados/${ufCode}?formato=application/json&qualidade=intermediario&resolucao=5`;
+  return `https://servicodados.ibge.gov.br/api/v3/malhas/estados/${ufCode}?formato=application/json&qualidade=intermediaria&resolucao=5`;
 }
 
 export function ibgeMunicipioNomesUrl(uf: string): string {

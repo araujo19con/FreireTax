@@ -64,9 +64,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     queryKey: ["ibge-states-geo"],
     queryFn: async () => {
       const r = await fetch(ibgeStatesGeoUrl());
+      if (!r.ok) throw new Error(`IBGE estados: ${r.status}`);
       return r.json();
     },
     staleTime: 24 * 60 * 60 * 1000,
+    retry: 2,
   });
 
   // ── GeoJSON municípios do estado selecionado ────────────────────────────────
@@ -75,10 +77,12 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     queryKey: ["ibge-mun-geo", selectedUFCode],
     queryFn: async () => {
       const r = await fetch(ibgeMunicipiosGeoUrl(selectedUFCode!));
+      if (!r.ok) throw new Error(`IBGE municípios: ${r.status}`);
       return r.json();
     },
     enabled: !!selectedUFCode,
     staleTime: 24 * 60 * 60 * 1000,
+    retry: 2,
   });
 
   // ── Nomes dos municípios (IBGE code → nome) ─────────────────────────────────
@@ -86,10 +90,12 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     queryKey: ["ibge-mun-nomes", selectedUF],
     queryFn: async () => {
       const r = await fetch(ibgeMunicipioNomesUrl(selectedUF!));
+      if (!r.ok) throw new Error(`IBGE nomes: ${r.status}`);
       return r.json() as Promise<Array<{ id: number; nome: string }>>;
     },
     enabled: !!selectedUF,
     staleTime: 24 * 60 * 60 * 1000,
+    retry: 2,
   });
 
   const munNomeLookup = useMemo(() => {
