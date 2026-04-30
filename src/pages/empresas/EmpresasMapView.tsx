@@ -3,8 +3,8 @@ import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  UF_IBGE_CODE, IBGE_CODE_TO_UF, UF_NOME, UF_LABEL_COORDS,
-  STATE_MAP_PROJECTIONS, ibgeStatesGeoUrl, ibgeMunicipiosGeoUrl, ibgeMunicipioNomesUrl,
+  UF_IBGE_CODE, UF_NOME, UF_LABEL_COORDS,
+  STATE_MAP_PROJECTIONS, fetchBrazilStatesGeoJSON, ibgeMunicipiosGeoUrl, ibgeMunicipioNomesUrl,
 } from "@/lib/ibgeGeo";
 import { normalizeMunicipio } from "@/lib/municipiosBrasil";
 import { Badge } from "@/components/ui/badge";
@@ -61,14 +61,10 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   // ── GeoJSON estados Brasil ──────────────────────────────────────────────────
   const { data: statesGeo, isLoading: loadingStates } = useQuery({
-    queryKey: ["ibge-states-geo"],
-    queryFn: async () => {
-      const r = await fetch(ibgeStatesGeoUrl());
-      if (!r.ok) throw new Error(`IBGE estados: ${r.status}`);
-      return r.json();
-    },
+    queryKey: ["ibge-states-geo-v2"],
+    queryFn: fetchBrazilStatesGeoJSON,
     staleTime: 24 * 60 * 60 * 1000,
-    retry: 2,
+    retry: 1,
   });
 
   // ── GeoJSON municípios do estado selecionado ────────────────────────────────
@@ -164,8 +160,8 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   const panelSubtitle = selectedMunNome ? UF_NOME[selectedUF!] : "Brasil";
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-  function handleStateClick(geo: { properties: { codarea: string } }) {
-    const uf = IBGE_CODE_TO_UF[parseInt(geo.properties.codarea)];
+  function handleStateClick(geo: { properties: { codarea: string; uf?: string } }) {
+    const uf = geo.properties.uf ?? "";
     if (!uf) return;
     setSelectedUF(uf);
     setSelectedMunNome(null);
@@ -303,7 +299,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
                   if (!selectedUF) {
                     // ─ Vista estados ─
-                    const uf    = IBGE_CODE_TO_UF[parseInt(code)];
+                    const uf    = (geo.properties.uf as string) ?? code;
                     const ratio = uf ? (ufCounts[uf] || 0) / maxUF : 0;
                     const sel   = selectedUF === uf;
                     const fill  = getHeatColor(ratio, hov, sel);
@@ -322,8 +318,8 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                         onClick={() => handleStateClick(geo)}
                         onMouseEnter={(e) => handleMouseEnter(
                           e as unknown as React.MouseEvent, code,
-                          uf ? UF_NOME[uf] : code,
-                          uf ? (ufCounts[uf] || 0) : 0,
+                          UF_NOME[uf] ?? uf,
+                          ufCounts[uf] || 0,
                         )}
                         onMouseMove={handleMouseMove as unknown as (e: unknown) => void}
                         onMouseLeave={handleMouseLeave}

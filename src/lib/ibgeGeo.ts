@@ -1,4 +1,6 @@
 // Mapeamento UF ↔ código IBGE e dados geográficos auxiliares para o mapa Brasil.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+import { feature } from "topojson-client";
 
 export const UF_IBGE_CODE: Record<string, number> = {
   AC: 12, AL: 27, AM: 13, AP: 16, BA: 29, CE: 23, DF: 53, ES: 32,
@@ -63,12 +65,40 @@ export const STATE_MAP_PROJECTIONS: Record<string, { center: [number, number]; s
   TO: { center: [-48.4, -10.2], scale: 1600 },
 };
 
-export function ibgeStatesGeoUrl(): string {
-  return "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application/json&qualidade=intermediaria&resolucao=3";
-}
-
 export function ibgeMunicipiosGeoUrl(ufCode: number): string {
   return `https://servicodados.ibge.gov.br/api/v3/malhas/estados/${ufCode}?formato=application/json&qualidade=intermediaria&resolucao=5`;
+}
+
+/**
+ * Busca os 27 estados individualmente (qualidade=minima para o overview) e
+ * combina num GeoJSON FeatureCollection com propriedades { codarea, uf }.
+ * A API IBGE não fornece endpoint único com estados separados — paises/BR
+ * retorna um MultiPolygon indivisível; precisamos dos estados individuais.
+ */
+export async function fetchBrazilStatesGeoJSON(): Promise<object> {
+  const entries = Object.entries(UF_IBGE_CODE); // [["AC",12], ...]
+  const results = await Promise.all(
+    entries.map(async ([uf, code]) => {
+      try {
+        const r = await fetch(
+          `https://servicodados.ibge.gov.br/api/v3/malhas/estados/${code}?formato=application/json&qualidade=minima`,
+        );
+        if (!r.ok) return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const topo = await r.json() as any;
+        const obj = Object.values(topo.objects)[0];
+        if (!obj) return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fc = feature(topo, obj as any) as any;
+        const feat = fc.type === "FeatureCollection" ? fc.features[0] : fc;
+        if (!feat) return null;
+        return { ...feat, properties: { codarea: String(code), uf } };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return { type: "FeatureCollection", features: results.filter(Boolean) };
 }
 
 export function ibgeMunicipioNomesUrl(uf: string): string {
