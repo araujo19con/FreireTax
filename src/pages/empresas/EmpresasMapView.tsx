@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef } from "react";
-import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, MapPin, Building2, X, Search, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Building2, X, Search, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { formatCNPJ } from "@/lib/format";
 import type { Empresa } from "@/hooks/useEmpresas";
 
@@ -44,7 +44,18 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   const [hoveredCode, setHoveredCode]        = useState<string | null>(null);
   const [panelFilters, setPanelFilters]      = useState<PanelFilters>({ search: "", situacao: "", porte: "" });
   const [tooltip, setTooltip]                = useState<{ name: string; count: number; x: number; y: number } | null>(null);
+  const [mapPosition, setMapPosition]        = useState<{ zoom: number; center: [number, number] }>({
+    zoom: 1, center: BRAZIL_PROJECTION.center,
+  });
   const mapRef = useRef<HTMLDivElement>(null);
+
+  // Reseta zoom e pan ao navegar entre vista Brasil ↔ estado
+  useEffect(() => {
+    const c: [number, number] = (selectedUF && STATE_MAP_PROJECTIONS[selectedUF])
+      ? STATE_MAP_PROJECTIONS[selectedUF].center
+      : BRAZIL_PROJECTION.center;
+    setMapPosition({ zoom: 1, center: c });
+  }, [selectedUF]);
 
   // ── Contagem de empresas por UF (colore os estados) ────────────────────────
   const { data: ufCounts = {} } = useQuery({
@@ -119,11 +130,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   }, [ufEmpresas]);
 
   // ── Empresas filtradas para o painel ───────────────────────────────────────
-  const panelEmpresas = useMemo(() => {
+  const panelEmpresasFull = useMemo(() => {
     let list = [...ufEmpresas];
     if (selectedMunNome) {
       const norm = normalizeMunicipio(selectedMunNome);
-      list = list.filter(e => normalizeMunicipio(e.municipio) === norm);
+      list = list.filter(e => normalizeMunicipio(e.municipio ?? "") === norm);
     }
     if (panelFilters.situacao) list = list.filter(e => e.situacao_cadastral === panelFilters.situacao);
     if (panelFilters.porte)    list = list.filter(e => e.porte === panelFilters.porte);
@@ -135,8 +146,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
         e.razao_social?.toLowerCase().includes(s)
       );
     }
-    return list.slice(0, 200);
+    return list;
   }, [ufEmpresas, selectedMunNome, panelFilters]);
+
+  // Exibe no máximo 200 itens na lista para performance de renderização
+  const panelEmpresas = useMemo(() => panelEmpresasFull.slice(0, 200), [panelEmpresasFull]);
 
   // ── Escalas de cor ─────────────────────────────────────────────────────────
   const maxUF  = useMemo(() => Math.max(1, ...Object.values(ufCounts)),  [ufCounts]);
@@ -202,6 +216,15 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   function handleMouseLeave() {
     setHoveredCode(null);
     setTooltip(null);
+  }
+
+  function handleZoomIn() {
+    const max = selectedUF ? 12 : 4;
+    setMapPosition(p => ({ ...p, zoom: Math.min(p.zoom * 1.5, max) }));
+  }
+
+  function handleZoomOut() {
+    setMapPosition(p => ({ ...p, zoom: Math.max(p.zoom / 1.5, 1) }));
   }
 
   return (
@@ -285,6 +308,15 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
             projectionConfig={projection}
             style={{ width: "100%", height: "100%" }}
           >
+            <ZoomableGroup
+              zoom={mapPosition.zoom}
+              center={mapPosition.center}
+              minZoom={1}
+              maxZoom={selectedUF ? 12 : 4}
+              onMoveEnd={({ coordinates, zoom }) =>
+                setMapPosition({ center: coordinates as [number, number], zoom })
+              }
+            >
             <Geographies geography={currentGeo}>
               {({ geographies }) =>
                 geographies.map((geo) => {
@@ -372,6 +404,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                   </Marker>
                 );
               })}
+            </ZoomableGroup>
           </ComposableMap>
         )}
 
@@ -391,6 +424,40 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
               {selectedUF ? maxMun : maxUF}
             </span>
           </div>
+        </div>
+
+        {/* Controles de zoom */}
+        <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
+          <Button
+            variant="secondary" size="icon" className="h-7 w-7 shadow-sm"
+            onClick={handleZoomIn}
+            aria-label="Ampliar"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="secondary" size="icon" className="h-7 w-7 shadow-sm"
+            onClick={handleZoomOut}
+            disabled={mapPosition.zoom <= 1}
+            aria-label="Reduzir"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </Button>
+          {mapPosition.zoom > 1.05 && (
+            <Button
+              variant="secondary" size="icon" className="h-7 w-7 shadow-sm"
+              onClick={() => {
+                const c: [number, number] = (selectedUF && STATE_MAP_PROJECTIONS[selectedUF])
+                  ? STATE_MAP_PROJECTIONS[selectedUF].center
+                  : BRAZIL_PROJECTION.center;
+                setMapPosition({ zoom: 1, center: c });
+              }}
+              aria-label="Resetar zoom"
+              title="Resetar zoom"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
 
         {/* Hint quando mapa vazio */}
@@ -427,7 +494,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                   <Building2 className="h-3 w-3" />
                   {loadingUfEmpresas
                     ? "carregando…"
-                    : `${panelEmpresas.length} empresa${panelEmpresas.length !== 1 ? "s" : ""}`
+                    : `${panelEmpresasFull.length} empresa${panelEmpresasFull.length !== 1 ? "s" : ""}`
                   }
                 </Badge>
                 {selectedUF && !selectedMunNome && (
@@ -557,9 +624,9 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                       </div>
                     </button>
                   ))}
-                  {panelEmpresas.length >= 200 && (
+                  {panelEmpresasFull.length > 200 && (
                     <p className="text-center text-xs text-muted-foreground py-4 px-4">
-                      Mostrando 200 registros. Use os filtros para refinar.
+                      Mostrando 200 de {panelEmpresasFull.length}. Use os filtros para refinar.
                     </p>
                   )}
                 </div>
