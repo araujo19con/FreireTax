@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
   UF_IBGE_CODE, UF_NOME, UF_LABEL_COORDS,
-  STATE_MAP_PROJECTIONS, fetchBrazilStatesGeoJSON, ibgeMunicipiosGeoUrl, ibgeMunicipioNomesUrl,
+  STATE_MAP_PROJECTIONS, fetchBrazilStatesGeoJSON, fetchStateMunicipiosGeoJSON,
 } from "@/lib/ibgeGeo";
 import { normalizeMunicipio } from "@/lib/municipiosBrasil";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +50,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   const { data: ufCounts = {} } = useQuery({
     queryKey: ["empresas-uf-counts"],
     queryFn: async () => {
-      const { data } = await supabase.from("empresas").select("uf").not("uf", "is", null);
+      const { data } = await supabase
+        .from("empresas")
+        .select("uf")
+        .not("uf", "is", null)
+        .limit(100000);
       return (data ?? []).reduce((acc: Record<string, number>, { uf }) => {
         if (uf) acc[uf] = (acc[uf] || 0) + 1;
         return acc;
@@ -67,38 +71,28 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     retry: 1,
   });
 
-  // ── GeoJSON municípios do estado selecionado ────────────────────────────────
+  // ── GeoJSON municípios do estado selecionado (nomes + boundaries combinados) ──
   const selectedUFCode = selectedUF ? UF_IBGE_CODE[selectedUF] : null;
   const { data: munGeo, isLoading: loadingMun } = useQuery({
-    queryKey: ["ibge-mun-geo", selectedUFCode],
-    queryFn: async () => {
-      const r = await fetch(ibgeMunicipiosGeoUrl(selectedUFCode!));
-      if (!r.ok) throw new Error(`IBGE municípios: ${r.status}`);
-      return r.json();
-    },
-    enabled: !!selectedUFCode,
+    queryKey: ["ibge-mun-geo-v2", selectedUF],
+    queryFn: () => fetchStateMunicipiosGeoJSON(selectedUF!, selectedUFCode!),
+    enabled: !!selectedUF && !!selectedUFCode,
     staleTime: 24 * 60 * 60 * 1000,
-    retry: 2,
+    retry: 1,
   });
 
-  // ── Nomes dos municípios (IBGE code → nome) ─────────────────────────────────
-  const { data: munNomesRaw = [] } = useQuery({
-    queryKey: ["ibge-mun-nomes", selectedUF],
-    queryFn: async () => {
-      const r = await fetch(ibgeMunicipioNomesUrl(selectedUF!));
-      if (!r.ok) throw new Error(`IBGE nomes: ${r.status}`);
-      return r.json() as Promise<Array<{ id: number; nome: string }>>;
-    },
-    enabled: !!selectedUF,
-    staleTime: 24 * 60 * 60 * 1000,
-    retry: 2,
-  });
-
+  // Deriva lookup codarea → nome diretamente do geo já combinado
   const munNomeLookup = useMemo(() => {
     const m: Record<string, string> = {};
-    for (const { id, nome } of munNomesRaw) m[String(id)] = nome;
+    if (!munGeo) return m;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const f of ((munGeo as any).features ?? [])) {
+      if (f.properties?.codarea && f.properties?.nome) {
+        m[f.properties.codarea] = f.properties.nome;
+      }
+    }
     return m;
-  }, [munNomesRaw]);
+  }, [munGeo]);
 
   // ── Empresas do estado selecionado (base para painel e heatmap municipal) ───
   const { data: ufEmpresas = [], isLoading: loadingUfEmpresas } = useQuery({

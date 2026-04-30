@@ -104,3 +104,86 @@ export async function fetchBrazilStatesGeoJSON(): Promise<object> {
 export function ibgeMunicipioNomesUrl(uf: string): string {
   return `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`;
 }
+
+/**
+ * Busca o GeoJSON de municípios de um estado.
+ * Tenta primeiro via resolucao=6 (bulk). Se retornar apenas 1 feature
+ * (boundary do estado inteiro), cai em fallback: busca cada município
+ * individualmente no endpoint /malhas/municipios/{id} em lotes.
+ */
+export async function fetchStateMunicipiosGeoJSON(
+  uf: string,
+  ufCode: number,
+): Promise<{ type: "FeatureCollection"; features: object[] }> {
+  // Passo 1 — busca nomes/códigos dos municípios
+  const namesRes = await fetch(ibgeMunicipioNomesUrl(uf));
+  if (!namesRes.ok) throw new Error(`IBGE nomes: ${namesRes.status}`);
+  const munList = (await namesRes.json()) as Array<{ id: number; nome: string }>;
+
+  const codeToNome: Record<string, string> = {};
+  for (const { id, nome } of munList) codeToNome[String(id)] = nome;
+
+  // Passo 2 — tenta bulk (resolucao=6 pode retornar GeometryCollection de municípios)
+  try {
+    const geoRes = await fetch(
+      `https://servicodados.ibge.gov.br/api/v3/malhas/estados/${ufCode}?formato=application/json&qualidade=minima&resolucao=6`,
+    );
+    if (geoRes.ok) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const topo = (await geoRes.json()) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const obj = Object.values(topo.objects)[0] as any;
+      if (obj) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fc = feature(topo, obj) as any;
+        const feats = fc.type === "FeatureCollection" ? fc.features : [fc];
+        if (feats.length > 1) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return {
+            type: "FeatureCollection",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            features: feats.map((f: any) => ({
+              ...f,
+              properties: {
+                codarea: f.properties?.codarea ?? "",
+                nome: codeToNome[f.properties?.codarea ?? ""] ?? f.properties?.codarea ?? "",
+              },
+            })),
+          };
+        }
+      }
+    }
+  } catch {
+    // fallthrough para busca individual
+  }
+
+  // Passo 3 — fallback: busca cada município individualmente em lotes de 25
+  const BATCH = 25;
+  const allFeatures: object[] = [];
+  for (let i = 0; i < munList.length; i += BATCH) {
+    const batch = munList.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map(async ({ id, nome }) => {
+        try {
+          const r = await fetch(
+            `https://servicodados.ibge.gov.br/api/v3/malhas/municipios/${id}?formato=application/json&qualidade=minima`,
+          );
+          if (!r.ok) return null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const topo = (await r.json()) as any;
+          const obj = Object.values(topo.objects)[0];
+          if (!obj) return null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fc = feature(topo, obj as any) as any;
+          const feat = fc.type === "FeatureCollection" ? fc.features[0] : fc;
+          if (!feat) return null;
+          return { ...feat, properties: { codarea: String(id), nome } };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    allFeatures.push(...results.filter(Boolean));
+  }
+  return { type: "FeatureCollection", features: allFeatures };
+}
