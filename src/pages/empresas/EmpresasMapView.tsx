@@ -10,21 +10,21 @@ import { normalizeMunicipio } from "@/lib/municipiosBrasil";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, ChevronRight, MapPin, Building2, X, Search, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { formatCNPJ } from "@/lib/format";
-import type { Empresa } from "@/hooks/useEmpresas";
+import type { Empresa, EmpresaFilters } from "@/hooks/useEmpresas";
+import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
+import { applyEmpresaFiltersInMemory } from "@/lib/empresaFiltersInMemory";
 
 interface EmpresasMapViewProps {
   onOpenDetail: (empresa: Empresa) => void;
 }
 
-interface PanelFilters {
+interface PanelState {
   search: string;
-  situacao: string;
-  porte: string;
+  advanced: EmpresaFilters;
 }
 
 const BRAZIL_PROJECTION = { center: [-55, -15] as [number, number], scale: 750 };
@@ -42,7 +42,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   const [selectedUF, setSelectedUF]         = useState<string | null>(null);
   const [selectedMunNome, setSelectedMunNome] = useState<string | null>(null);
   const [hoveredCode, setHoveredCode]        = useState<string | null>(null);
-  const [panelFilters, setPanelFilters]      = useState<PanelFilters>({ search: "", situacao: "", porte: "" });
+  const [panelFilters, setPanelFilters]      = useState<PanelState>({ search: "", advanced: {} });
   const [tooltip, setTooltip]                = useState<{ name: string; count: number; x: number; y: number } | null>(null);
   const [mapPosition, setMapPosition]        = useState<{ zoom: number; center: [number, number] }>({
     zoom: 1, center: BRAZIL_PROJECTION.center,
@@ -118,6 +118,20 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     staleTime: 60 * 1000,
   });
 
+  // ── Set de empresa_ids com elegibilidade (para filtro "Tem ação vinculada") ─
+  // Só roda quando o usuário ativa o filtro temAcao no popover, evitando custo
+  // desnecessário quando ele não está em uso.
+  const temAcaoAtivo = panelFilters.advanced.temAcao != null;
+  const { data: withAcaoIds } = useQuery({
+    queryKey: ["elegibilidade-empresa-ids"],
+    queryFn: async () => {
+      const { data } = await supabase.from("elegibilidade").select("empresa_id");
+      return new Set((data ?? []).map((r: { empresa_id: string }) => r.empresa_id));
+    },
+    enabled: temAcaoAtivo,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Contagem por município normalizado (para colorir o mapa de municípios)
   const munCounts = useMemo(() => {
     return ufEmpresas.reduce((acc: Record<string, number>, e) => {
@@ -131,13 +145,12 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   // ── Empresas filtradas para o painel ───────────────────────────────────────
   const panelEmpresasFull = useMemo(() => {
-    let list = [...ufEmpresas];
+    let list = ufEmpresas;
     if (selectedMunNome) {
       const norm = normalizeMunicipio(selectedMunNome);
       list = list.filter(e => normalizeMunicipio(e.municipio ?? "") === norm);
     }
-    if (panelFilters.situacao) list = list.filter(e => e.situacao_cadastral === panelFilters.situacao);
-    if (panelFilters.porte)    list = list.filter(e => e.porte === panelFilters.porte);
+    list = applyEmpresaFiltersInMemory(list, panelFilters.advanced, { withAcaoIds });
     if (panelFilters.search) {
       const s = panelFilters.search.toLowerCase();
       list = list.filter(e =>
@@ -147,7 +160,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
       );
     }
     return list;
-  }, [ufEmpresas, selectedMunNome, panelFilters]);
+  }, [ufEmpresas, selectedMunNome, panelFilters, withAcaoIds]);
 
   // Exibe no máximo 200 itens na lista para performance de renderização
   const panelEmpresas = useMemo(() => panelEmpresasFull.slice(0, 200), [panelEmpresasFull]);
@@ -173,14 +186,16 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     if (!uf) return;
     setSelectedUF(uf);
     setSelectedMunNome(null);
-    setPanelFilters({ search: "", situacao: "", porte: "" });
+    // Preserva os filtros avançados ao trocar de UF — útil pra comparar a mesma
+    // fatia (ex: "Lucro Real, 11-50 func.") entre estados. Só limpa a busca.
+    setPanelFilters((p) => ({ search: "", advanced: p.advanced }));
   }
 
   function handleMunClick(geo: { properties: { codarea: string } }) {
     const nome = munNomeLookup[geo.properties.codarea];
     if (!nome) return;
     setSelectedMunNome(prev => prev === nome ? null : nome);
-    setPanelFilters({ search: "", situacao: "", porte: "" });
+    setPanelFilters((p) => ({ search: "", advanced: p.advanced }));
   }
 
   function handleBack() {
@@ -508,56 +523,35 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
             {/* Filtros */}
             <div className="px-4 py-3 border-b border-border space-y-2 bg-muted/30">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar empresa…"
-                  value={panelFilters.search}
-                  onChange={(e) => setPanelFilters(f => ({ ...f, search: e.target.value }))}
-                  className="pl-8 h-8 text-sm bg-background"
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar empresa…"
+                    value={panelFilters.search}
+                    onChange={(e) => setPanelFilters(f => ({ ...f, search: e.target.value }))}
+                    className="pl-8 h-8 text-sm bg-background"
+                  />
+                  {panelFilters.search && (
+                    <button
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setPanelFilters(f => ({ ...f, search: "" }))}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <EmpresaFilterPopover
+                  excludeLocation
+                  filters={panelFilters.advanced}
+                  onChange={(f) => setPanelFilters(p => ({ ...p, advanced: f }))}
                 />
-                {panelFilters.search && (
-                  <button
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    onClick={() => setPanelFilters(f => ({ ...f, search: "" }))}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
               </div>
-              <div className="flex gap-2">
-                <Select
-                  value={panelFilters.situacao || "all"}
-                  onValueChange={(v) => setPanelFilters(f => ({ ...f, situacao: v === "all" ? "" : v }))}
-                >
-                  <SelectTrigger className="h-8 text-xs flex-1 bg-background">
-                    <SelectValue placeholder="Situação" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas situações</SelectItem>
-                    <SelectItem value="ATIVA">Ativa</SelectItem>
-                    <SelectItem value="BAIXADA">Baixada</SelectItem>
-                    <SelectItem value="INAPTA">Inapta</SelectItem>
-                    <SelectItem value="SUSPENSA">Suspensa</SelectItem>
-                    <SelectItem value="NULA">Nula</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={panelFilters.porte || "all"}
-                  onValueChange={(v) => setPanelFilters(f => ({ ...f, porte: v === "all" ? "" : v }))}
-                >
-                  <SelectTrigger className="h-8 text-xs flex-1 bg-background">
-                    <SelectValue placeholder="Porte" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos portes</SelectItem>
-                    <SelectItem value="MEI">MEI</SelectItem>
-                    <SelectItem value="ME">ME</SelectItem>
-                    <SelectItem value="EPP">EPP</SelectItem>
-                    <SelectItem value="DEMAIS">Demais</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <EmpresaFilterChips
+                excludeLocation
+                filters={panelFilters.advanced}
+                onChange={(f) => setPanelFilters(p => ({ ...p, advanced: f }))}
+              />
             </div>
 
             {/* Lista de empresas */}

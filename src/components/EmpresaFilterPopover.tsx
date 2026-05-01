@@ -50,12 +50,13 @@ function formatBRLCompact(v: number | null | undefined): string {
   return `R$ ${v.toFixed(0)}`;
 }
 
-export function activeFiltersCount(f: EmpresaFilters): number {
+export function activeFiltersCount(f: EmpresaFilters, opts?: { excludeLocation?: boolean }): number {
+  const skipLoc = opts?.excludeLocation === true;
   let n = 0;
   if (f.status?.length) n += f.status.length;
   if (f.porte?.length) n += f.porte.length;
   if (f.situacao?.length) n += f.situacao.length;
-  if (f.uf?.length) n += f.uf.length;
+  if (!skipLoc && f.uf?.length) n += f.uf.length;
   if (f.opcaoSimples != null) n++;
   if (f.enriquecida) n++;
   if (f.temAcao != null) n++;
@@ -67,15 +68,15 @@ export function activeFiltersCount(f: EmpresaFilters): number {
   if (f.faixaFuncionarios?.length) n += f.faixaFuncionarios.length;
   if (f.faixaFaturamento?.length) n += f.faixaFaturamento.length;
   if (f.regimeTributario?.length) n += f.regimeTributario.length;
-  if (f.municipios?.length) n += f.municipios.length;
-  if (f.interior) n++;
+  if (!skipLoc && f.municipios?.length) n += f.municipios.length;
+  if (!skipLoc && f.interior) n++;
   if (f.cnae?.trim()) n++;
   return n;
 }
 
 export function EmpresaFilterChips({
-  filters, onChange,
-}: { filters: EmpresaFilters; onChange: (f: EmpresaFilters) => void }) {
+  filters, onChange, excludeLocation,
+}: { filters: EmpresaFilters; onChange: (f: EmpresaFilters) => void; excludeLocation?: boolean }) {
   const chips: Array<{ label: string; onRemove: () => void; color?: string }> = [];
 
   filters.status?.forEach((v) =>
@@ -95,11 +96,13 @@ export function EmpresaFilterChips({
       color: v === "ATIVA" ? "bg-success/10 text-success border-success/30" : "bg-warning/10 text-warning border-warning/30",
       onRemove: () => onChange({ ...filters, situacao: (filters.situacao || []).filter((x) => x !== v) }),
     }));
-  filters.uf?.forEach((v) =>
-    chips.push({
-      label: `UF: ${v}`,
-      onRemove: () => onChange({ ...filters, uf: (filters.uf || []).filter((x) => x !== v) }),
-    }));
+  if (!excludeLocation) {
+    filters.uf?.forEach((v) =>
+      chips.push({
+        label: `UF: ${v}`,
+        onRemove: () => onChange({ ...filters, uf: (filters.uf || []).filter((x) => x !== v) }),
+      }));
+  }
   if (filters.opcaoSimples != null) {
     chips.push({
       label: `Simples: ${filters.opcaoSimples ? "Sim" : "Não"}`,
@@ -165,16 +168,18 @@ export function EmpresaFilterChips({
       label: `Faixa fat.: ${v}`,
       onRemove: () => onChange({ ...filters, faixaFaturamento: (filters.faixaFaturamento || []).filter((x) => x !== v) }),
     }));
-  filters.municipios?.forEach((v) =>
-    chips.push({
-      label: `Cidade: ${v}`,
-      onRemove: () => onChange({ ...filters, municipios: (filters.municipios || []).filter((x) => x !== v) }),
-    }));
-  if (filters.interior) {
-    chips.push({
-      label: "Interior (sem capital)",
-      onRemove: () => onChange({ ...filters, interior: false }),
-    });
+  if (!excludeLocation) {
+    filters.municipios?.forEach((v) =>
+      chips.push({
+        label: `Cidade: ${v}`,
+        onRemove: () => onChange({ ...filters, municipios: (filters.municipios || []).filter((x) => x !== v) }),
+      }));
+    if (filters.interior) {
+      chips.push({
+        label: "Interior (sem capital)",
+        onRemove: () => onChange({ ...filters, interior: false }),
+      });
+    }
   }
   if (filters.cnae?.trim()) {
     chips.push({
@@ -222,11 +227,14 @@ export function EmpresaFilterChips({
 interface EmpresaFilterPopoverProps {
   filters: EmpresaFilters;
   onChange: (f: EmpresaFilters) => void;
+  /** Esconde filtros de localização (UF, municípios, "interior") — usado no
+   *  painel do mapa onde o recorte geográfico já vem do clique no mapa. */
+  excludeLocation?: boolean;
 }
 
-export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopoverProps) {
+export function EmpresaFilterPopover({ filters, onChange, excludeLocation }: EmpresaFilterPopoverProps) {
   const [open, setOpen] = useState(false);
-  const nActive = activeFiltersCount(filters);
+  const nActive = activeFiltersCount(filters, { excludeLocation });
   const faixasQ = useFaixasDistintas();
   const faixasFunc = faixasQ.data?.funcionarios ?? [];
   const faixasFat = faixasQ.data?.faturamento ?? [];
@@ -338,28 +346,30 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
               </div>
             </section>
 
-            <section>
-              <Label className="text-xs font-semibold uppercase text-muted-foreground">UF</Label>
-              <div className="mt-2 grid grid-cols-7 gap-1">
-                {UF_OPTIONS.map((uf) => {
-                  const active = filters.uf?.includes(uf) ?? false;
-                  return (
-                    <button
-                      key={uf}
-                      type="button"
-                      onClick={() =>
-                        onChange({ ...filters, uf: toggleArrayValue(filters.uf, uf) })
-                      }
-                      className={`h-7 rounded text-[10px] font-mono transition-colors border ${
-                        active ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent"
-                      }`}
-                    >
-                      {uf}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            {!excludeLocation && (
+              <section>
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">UF</Label>
+                <div className="mt-2 grid grid-cols-7 gap-1">
+                  {UF_OPTIONS.map((uf) => {
+                    const active = filters.uf?.includes(uf) ?? false;
+                    return (
+                      <button
+                        key={uf}
+                        type="button"
+                        onClick={() =>
+                          onChange({ ...filters, uf: toggleArrayValue(filters.uf, uf) })
+                        }
+                        className={`h-7 rounded text-[10px] font-mono transition-colors border ${
+                          active ? "bg-primary text-primary-foreground border-primary" : "bg-muted hover:bg-muted/80 border-transparent"
+                        }`}
+                      >
+                        {uf}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             <section>
               <Label className="text-xs font-semibold uppercase text-muted-foreground">Regime tributário</Label>
@@ -687,29 +697,31 @@ export function EmpresaFilterPopover({ filters, onChange }: EmpresaFilterPopover
               </p>
             </section>
 
-            <section>
-              <Label className="text-xs font-semibold uppercase text-muted-foreground">Cidade (município)</Label>
-              <div className="mt-2">
-                <MunicipioMultiSelect
-                  selectedUFs={filters.uf ?? []}
-                  value={filters.municipios ?? []}
-                  onChange={(v) => onChange({ ...filters, municipios: v.length ? v : undefined, interior: undefined })}
-                />
-                {(filters.uf?.length ?? 0) > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...filters, interior: !filters.interior, municipios: undefined })}
-                    className={`mt-2 h-7 w-full rounded border text-xs transition-colors ${
-                      filters.interior
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted hover:bg-muted/80 border-transparent"
-                    }`}
-                  >
-                    Interior (excluir capital{(filters.uf?.length ?? 0) > 1 ? "is" : ""})
-                  </button>
-                )}
-              </div>
-            </section>
+            {!excludeLocation && (
+              <section>
+                <Label className="text-xs font-semibold uppercase text-muted-foreground">Cidade (município)</Label>
+                <div className="mt-2">
+                  <MunicipioMultiSelect
+                    selectedUFs={filters.uf ?? []}
+                    value={filters.municipios ?? []}
+                    onChange={(v) => onChange({ ...filters, municipios: v.length ? v : undefined, interior: undefined })}
+                  />
+                  {(filters.uf?.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onChange({ ...filters, interior: !filters.interior, municipios: undefined })}
+                      className={`mt-2 h-7 w-full rounded border text-xs transition-colors ${
+                        filters.interior
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted hover:bg-muted/80 border-transparent"
+                      }`}
+                    >
+                      Interior (excluir capital{(filters.uf?.length ?? 0) > 1 ? "is" : ""})
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
 
             <section>
               <Label className="text-xs font-semibold uppercase text-muted-foreground">CNAE principal</Label>
