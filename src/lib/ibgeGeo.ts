@@ -105,6 +105,23 @@ export function ibgeMunicipioNomesUrl(uf: string): string {
   return `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios`;
 }
 
+// Paleta categórica para colorir microrregiões no mapa estadual.
+// Tons claros, distintos, sem brigar com o destaque azul de seleção.
+export const REGION_PALETTE: string[] = [
+  "hsl(20 70% 78%)",   // pêssego
+  "hsl(45 75% 75%)",   // amarelo
+  "hsl(85 50% 75%)",   // verde-claro
+  "hsl(155 45% 72%)",  // turquesa
+  "hsl(195 60% 78%)",  // azul-bebê
+  "hsl(225 55% 80%)",  // azul-acinzentado
+  "hsl(265 50% 82%)",  // lavanda
+  "hsl(310 50% 82%)",  // rosa-claro
+  "hsl(0 55% 80%)",    // coral
+  "hsl(35 45% 72%)",   // bege-amarelado
+  "hsl(180 40% 75%)",  // azul-pálido
+  "hsl(120 35% 75%)",  // verde-pálido
+];
+
 /**
  * Busca o GeoJSON de municípios de um estado.
  * Tenta primeiro via resolucao=6 (bulk). Se retornar apenas 1 feature
@@ -115,13 +132,31 @@ export async function fetchStateMunicipiosGeoJSON(
   uf: string,
   ufCode: number,
 ): Promise<{ type: "FeatureCollection"; features: object[] }> {
-  // Passo 1 — busca nomes/códigos dos municípios
+  // Passo 1 — busca nomes/códigos dos municípios + hierarquia (microrregião)
   const namesRes = await fetch(ibgeMunicipioNomesUrl(uf));
   if (!namesRes.ok) throw new Error(`IBGE nomes: ${namesRes.status}`);
-  const munList = (await namesRes.json()) as Array<{ id: number; nome: string }>;
+  type MunicipioIBGE = {
+    id: number;
+    nome: string;
+    microrregiao?: { id: number; nome: string; mesorregiao?: { id: number; nome: string } };
+  };
+  const munList = (await namesRes.json()) as MunicipioIBGE[];
 
   const codeToNome: Record<string, string> = {};
-  for (const { id, nome } of munList) codeToNome[String(id)] = nome;
+  const codeToMicro: Record<string, { id: number; nome: string }> = {};
+  const codeToMeso: Record<string, { id: number; nome: string }> = {};
+  for (const m of munList) {
+    codeToNome[String(m.id)] = m.nome;
+    if (m.microrregiao) {
+      codeToMicro[String(m.id)] = { id: m.microrregiao.id, nome: m.microrregiao.nome };
+      if (m.microrregiao.mesorregiao) {
+        codeToMeso[String(m.id)] = {
+          id: m.microrregiao.mesorregiao.id,
+          nome: m.microrregiao.mesorregiao.nome,
+        };
+      }
+    }
+  }
 
   // Passo 2 — tenta bulk (resolucao=6 pode retornar GeometryCollection de municípios)
   try {
@@ -142,13 +177,22 @@ export async function fetchStateMunicipiosGeoJSON(
           return {
             type: "FeatureCollection",
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            features: feats.map((f: any) => ({
-              ...f,
-              properties: {
-                codarea: f.properties?.codarea ?? "",
-                nome: codeToNome[f.properties?.codarea ?? ""] ?? f.properties?.codarea ?? "",
-              },
-            })),
+            features: feats.map((f: any) => {
+              const codarea = f.properties?.codarea ?? "";
+              const micro = codeToMicro[codarea];
+              const meso = codeToMeso[codarea];
+              return {
+                ...f,
+                properties: {
+                  codarea,
+                  nome: codeToNome[codarea] ?? codarea,
+                  microrregiao_id: micro?.id ?? null,
+                  microrregiao_nome: micro?.nome ?? null,
+                  mesorregiao_id: meso?.id ?? null,
+                  mesorregiao_nome: meso?.nome ?? null,
+                },
+              };
+            }),
           };
         }
       }
@@ -177,7 +221,19 @@ export async function fetchStateMunicipiosGeoJSON(
           const fc = feature(topo, obj as any) as any;
           const feat = fc.type === "FeatureCollection" ? fc.features[0] : fc;
           if (!feat) return null;
-          return { ...feat, properties: { codarea: String(id), nome } };
+          const micro = codeToMicro[String(id)];
+          const meso = codeToMeso[String(id)];
+          return {
+            ...feat,
+            properties: {
+              codarea: String(id),
+              nome,
+              microrregiao_id: micro?.id ?? null,
+              microrregiao_nome: micro?.nome ?? null,
+              mesorregiao_id: meso?.id ?? null,
+              mesorregiao_nome: meso?.nome ?? null,
+            },
+          };
         } catch {
           return null;
         }
