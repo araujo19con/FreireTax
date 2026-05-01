@@ -88,12 +88,31 @@ export default function AnaliseRFB() {
 
   const fetchEmpresas = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("empresas")
-      .select("*")
-      .order("valor_potencial_total", { ascending: false, nullsFirst: false });
-    if (error) toast.error("Erro ao carregar empresas");
-    setEmpresas((data as Empresa[]) ?? []);
+    // Supabase tem cap default de 1.000 linhas por select. Paginamos em
+    // janelas de 1.000 até esgotar pra que os agregados (capital total,
+    // enriquecidas, etc.) reflitam o universo real, não o teto da API.
+    const PAGE_SIZE = 1000;
+    const all: Empresa[] = [];
+    let from = 0;
+    let pageError: unknown = null;
+
+    // safety cap para evitar loop infinito caso .order seja instável
+    for (let pages = 0; pages < 200; pages++) {
+      const { data, error } = await supabase
+        .from("empresas")
+        .select("*")
+        .order("valor_potencial_total", { ascending: false, nullsFirst: false })
+        .order("id", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) { pageError = error; break; }
+      if (!data || data.length === 0) break;
+      all.push(...(data as Empresa[]));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    if (pageError) toast.error("Erro ao carregar empresas");
+    setEmpresas(all);
     setLoading(false);
   };
 
