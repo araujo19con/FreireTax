@@ -58,18 +58,31 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   }, [selectedUF]);
 
   // ── Contagem de empresas por UF (colore os estados) ────────────────────────
+  // PostgREST trunca em 1000 linhas por request — `.limit(100000)` não bypassa o
+  // `max-rows` do servidor. Paginamos por `.range()` (mesmo pattern de
+  // `fetchAllEmpresas` em useEmpresas.ts) pra garantir contagem completa.
   const { data: ufCounts = {} } = useQuery({
     queryKey: ["empresas-uf-counts"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("empresas")
-        .select("uf")
-        .not("uf", "is", null)
-        .limit(100000);
-      return (data ?? []).reduce((acc: Record<string, number>, { uf }) => {
-        if (uf) acc[uf] = (acc[uf] || 0) + 1;
-        return acc;
-      }, {});
+      const PAGE = 1000;
+      const counts: Record<string, number> = {};
+      let from = 0;
+      for (;;) {
+        const { data, error } = await supabase
+          .from("empresas")
+          .select("uf")
+          .not("uf", "is", null)
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const batch = data ?? [];
+        for (const { uf } of batch) {
+          if (uf) counts[uf] = (counts[uf] || 0) + 1;
+        }
+        if (batch.length < PAGE) break;
+        from += PAGE;
+        if (from > 50_000) break;
+      }
+      return counts;
     },
     staleTime: 5 * 60 * 1000,
   });
@@ -106,13 +119,28 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   }, [munGeo]);
 
   // ── Empresas do estado selecionado (base para painel e heatmap municipal) ───
+  // Paginação por `.range()` pelo mesmo motivo de ufCounts: PostgREST trunca em
+  // 1000 linhas, então UFs com volume alto teriam painel e heatmap incompletos.
   const { data: ufEmpresas = [], isLoading: loadingUfEmpresas } = useQuery({
     queryKey: ["empresas-map-uf", selectedUF],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("empresas").select("*")
-        .eq("uf", selectedUF!).order("nome");
-      return (data ?? []) as Empresa[];
+      const PAGE = 1000;
+      const all: Empresa[] = [];
+      let from = 0;
+      for (;;) {
+        const { data, error } = await supabase
+          .from("empresas").select("*")
+          .eq("uf", selectedUF!)
+          .order("nome")
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        const batch = (data ?? []) as Empresa[];
+        all.push(...batch);
+        if (batch.length < PAGE) break;
+        from += PAGE;
+        if (from > 50_000) break;
+      }
+      return all;
     },
     enabled: !!selectedUF,
     staleTime: 60 * 1000,
