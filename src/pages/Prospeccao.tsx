@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Handshake, Phone, Mail, Building2, Scale, Pencil, DollarSign,
   ArrowRight, Search, Filter, Plus, MessageSquare, AlertTriangle,
-  TrendingUp, Clock, Zap, FileText, BookOpen,
+  TrendingUp, Clock, Zap, FileText, BookOpen, EyeOff, Columns2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -158,6 +158,8 @@ export default function Prospeccao() {
   const [search, setSearch] = useState("");
   const [filterAcao, setFilterAcao] = useState("all");
   const [filterResponsavel, setFilterResponsavel] = useState("all");
+  const [hideEmpty, setHideEmpty] = useState(false);
+  const [compact, setCompact] = useState(false);
   const { user } = useAuth();
 
   // Create dialog
@@ -461,6 +463,10 @@ export default function Prospeccao() {
     return differenceInDays(new Date(), parseISO(p.ultimo_contato_em)) >= 7;
   }).length;
 
+  const visibleColumns = hideEmpty
+    ? statusColumns.filter(col => filteredProspeccoes.some(p => p.status_prospeccao === col.key))
+    : statusColumns;
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -550,6 +556,29 @@ export default function Prospeccao() {
             ))}
           </SelectContent>
         </Select>
+
+        <div className="flex items-center gap-1.5 ml-auto">
+          <Button
+            variant={hideEmpty ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setHideEmpty(v => !v)}
+            className="h-9 gap-1.5 text-xs"
+            title={hideEmpty ? "Mostrar colunas vazias" : "Ocultar colunas vazias"}
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+            {hideEmpty ? `${visibleColumns.length} colunas` : "Ocultar vazias"}
+          </Button>
+          <Button
+            variant={compact ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setCompact(v => !v)}
+            className="h-9 gap-1.5 text-xs"
+            title={compact ? "Modo normal" : "Modo compacto"}
+          >
+            <Columns2 className="h-3.5 w-3.5" />
+            {compact ? "Normal" : "Compacto"}
+          </Button>
+        </div>
       </div>
 
       {filteredProspeccoes.length === 0 && !search && filterAcao === "all" && filterResponsavel === "all" ? (
@@ -562,14 +591,14 @@ export default function Prospeccao() {
         />
       ) : (
       <KanbanWithNav
-        statusColumns={statusColumns}
+        statusColumns={visibleColumns}
         getCount={(key) => filteredProspeccoes.filter(p => p.status_prospeccao === key).length}
       >
       <div className="flex gap-4 overflow-x-auto pb-4 snap-kanban scrollbar-thin" role="list" aria-label="Pipeline de prospecção por etapa" id="prospeccao-kanban-scroll">
-        {statusColumns.map(col => {
+        {visibleColumns.map(col => {
           const items = filteredProspeccoes.filter(p => p.status_prospeccao === col.key);
           return (
-            <div key={col.key} id={`kanban-col-${col.key.replace(/\s+/g, "-")}`} className="flex-shrink-0 w-[300px] scroll-mt-4" role="listitem" aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}>
+            <div key={col.key} id={`kanban-col-${col.key.replace(/\s+/g, "-")}`} className={`flex-shrink-0 scroll-mt-4 ${compact ? "w-[220px]" : "w-[300px]"}`} role="listitem" aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}>
               <div className="flex items-center gap-2 mb-3 px-1">
                 <div className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`} aria-hidden="true" />
                 <h3 className="text-sm font-semibold">{col.label}</h3>
@@ -640,7 +669,7 @@ export default function Prospeccao() {
                         </div>
 
                         {/* Ação */}
-                        {acao && (
+                        {!compact && acao && (
                           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                             <Scale className="h-3.5 w-3.5 shrink-0" aria-hidden />
                             <span className="truncate">{acao.nome}</span>
@@ -651,19 +680,21 @@ export default function Prospeccao() {
                         {p.contato_nome && (
                           <div className="text-xs">
                             <span className="font-medium">{p.contato_nome}</span>
-                            {p.contato_cargo && <span className="text-muted-foreground"> · {p.contato_cargo}</span>}
+                            {!compact && p.contato_cargo && <span className="text-muted-foreground"> · {p.contato_cargo}</span>}
                           </div>
                         )}
 
-                        {/* Contact info */}
-                        <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
-                          {p.contato_telefone && (
-                            <span className="flex items-center gap-1.5"><Phone className="h-3 w-3 shrink-0" aria-hidden />{p.contato_telefone}</span>
-                          )}
-                          {p.contato_email && (
-                            <span className="flex items-center gap-1.5 truncate"><Mail className="h-3 w-3 shrink-0" aria-hidden />{p.contato_email}</span>
-                          )}
-                        </div>
+                        {/* Contact info — oculto no modo compacto */}
+                        {!compact && (
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+                            {p.contato_telefone && (
+                              <span className="flex items-center gap-1.5"><Phone className="h-3 w-3 shrink-0" aria-hidden />{p.contato_telefone}</span>
+                            )}
+                            {p.contato_email && (
+                              <span className="flex items-center gap-1.5 truncate"><Mail className="h-3 w-3 shrink-0" aria-hidden />{p.contato_email}</span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Responsável (avatar com iniciais) */}
                         {(() => {
