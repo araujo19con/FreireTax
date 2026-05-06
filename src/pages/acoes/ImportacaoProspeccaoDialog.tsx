@@ -383,8 +383,8 @@ export function ImportacaoProspeccaoDialog({
             elegibilidade_id: elegId,
             status_prospeccao: row.statusProspeccao,
             user_id: user!.id,
-            observacoes: row.obsRaw || null,
-            valor_proposta: row.valorCausa,
+            notas_prospeccao: row.obsRaw || null,
+            valor_contrato: row.valorCausa,
           });
           // Não lança erro de prospecção — elegibilidade já foi criada e é suficiente
           if (prospErr) console.warn("Prospecção não criada:", row.nomeRaw, prospErr);
