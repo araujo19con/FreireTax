@@ -307,7 +307,7 @@ export default function Acoes() {
   };
 
   const getElegibilidadesForAcao = (acaoId: string) =>
-    elegibilidades.filter((e) => e.acao_id === acaoId && empresasMap.has(e.empresa_id));
+    elegibilidades.filter((e) => e.acao_id === acaoId);
   const getEmpresaNome = (empresaId: string) => empresas.find((e) => e.id === empresaId)?.nome || "Desconhecida";
   const getProcessoForEleg = (elegId: string) => processos.find((p) => p.elegibilidade_id === elegId);
   const getProspeccaoForEleg = (elegId: string) => prospeccoes.find((p) => p.elegibilidade_id === elegId);
