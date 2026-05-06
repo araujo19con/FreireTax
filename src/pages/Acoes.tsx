@@ -480,7 +480,11 @@ export default function Acoes() {
       empresa_id, acao_id: elegAcaoId, elegivel: elegElegivel === "true", justificativa: elegJustificativa || "", user_id: user!.id,
     }));
 
-    const { error } = await supabase.from("elegibilidade").insert(items);
+    // upsert com ignoreDuplicates: o filtro `existingPairs` acima já remove duplicatas,
+    // mas se houver race condition (outro user inseriu no meio), evita erro 23505.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from("elegibilidade") as any)
+      .upsert(items, { onConflict: "empresa_id,acao_id", ignoreDuplicates: true });
     if (error) { toast.error("Erro ao salvar"); console.error(error); return; }
     const novasEmpresasMsg = elegMode === "planilha"
       ? ` (${planilhaRows.filter(r => r.valid && !r.existing_id).length} empresas novas criadas + RFB sendo enriquecida em background)`

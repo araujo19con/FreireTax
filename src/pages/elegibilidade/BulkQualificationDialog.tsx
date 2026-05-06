@@ -109,7 +109,8 @@ export function BulkQualificationDialog({ open, onClose, empresaIds }: BulkQuali
           qualificada_em: new Date().toISOString(),
         }));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { error: insErr } = await (supabase.from("elegibilidade") as any).insert(rows);
+        const { error: insErr } = await (supabase.from("elegibilidade") as any)
+          .upsert(rows, { onConflict: "empresa_id,acao_id", ignoreDuplicates: true });
         if (insErr) throw insErr;
       }
 
