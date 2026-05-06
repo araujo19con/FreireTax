@@ -3,10 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown, Trash2, Download, Loader2 } from "lucide-react";
+import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown, Trash2, Download, Loader2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
 import { prospStatusColor } from "@/lib/prospeccaoStatus";
@@ -47,6 +51,7 @@ export interface ElegAcao {
   acao_id: string;
   elegivel: boolean;
   justificativa: string | null;
+  motivo_desqualificacao: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
 }
@@ -79,6 +84,7 @@ interface Props {
   onProspectar: (elegId: string, empresaId: string) => void;
   onOpenProcesso: (elegId: string) => void;
   onDeleteEleg?: (elegId: string) => void;
+  onDesqualificar?: (elegId: string, motivo: string) => Promise<void>;
   onExport: (payload: AcaoEmpresasExportPayload) => Promise<void>;
   onViewEmpresaId?: (id: string) => void;
 }
@@ -117,12 +123,15 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "valor_desc",            label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onExport, onViewEmpresaId }: Props) {
+export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onExport, onViewEmpresaId }: Props) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
   const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
   const [exporting, setExporting] = useState(false);
+  const [desqOpen, setDesqOpen] = useState<string | null>(null);
+  const [desqMotivo, setDesqMotivo] = useState("");
+  const [desqLoading, setDesqLoading] = useState(false);
 
   const items = useMemo(() => elegs.map(el => ({
     el,
@@ -322,6 +331,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                         <div className="flex items-center justify-end gap-1">
                           {!empresa && onDeleteEleg ? (
                             <Button
+                              type="button"
                               variant="ghost"
                               size="sm"
                               className="h-6 w-6 p-0 text-destructive hover:text-destructive"
@@ -333,6 +343,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                           ) : (
                             <>
                               <Button
+                                type="button"
                                 variant="ghost"
                                 size="sm"
                                 className="h-6 w-6 p-0"
@@ -341,8 +352,72 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                               >
                                 <FileText className="h-3 w-3" />
                               </Button>
+
+                              {el.elegivel && onDesqualificar && (
+                                <Popover
+                                  open={desqOpen === el.id}
+                                  onOpenChange={(open) => {
+                                    setDesqOpen(open ? el.id : null);
+                                    if (!open) setDesqMotivo("");
+                                  }}
+                                >
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                      title="Marcar como inelegível"
+                                    >
+                                      <XCircle className="h-3 w-3" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-64 p-3 space-y-2" align="end">
+                                    <p className="text-xs font-semibold">Marcar como inelegível</p>
+                                    <p className="text-[11px] text-muted-foreground">
+                                      {empresa?.nome ?? "Esta empresa"} será removida do pool elegível desta ação.
+                                    </p>
+                                    <Textarea
+                                      placeholder="Motivo (opcional)..."
+                                      className="text-xs min-h-[60px] resize-none"
+                                      value={desqMotivo}
+                                      onChange={(e) => setDesqMotivo(e.target.value)}
+                                    />
+                                    <div className="flex gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="flex-1 h-7 text-xs"
+                                        onClick={() => { setDesqOpen(null); setDesqMotivo(""); }}
+                                      >
+                                        Cancelar
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="sm"
+                                        className="flex-1 h-7 text-xs gap-1"
+                                        disabled={desqLoading}
+                                        onClick={async () => {
+                                          setDesqLoading(true);
+                                          await onDesqualificar(el.id, desqMotivo);
+                                          setDesqLoading(false);
+                                          setDesqOpen(null);
+                                          setDesqMotivo("");
+                                        }}
+                                      >
+                                        {desqLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+                                        Confirmar
+                                      </Button>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              )}
+
                               {el.elegivel && !prosp && (
                                 <Button
+                                  type="button"
                                   size="sm"
                                   className="h-6 text-[10px] px-2 gap-1"
                                   onClick={() => onProspectar(el.id, el.empresa_id)}
@@ -352,6 +427,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                               )}
                               {el.elegivel && prosp && (
                                 <Button
+                                  type="button"
                                   variant="outline"
                                   size="sm"
                                   className="h-6 text-[10px] px-2 gap-1"

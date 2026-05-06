@@ -31,6 +31,7 @@ const MeuEspaco = lazy(() => import("./pages/MeuEspaco"));
 const Usuarios = lazy(() => import("./pages/Usuarios"));
 const AnaliseRFB = lazy(() => import("./pages/AnaliseRFB"));
 const Tutorial = lazy(() => import("./pages/Tutorial"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,6 +94,7 @@ function AppRoutes() {
       <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="*" element={<Navigate to="/auth" replace />} />
         </Routes>
       </Suspense>
@@ -128,6 +130,7 @@ function AppRoutes() {
           <Route path="/analise-rfb" element={<AnaliseRFB />} />
           <Route path="/tutorial" element={<Tutorial />} />
           <Route path="/auditoria" element={<Auditoria />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth" element={<Navigate to="/" replace />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

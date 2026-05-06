@@ -69,6 +69,7 @@ interface ElegibilidadeRow {
   acao_id: string;
   elegivel: boolean;
   justificativa: string | null;
+  motivo_desqualificacao: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
 }
@@ -196,8 +197,8 @@ export default function Acoes() {
   const fetchAll = async () => {
     const [acoesRes, empRes, elegRes, pastasRes, itemsRes, procRes, prospRes] = await Promise.all([
       supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-      supabase.from("empresas").select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 4999),
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado"),
+      (supabase.from("empresas") as any).select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 4999),
+      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, motivo_desqualificacao, created_at, valor_potencial_estimado"),
       supabase.from("pastas_empresas").select("id, nome"),
       supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
       supabase.from("processos").select("*") as any,
@@ -316,6 +317,23 @@ export default function Acoes() {
     if (error) { toast.error("Erro ao remover"); } else {
       toast.success("Removido!");
       logAudit({ tabela: "elegibilidade", acao: "Removeu elegibilidade", registro_id: id });
+      fetchAll();
+    }
+  };
+
+  const handleDesqualificar = async (elegId: string, motivo: string) => {
+    const { error } = await supabase
+      .from("elegibilidade")
+      .update({
+        elegivel: false,
+        motivo_desqualificacao: motivo.trim() || null,
+      })
+      .eq("id", elegId);
+    if (error) {
+      toast.error("Erro ao desqualificar empresa");
+    } else {
+      toast.success("Empresa marcada como inelegível");
+      logAudit({ tabela: "elegibilidade", acao: "Desqualificou empresa", registro_id: elegId });
       fetchAll();
     }
   };
@@ -709,6 +727,7 @@ export default function Acoes() {
                     onProspectar={handleProspectar}
                     onOpenProcesso={(elegId) => openProcessoDialog(elegId)}
                     onDeleteEleg={handleDeleteEleg}
+                    onDesqualificar={handleDesqualificar}
                     onExport={handleExportAcao}
                     onViewEmpresaId={setDetailEmpresaId}
                   />

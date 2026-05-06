@@ -5,16 +5,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Scale3d, Loader2 } from "lucide-react";
+import { Scale3d, Loader2, ArrowLeft, MailCheck } from "lucide-react";
+
+type Mode = "login" | "forgot" | "sent";
 
 export default function Auth() {
   // Auto-cadastro desativado: contas só são criadas por admin (edge fn `criar-usuario`).
   // Defesa em profundidade — também desativar "Email signups" no painel do Supabase.
+  const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
@@ -28,10 +31,23 @@ export default function Auth() {
     }
   };
 
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const redirectTo = `${window.location.origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) throw error;
+      setMode("sent");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao enviar e-mail de recuperação");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div
-      className="min-h-screen grid lg:grid-cols-2 bg-background"
-    >
+    <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       {/* Brand column — só desktop, transmite identidade do escritório */}
       <aside
         className="hidden lg:flex flex-col justify-between p-12 bg-sidebar text-sidebar-foreground relative overflow-hidden"
@@ -91,55 +107,142 @@ export default function Auth() {
             </div>
           </div>
 
-          <div className="mb-7">
-            <h1 className="font-heading text-h1 tracking-tight">Entrar</h1>
-            <p className="text-sm text-muted-foreground mt-1.5">
-              Acesse o CRM do escritório com suas credenciais.
-            </p>
-          </div>
-
-          <Card className="p-6 shadow-elevated border-border/80">
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-              <div className="space-y-2">
-                <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  aria-required="true"
-                />
+          {mode === "login" && (
+            <>
+              <div className="mb-7">
+                <h1 className="font-heading text-h1 tracking-tight">Entrar</h1>
+                <p className="text-sm text-muted-foreground mt-1.5">
+                  Acesse o CRM do escritório com suas credenciais.
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Senha</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  aria-required="true"
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                    Aguarde...
-                  </>
-                ) : "Entrar"}
-              </Button>
-            </form>
-          </Card>
 
-          <p className="text-center text-xs text-muted-foreground mt-5">
-            Não tem acesso? Solicite a um administrador.
-          </p>
+              <Card className="p-6 shadow-elevated border-border/80">
+                <form onSubmit={handleLogin} className="space-y-4" noValidate>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">E-mail</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      aria-required="true"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Senha</Label>
+                      <button
+                        type="button"
+                        onClick={() => setMode("forgot")}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Esqueci minha senha
+                      </button>
+                    </div>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      aria-required="true"
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                        Aguarde...
+                      </>
+                    ) : "Entrar"}
+                  </Button>
+                </form>
+              </Card>
+
+              <p className="text-center text-xs text-muted-foreground mt-5">
+                Não tem acesso? Solicite a um administrador.
+              </p>
+            </>
+          )}
+
+          {mode === "forgot" && (
+            <>
+              <div className="mb-7">
+                <h1 className="font-heading text-h1 tracking-tight">Recuperar acesso</h1>
+                <p className="text-sm text-muted-foreground mt-1.5">
+                  Informe seu e-mail cadastrado e enviaremos um link para redefinir sua senha.
+                </p>
+              </div>
+
+              <Card className="p-6 shadow-elevated border-border/80">
+                <form onSubmit={handleForgot} className="space-y-4" noValidate>
+                  <div className="space-y-2">
+                    <Label htmlFor="forgot-email">E-mail</Label>
+                    <Input
+                      id="forgot-email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="seu@email.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      aria-required="true"
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                        Enviando...
+                      </>
+                    ) : "Enviar link de recuperação"}
+                  </Button>
+                </form>
+              </Card>
+
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto mt-5"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                Voltar ao login
+              </button>
+            </>
+          )}
+
+          {mode === "sent" && (
+            <>
+              <div className="mb-7">
+                <div className="h-11 w-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+                  <MailCheck className="h-5 w-5 text-primary" />
+                </div>
+                <h1 className="font-heading text-h1 tracking-tight">E-mail enviado</h1>
+                <p className="text-sm text-muted-foreground mt-1.5">
+                  Verifique sua caixa de entrada. O link de redefinição expira em 1 hora.
+                </p>
+              </div>
+
+              <Card className="p-6 shadow-elevated border-border/80 text-sm text-muted-foreground space-y-2">
+                <p>E-mail enviado para <span className="font-medium text-foreground">{email}</span>.</p>
+                <p>Não encontrou? Verifique a pasta de spam.</p>
+              </Card>
+
+              <button
+                type="button"
+                onClick={() => { setMode("login"); setEmail(""); }}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto mt-5"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                Voltar ao login
+              </button>
+            </>
+          )}
         </div>
       </main>
     </div>
