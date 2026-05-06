@@ -4,19 +4,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { validateCNPJ } from "@/lib/cnpj";
 import { toast } from "sonner";
 import {
   Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle,
-  Loader2, ArrowRight, RotateCcw,
+  Loader2, ArrowRight, RotateCcw, HelpCircle,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type RowStatus = "ok_existente" | "ok_nova" | "sem_cnpj" | "ja_importada";
+type RowStatus = "ok_existente" | "ok_nova" | "sem_cnpj" | "cnpj_invalido" | "ja_importada";
 
 interface ProspRow {
   // raw
@@ -30,6 +32,7 @@ interface ProspRow {
   simRaw: string;
   // processed
   cnpj: string | null;
+  cnpjErro: string | null;   // motivo se CNPJ inválido
   statusProspeccao: string;
   numeroProcesso: string | null;
   valorCausa: number | null;
@@ -49,9 +52,36 @@ function normalizeStr(s: string) {
   return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
-function normalizeCNPJ(raw: string): string | null {
-  const digits = String(raw || "").replace(/\D/g, "");
-  return digits.length === 14 ? digits : null;
+/**
+ * Tenta resolver o CNPJ da célula.
+ * - Células numéricas do Excel perdem o zero à esquerda (13 → 14 dígitos com padding)
+ * - Retorna { cnpj, erro } onde cnpj é null se inválido
+ */
+function resolveCNPJ(raw: unknown): { cnpj: string | null; erro: string | null } {
+  if (raw === null || raw === undefined || String(raw).trim() === "") {
+    return { cnpj: null, erro: null };
+  }
+
+  let digits = String(raw).replace(/\D/g, "");
+
+  // Excel armazena CNPJ como número → perde zero à esquerda (13 → 14 dígitos)
+  if (digits.length === 13) digits = "0" + digits;
+
+  if (digits.length !== 14) {
+    return {
+      cnpj: null,
+      erro: `${digits.length} dígitos (esperado: 14)`,
+    };
+  }
+
+  if (!validateCNPJ(digits)) {
+    return {
+      cnpj: null,
+      erro: "Dígitos verificadores incorretos",
+    };
+  }
+
+  return { cnpj: digits, erro: null };
 }
 
 function formatCNPJ(digits: string) {
@@ -174,7 +204,7 @@ export function ImportacaoProspeccaoDialog({
         const nomeRaw = String(r[iNome] ?? "").trim();
         if (!nomeRaw) continue; // linha vazia
 
-        const cnpjRaw = String(r[iCnpj] ?? "").trim();
+        const cnpjRaw = iCnpj !== -1 ? r[iCnpj] : "";
         const situacaoRaw = String(r[iSituacao] ?? "").trim();
         const processoRaw = String(r[iProcesso] ?? "").trim();
         const valorCausaRaw = String(r[iValor] ?? "").trim();
@@ -182,7 +212,7 @@ export function ImportacaoProspeccaoDialog({
         const obsRaw = String(r[iObs] ?? "").trim();
         const simRaw = String(r[iSim] ?? "").trim();
 
-        const cnpj = normalizeCNPJ(cnpjRaw);
+        const { cnpj, erro: cnpjErro } = resolveCNPJ(cnpjRaw);
         const statusProspeccao = mapSituacao(situacaoRaw);
         const numeroProcesso = parseProcesso(processoRaw);
         const valorCausa = parseValor(valorCausaRaw);
@@ -198,7 +228,7 @@ export function ImportacaoProspeccaoDialog({
             empresaNome = empresasMap.get(foundId)?.nome ?? nomeRaw;
           }
         } else {
-          // Fuzzy match by name
+          // Fuzzy match by name (fallback)
           const nomeNorm = normalizeStr(nomeRaw);
           empresasMap.forEach((e) => {
             if (!empresaId && normalizeStr(e.nome).includes(nomeNorm.slice(0, 12))) {
@@ -214,11 +244,14 @@ export function ImportacaoProspeccaoDialog({
         if (jaImportada) rowStatus = "ja_importada";
         else if (empresaId) rowStatus = "ok_existente";
         else if (cnpj) rowStatus = "ok_nova";
+        else if (cnpjErro) rowStatus = "cnpj_invalido";
         else rowStatus = "sem_cnpj";
 
         parsed.push({
-          nomeRaw, cnpjRaw, processoRaw, situacaoRaw, valorCausaRaw, ufRaw, obsRaw, simRaw,
-          cnpj, statusProspeccao, numeroProcesso, valorCausa,
+          nomeRaw,
+          cnpjRaw: String(cnpjRaw ?? "").trim(),
+          processoRaw, situacaoRaw, valorCausaRaw, ufRaw, obsRaw, simRaw,
+          cnpj, cnpjErro, statusProspeccao, numeroProcesso, valorCausa,
           empresaId, empresaNome,
           rowStatus,
           selected: rowStatus !== "ja_importada",
@@ -281,7 +314,8 @@ export function ImportacaoProspeccaoDialog({
 
         // 2) Elegibilidade
         let elegId: string | null = null;
-        const { data: existingEleg } = await supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: existingEleg } = await (supabase as any)
           .from("elegibilidade")
           .select("id")
           .eq("empresa_id", empresaId!)
@@ -289,15 +323,16 @@ export function ImportacaoProspeccaoDialog({
           .maybeSingle();
 
         if (existingEleg) {
-          elegId = existingEleg.id;
+          elegId = (existingEleg as { id: string }).id;
         } else {
-          const { data: newEleg, error: elegErr } = await supabase
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: newEleg, error: elegErr } = await (supabase as any)
             .from("elegibilidade")
             .insert({ empresa_id: empresaId, acao_id: acaoId, elegivel: true, user_id: user!.id })
             .select("id")
             .single();
           if (elegErr) throw elegErr;
-          elegId = newEleg.id;
+          elegId = (newEleg as { id: string }).id;
         }
 
         // 3) Prospecção
@@ -375,12 +410,14 @@ export function ImportacaoProspeccaoDialog({
   const novasCount = rows.filter((r) => r.selected && r.rowStatus === "ok_nova").length;
   const existentesCount = rows.filter((r) => r.selected && r.rowStatus === "ok_existente").length;
   const semCnpjCount = rows.filter((r) => r.selected && r.rowStatus === "sem_cnpj").length;
+  const cnpjInvalidoCount = rows.filter((r) => r.rowStatus === "cnpj_invalido").length;
   const jaCount = rows.filter((r) => r.rowStatus === "ja_importada").length;
 
   const STATUS_COLORS: Record<RowStatus, string> = {
     ok_existente: "bg-success/10 text-success border-0",
     ok_nova: "bg-info/10 text-info border-0",
     sem_cnpj: "bg-warning/10 text-warning border-0",
+    cnpj_invalido: "bg-destructive/10 text-destructive border-0",
     ja_importada: "bg-muted text-muted-foreground border-0",
   };
 
@@ -388,6 +425,7 @@ export function ImportacaoProspeccaoDialog({
     ok_existente: "Cadastrada",
     ok_nova: "Nova (CNPJ)",
     sem_cnpj: "Sem CNPJ",
+    cnpj_invalido: "CNPJ inválido",
     ja_importada: "Já importada",
   };
 
@@ -452,6 +490,11 @@ export function ImportacaoProspeccaoDialog({
                   <AlertTriangle className="h-2.5 w-2.5 mr-1" />{semCnpjCount} sem CNPJ
                 </Badge>
               )}
+              {cnpjInvalidoCount > 0 && (
+                <Badge variant="outline" className={STATUS_COLORS.cnpj_invalido}>
+                  <XCircle className="h-2.5 w-2.5 mr-1" />{cnpjInvalidoCount} CNPJ inválido
+                </Badge>
+              )}
               {jaCount > 0 && (
                 <Badge variant="outline" className={STATUS_COLORS.ja_importada}>
                   <XCircle className="h-2.5 w-2.5 mr-1" />{jaCount} já importadas
@@ -504,7 +547,23 @@ export function ImportacaoProspeccaoDialog({
                         )}
                       </td>
                       <td className="py-1.5 px-2 font-mono">
-                        {r.cnpj ? formatCNPJ(r.cnpj) : (
+                        {r.cnpj ? (
+                          formatCNPJ(r.cnpj)
+                        ) : r.cnpjErro ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex items-center gap-1 text-destructive text-[10px] cursor-help">
+                                <HelpCircle className="h-3 w-3 shrink-0" />
+                                {r.cnpjRaw ? r.cnpjRaw.slice(0, 18) : "inválido"}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-[220px] text-xs">
+                              <p className="font-medium mb-0.5">CNPJ inválido</p>
+                              <p className="text-muted-foreground">{r.cnpjErro}</p>
+                              {r.cnpjRaw && <p className="mt-1 font-mono opacity-70">Original: {r.cnpjRaw}</p>}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
                           <span className="text-warning text-[10px]">ausente</span>
                         )}
                       </td>
