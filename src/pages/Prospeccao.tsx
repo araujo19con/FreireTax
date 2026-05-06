@@ -249,7 +249,14 @@ export default function Prospeccao() {
     Number(getElegibilidade(elegId)?.valor_potencial_estimado ?? 0);
 
   const filteredProspeccoes = useMemo(() => {
-    let items = prospeccoes;
+    // Remove prospecções órfãs (eleg deletada OU empresa deletada) — eram cards com nome "—"
+    const empresaIdSet = new Set(empresas.map(e => e.id));
+    const elegMap = new Map(elegibilidades.map(e => [e.id, e]));
+    let items = prospeccoes.filter(p => {
+      const eleg = elegMap.get(p.elegibilidade_id);
+      if (!eleg) return false;
+      return empresaIdSet.has(eleg.empresa_id);
+    });
     if (filterAcao !== "all") {
       const elegIds = new Set(elegibilidades.filter(e => e.acao_id === filterAcao).map(e => e.id));
       items = items.filter(p => elegIds.has(p.elegibilidade_id));
