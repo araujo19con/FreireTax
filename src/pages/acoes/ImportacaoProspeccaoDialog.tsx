@@ -227,15 +227,6 @@ export function ImportacaoProspeccaoDialog({
             empresaId = foundId;
             empresaNome = empresasMap.get(foundId)?.nome ?? nomeRaw;
           }
-        } else {
-          // Fuzzy match by name (fallback)
-          const nomeNorm = normalizeStr(nomeRaw);
-          empresasMap.forEach((e) => {
-            if (!empresaId && normalizeStr(e.nome).includes(nomeNorm.slice(0, 12))) {
-              empresaId = e.id;
-              empresaNome = e.nome;
-            }
-          });
         }
 
         const jaImportada = empresaId ? jaImportadas.has(empresaId) : false;
@@ -284,9 +275,20 @@ export function ImportacaoProspeccaoDialog({
 
     for (const row of selected) {
       try {
-        let empresaId = row.empresaId;
+        let empresaId: string | null = null;
 
-        // 1) Criar empresa se não existe
+        // 1) Resolver empresa: lookup fresco no DB por CNPJ (não confia no mapa stale)
+        if (row.cnpj) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: existingByC } = await (supabase as any)
+            .from("empresas")
+            .select("id")
+            .eq("cnpj", row.cnpj)
+            .maybeSingle();
+          empresaId = (existingByC as { id: string } | null)?.id ?? null;
+        }
+
+        // Criar empresa se não encontrou pelo CNPJ (nova ou sem CNPJ)
         if (!empresaId) {
           const insertEmp: Record<string, unknown> = {
             nome: row.nomeRaw,
