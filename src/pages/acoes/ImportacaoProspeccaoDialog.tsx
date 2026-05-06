@@ -347,15 +347,16 @@ export function ImportacaoProspeccaoDialog({
 
         if (!existingProsp) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from("prospeccoes") as any).insert({
+          const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
             empresa_id: empresaId,
             acao_id: acaoId,
             elegibilidade_id: elegId,
             status_prospeccao: row.statusProspeccao,
             responsavel_id: user!.id,
-            notas_prospeccao: row.obsRaw || null,
+            observacoes: row.obsRaw || null,
             valor_proposta: row.valorCausa,
           });
+          if (prospErr) throw prospErr;
         }
 
         // 4) Processo (se tiver número)
