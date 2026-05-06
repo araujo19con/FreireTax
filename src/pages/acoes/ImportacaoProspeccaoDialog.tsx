@@ -165,8 +165,12 @@ export function ImportacaoProspeccaoDialog({
 
   // CNPJ → empresa lookup
   const cnpjToId = new Map<string, string>();
+  // Nome normalizado → empresa lookup (fallback quando CNPJ não bate)
+  const nameToId = new Map<string, string>();
   empresasMap.forEach((e) => {
     if (e.cnpj) cnpjToId.set(e.cnpj.replace(/\D/g, ""), e.id);
+    const nameKey = normalizeStr(e.nome);
+    if (nameKey) nameToId.set(nameKey, e.id);
   });
 
   // Set of empresa_ids already linked to this ação
@@ -246,7 +250,7 @@ export function ImportacaoProspeccaoDialog({
         const numeroProcesso = parseProcesso(processoRaw);
         const valorCausa = parseValor(valorCausaRaw);
 
-        // Resolve empresa
+        // Resolve empresa: 1º por CNPJ, 2º por nome (fallback)
         let empresaId: string | null = null;
         let empresaNome = nomeRaw;
 
@@ -255,6 +259,17 @@ export function ImportacaoProspeccaoDialog({
           if (foundId) {
             empresaId = foundId;
             empresaNome = empresasMap.get(foundId)?.nome ?? nomeRaw;
+          }
+        }
+
+        // Fallback por nome — pega empresas existentes que não bateram por CNPJ
+        // (cnpj null no DB, formato diferente, typo nos dígitos verificadores)
+        if (!empresaId && nomeRaw) {
+          const nameKey = normalizeStr(nomeRaw);
+          const foundByName = nameToId.get(nameKey);
+          if (foundByName) {
+            empresaId = foundByName;
+            empresaNome = empresasMap.get(foundByName)?.nome ?? nomeRaw;
           }
         }
 
@@ -274,9 +289,9 @@ export function ImportacaoProspeccaoDialog({
           cnpj, cnpjErro, statusProspeccao, numeroProcesso, valorCausa,
           empresaId, empresaNome,
           rowStatus,
-          // sem_cnpj e cnpj_invalido agora são importáveis (cnpj nullable em empresas);
-          // ja_importada continua bloqueada
-          selected: rowStatus !== "ja_importada",
+          // Todas as rows selecionadas por padrão — incluindo ja_importada
+          // (re-import atualiza status das prospecções existentes)
+          selected: true,
         });
       }
 
@@ -290,14 +305,15 @@ export function ImportacaoProspeccaoDialog({
     setRows((prev) => prev.map((r, j) => j === i ? { ...r, selected: !r.selected } : r));
 
   const toggleAll = (v: boolean) =>
-    setRows((prev) => prev.map((r) => r.rowStatus === "ja_importada" ? r : { ...r, selected: v }));
+    setRows((prev) => prev.map((r) => ({ ...r, selected: v })));
 
   // -------------------------------------------------------------------------
   // Import
   // -------------------------------------------------------------------------
 
   const handleImport = async () => {
-    const selected = rows.filter((r) => r.selected && r.rowStatus !== "ja_importada");
+    // Processa todas as selecionadas — incluindo ja_importada (atualiza status)
+    const selected = rows.filter((r) => r.selected);
     if (selected.length === 0) { toast.error("Selecione ao menos uma empresa"); return; }
 
     setImporting(true);
@@ -308,7 +324,8 @@ export function ImportacaoProspeccaoDialog({
       try {
         let empresaId: string | null = null;
 
-        // 1) Resolver empresa: lookup fresco no DB por CNPJ (não confia no mapa stale)
+        // 1) Resolver empresa: lookup fresco no DB
+        // 1a) Por CNPJ se disponível
         if (row.cnpj) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: existingByC } = await (supabase as any)
@@ -317,8 +334,9 @@ export function ImportacaoProspeccaoDialog({
             .eq("cnpj", row.cnpj)
             .maybeSingle();
           empresaId = (existingByC as { id: string } | null)?.id ?? null;
-        } else {
-          // Sem CNPJ: dedup por nome (case-insensitive) pra evitar criar empresas duplicadas em re-imports
+        }
+        // 1b) Fallback por nome — cobre cnpj null no DB, formato diferente, typo nos dígitos
+        if (!empresaId && row.nomeRaw) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: byName } = await (supabase as any)
             .from("empresas")
@@ -436,25 +454,16 @@ export function ImportacaoProspeccaoDialog({
 
     setImporting(false);
 
-    // Diagnóstico detalhado — facilita identificar rows que sumiram
+    // Diagnóstico detalhado
     const total = rows.length;
-    const semCnpj = rows.filter(r => r.rowStatus === "sem_cnpj").length;
-    const cnpjInvalido = rows.filter(r => r.rowStatus === "cnpj_invalido").length;
-    const jaImportada = rows.filter(r => r.rowStatus === "ja_importada").length;
-    const naoSelecionadas = rows.filter(
-      r => !r.selected && r.rowStatus !== "ja_importada"
-        && r.rowStatus !== "sem_cnpj" && r.rowStatus !== "cnpj_invalido"
-    ).length;
+    const naoSelecionadas = rows.filter(r => !r.selected).length;
 
-    const partes: string[] = [`${importadas} importadas`];
+    const partes: string[] = [`${importadas} processadas`];
     if (erros > 0) partes.push(`${erros} com erro`);
-    if (jaImportada > 0) partes.push(`${jaImportada} já existiam`);
-    if (semCnpj > 0) partes.push(`${semCnpj} sem CNPJ`);
-    if (cnpjInvalido > 0) partes.push(`${cnpjInvalido} CNPJ inválido`);
     if (naoSelecionadas > 0) partes.push(`${naoSelecionadas} desmarcadas`);
 
     const msg = `${partes.join(" • ")} (total ${total})`;
-    if (erros > 0 || semCnpj > 0 || cnpjInvalido > 0) {
+    if (erros > 0) {
       toast.warning(msg);
     } else {
       toast.success(msg);
@@ -599,12 +608,11 @@ export function ImportacaoProspeccaoDialog({
                   {rows.map((r, i) => (
                     <tr
                       key={i}
-                      className={`border-t border-border/50 ${r.rowStatus === "ja_importada" ? "opacity-40" : ""} hover:bg-muted/30`}
+                      className={`border-t border-border/50 hover:bg-muted/30 ${r.rowStatus === "ja_importada" ? "opacity-70" : ""}`}
                     >
                       <td className="py-1.5 px-2">
                         <Checkbox
                           checked={r.selected}
-                          disabled={r.rowStatus === "ja_importada"}
                           onCheckedChange={() => toggleRow(i)}
                         />
                       </td>
