@@ -53,6 +53,27 @@ function normalizeStr(s: string) {
 }
 
 /**
+ * Chave de comparação de nomes de empresa.
+ * - Remove acentos, lowercase
+ * - "&" -> " e " (ART & C vs ART E C)
+ * - Pontuação/símbolos -> espaço
+ * - Strip sufixos de razão social no final (LTDA, S/A, EIRELI, ME, EPP, MEI)
+ * - Colapsa espaços múltiplos
+ */
+function normalizeNameKey(s: string): string {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // remove diacríticos
+    .toLowerCase()
+    .replace(/&/g, " e ")             // "&" vira " e "
+    .replace(/[^a-z0-9]+/g, " ")      // qualquer não-alfanum vira espaço
+    .trim()
+    .replace(/\s+(ltda|s\/?a|s\.?a\.?|eireli|me|epp|mei)\s*$/i, "") // sufixo final
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Tenta resolver o CNPJ da célula.
  * - Células numéricas do Excel perdem o zero à esquerda (13 → 14 dígitos com padding)
  * - Retorna { cnpj, erro } onde cnpj é null se inválido
@@ -169,7 +190,7 @@ export function ImportacaoProspeccaoDialog({
   const nameToId = new Map<string, string>();
   empresasMap.forEach((e) => {
     if (e.cnpj) cnpjToId.set(e.cnpj.replace(/\D/g, ""), e.id);
-    const nameKey = normalizeStr(e.nome);
+    const nameKey = normalizeNameKey(e.nome);
     if (nameKey) nameToId.set(nameKey, e.id);
   });
 
@@ -263,13 +284,16 @@ export function ImportacaoProspeccaoDialog({
         }
 
         // Fallback por nome — pega empresas existentes que não bateram por CNPJ
-        // (cnpj null no DB, formato diferente, typo nos dígitos verificadores)
+        // (cnpj null no DB, formato diferente, typo nos dígitos verificadores,
+        //  variações como "&" vs "E", sufixos LTDA/SA, etc.)
         if (!empresaId && nomeRaw) {
-          const nameKey = normalizeStr(nomeRaw);
-          const foundByName = nameToId.get(nameKey);
-          if (foundByName) {
-            empresaId = foundByName;
-            empresaNome = empresasMap.get(foundByName)?.nome ?? nomeRaw;
+          const nameKey = normalizeNameKey(nomeRaw);
+          if (nameKey) {
+            const foundByName = nameToId.get(nameKey);
+            if (foundByName) {
+              empresaId = foundByName;
+              empresaNome = empresasMap.get(foundByName)?.nome ?? nomeRaw;
+            }
           }
         }
 
