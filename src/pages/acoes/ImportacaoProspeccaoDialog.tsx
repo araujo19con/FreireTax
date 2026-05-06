@@ -382,11 +382,19 @@ export function ImportacaoProspeccaoDialog({
           const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
             elegibilidade_id: elegId,
             status_prospeccao: row.statusProspeccao,
-            responsavel_id: user!.id,
+            user_id: user!.id,
             observacoes: row.obsRaw || null,
             valor_proposta: row.valorCausa,
           });
-          if (prospErr) throw prospErr;
+          // Não lança erro de prospecção — elegibilidade já foi criada e é suficiente
+          if (prospErr) console.warn("Prospecção não criada:", row.nomeRaw, prospErr);
+        } else {
+          // Atualiza o status no reimport (importações anteriores podem ter status errado)
+          const existingId = (existingProsp as { id: string }).id;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase.from("prospeccoes") as any)
+            .update({ status_prospeccao: row.statusProspeccao })
+            .eq("id", existingId);
         }
 
         // 4) Processo (se tiver número)
