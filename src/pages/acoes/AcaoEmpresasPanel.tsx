@@ -51,7 +51,6 @@ export interface ElegAcao {
   acao_id: string;
   elegivel: boolean;
   justificativa: string | null;
-  motivo_desqualificacao: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
 }

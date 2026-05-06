@@ -69,7 +69,6 @@ interface ElegibilidadeRow {
   acao_id: string;
   elegivel: boolean;
   justificativa: string | null;
-  motivo_desqualificacao: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
 }
@@ -198,7 +197,7 @@ export default function Acoes() {
     const [acoesRes, empRes, elegRes, pastasRes, itemsRes, procRes, prospRes] = await Promise.all([
       supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
       (supabase.from("empresas") as any).select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 4999),
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, motivo_desqualificacao, created_at, valor_potencial_estimado"),
+      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado"),
       supabase.from("pastas_empresas").select("id, nome"),
       supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
       supabase.from("processos").select("*") as any,
@@ -326,7 +325,6 @@ export default function Acoes() {
       .from("elegibilidade")
       .update({
         elegivel: false,
-        motivo_desqualificacao: motivo.trim() || null,
       })
       .eq("id", elegId);
     if (error) {
