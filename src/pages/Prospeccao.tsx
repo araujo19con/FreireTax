@@ -218,7 +218,7 @@ export default function Prospeccao() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.from("prospeccoes").select("*") as any),
       supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado"),
-      supabase.from("empresas").select("id, nome, cnpj"),
+      (supabase.from("empresas") as any).select("id, nome, cnpj").range(0, 4999),
       supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
       supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
     ]);
@@ -463,9 +463,10 @@ export default function Prospeccao() {
     return differenceInDays(new Date(), parseISO(p.ultimo_contato_em)) >= 7;
   }).length;
 
+  const kanbanColumns = statusColumns.filter(col => col.key !== "Não iniciado");
   const visibleColumns = hideEmpty
-    ? statusColumns.filter(col => filteredProspeccoes.some(p => p.status_prospeccao === col.key))
-    : statusColumns;
+    ? kanbanColumns.filter(col => filteredProspeccoes.some(p => p.status_prospeccao === col.key))
+    : kanbanColumns;
 
   if (loading) {
     return (

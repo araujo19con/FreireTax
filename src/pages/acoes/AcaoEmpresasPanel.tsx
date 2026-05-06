@@ -10,7 +10,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown, Trash2, Download, Loader2, XCircle } from "lucide-react";
+import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown, Trash2, Download, Loader2, XCircle, Star } from "lucide-react";
 import { toast } from "sonner";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
 import { prospStatusColor } from "@/lib/prospeccaoStatus";
@@ -53,6 +53,8 @@ export interface ElegAcao {
   justificativa: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
+  destaque: boolean;
+  notas_contexto: string | null;
 }
 
 export interface ProspMin {
@@ -84,6 +86,7 @@ interface Props {
   onOpenProcesso: (elegId: string) => void;
   onDeleteEleg?: (elegId: string) => void;
   onDesqualificar?: (elegId: string, motivo: string) => Promise<void>;
+  onUpdateContexto?: (elegId: string, destaque: boolean, notas: string | null) => Promise<void>;
   onExport: (payload: AcaoEmpresasExportPayload) => Promise<void>;
   onViewEmpresaId?: (id: string) => void;
 }
@@ -122,7 +125,7 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "valor_desc",            label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onExport, onViewEmpresaId }: Props) {
+export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onUpdateContexto, onExport, onViewEmpresaId }: Props) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
@@ -131,6 +134,16 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
   const [desqOpen, setDesqOpen] = useState<string | null>(null);
   const [desqMotivo, setDesqMotivo] = useState("");
   const [desqLoading, setDesqLoading] = useState(false);
+  const [ctxOpen, setCtxOpen] = useState<string | null>(null);
+  const [ctxNotas, setCtxNotas] = useState("");
+  const [ctxDestaque, setCtxDestaque] = useState(false);
+  const [ctxLoading, setCtxLoading] = useState(false);
+
+  const openCtx = (el: ElegAcao) => {
+    setCtxNotas(el.notas_contexto ?? "");
+    setCtxDestaque(el.destaque ?? false);
+    setCtxOpen(el.id);
+  };
 
   const items = useMemo(() => {
     const seen = new Set<string>();
@@ -288,7 +301,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                   return (
                     <tr
                       key={el.id}
-                      className={`border-t border-border transition-colors hover:bg-muted/20 ${idx % 2 !== 0 ? "bg-muted/5" : ""}`}
+                      className={`border-t border-border transition-colors hover:bg-muted/20 ${el.destaque ? "bg-amber-50/50 dark:bg-amber-950/10" : idx % 2 !== 0 ? "bg-muted/5" : ""}`}
                     >
                       <td className="py-2 px-3">
                         {empresa ? (
@@ -339,6 +352,70 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
                       <td className="py-2 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {onUpdateContexto && (
+                            <Popover
+                              open={ctxOpen === el.id}
+                              onOpenChange={(open) => {
+                                if (open) openCtx(el);
+                                else setCtxOpen(null);
+                              }}
+                            >
+                              <PopoverTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 w-6 p-0"
+                                  title="Contexto e contatos"
+                                >
+                                  <Star className={`h-3 w-3 transition-colors ${(el.destaque ?? false) ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-72 p-3 space-y-2.5" align="end">
+                                <p className="text-xs font-semibold">Contexto e contatos</p>
+                                <button
+                                  type="button"
+                                  className={`flex items-center gap-2 text-xs rounded px-2 py-1.5 w-full text-left transition-colors ${ctxDestaque ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400" : "hover:bg-muted text-muted-foreground"}`}
+                                  onClick={() => setCtxDestaque(d => !d)}
+                                >
+                                  <Star className={`h-3.5 w-3.5 shrink-0 ${ctxDestaque ? "fill-amber-400 text-amber-400" : ""}`} />
+                                  {ctxDestaque ? "Destaque ativo — visível para todos" : "Marcar como destaque"}
+                                </button>
+                                <Textarea
+                                  placeholder="Contatos, contexto, observações..."
+                                  className="text-xs min-h-[72px] resize-none"
+                                  value={ctxNotas}
+                                  onChange={(e) => setCtxNotas(e.target.value)}
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 h-7 text-xs"
+                                    onClick={() => setCtxOpen(null)}
+                                  >
+                                    Cancelar
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="flex-1 h-7 text-xs gap-1"
+                                    disabled={ctxLoading}
+                                    onClick={async () => {
+                                      setCtxLoading(true);
+                                      await onUpdateContexto(el.id, ctxDestaque, ctxNotas.trim() || null);
+                                      setCtxLoading(false);
+                                      setCtxOpen(null);
+                                    }}
+                                  >
+                                    {ctxLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                                    Salvar
+                                  </Button>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
                           {!empresa && onDeleteEleg ? (
                             <Button
                               type="button"

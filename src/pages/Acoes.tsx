@@ -199,7 +199,7 @@ export default function Acoes() {
     const [acoesRes, empRes, elegRes, pastasRes, itemsRes, procRes, prospRes] = await Promise.all([
       supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
       (supabase.from("empresas") as any).select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 4999),
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado"),
+      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto"),
       supabase.from("pastas_empresas").select("id, nome"),
       supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
       supabase.from("processos").select("*") as any,
@@ -334,6 +334,19 @@ export default function Acoes() {
     } else {
       toast.success("Empresa marcada como inelegível");
       logAudit({ tabela: "elegibilidade", acao: "Desqualificou empresa", registro_id: elegId });
+      fetchAll();
+    }
+  };
+
+  const handleUpdateContexto = async (elegId: string, destaque: boolean, notas: string | null) => {
+    const { error } = await supabase
+      .from("elegibilidade")
+      .update({ destaque, notas_contexto: notas })
+      .eq("id", elegId);
+    if (error) {
+      toast.error("Erro ao salvar contexto");
+    } else {
+      toast.success(destaque ? "Empresa marcada como destaque" : "Contexto salvo");
       fetchAll();
     }
   };
@@ -731,6 +744,7 @@ export default function Acoes() {
                     onOpenProcesso={(elegId) => openProcessoDialog(elegId)}
                     onDeleteEleg={handleDeleteEleg}
                     onDesqualificar={handleDesqualificar}
+                    onUpdateContexto={handleUpdateContexto}
                     onExport={handleExportAcao}
                     onViewEmpresaId={setDetailEmpresaId}
                   />
