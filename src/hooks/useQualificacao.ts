@@ -271,7 +271,7 @@ export function useCriarProspeccaoFromEleg() {
         .insert({
           elegibilidade_id: elegibilidadeId,
           user_id: user!.id,
-          status_prospeccao: "Não iniciado",
+          status_prospeccao: "Contato feito",
         })
         .select()
         .single();

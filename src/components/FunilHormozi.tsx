@@ -6,10 +6,11 @@ import { TrendingUp, ArrowDown, AlertCircle, Users, Handshake, CheckCircle2, XCi
 import { supabase } from "@/integrations/supabase/client";
 
 // Ordem canônica do funil (do topo pro fundo)
+// "Não iniciado" foi removido — empresas sem prospecção entram como "Aguardando" no painel da ação.
+// "Proposta Enviada" agora é orange pra não confundir com warning/aguardando.
 const STAGES: { key: string; label: string; icon: typeof Users; color: string; dot: string }[] = [
-  { key: "Não iniciado",      label: "Não Iniciado",      icon: Users,         color: "text-muted-foreground", dot: "bg-muted-foreground" },
   { key: "Contato feito",     label: "Contato Feito",     icon: MessageSquare, color: "text-info",             dot: "bg-info" },
-  { key: "Proposta enviada",  label: "Proposta Enviada",  icon: Send,          color: "text-warning",          dot: "bg-warning" },
+  { key: "Proposta enviada",  label: "Proposta Enviada",  icon: Send,          color: "text-orange-600",       dot: "bg-orange-500" },
   { key: "Em negociação",     label: "Em Negociação",     icon: Handshake,     color: "text-primary",          dot: "bg-primary" },
   { key: "Contrato assinado", label: "Contrato Assinado", icon: CheckCircle2,  color: "text-success",          dot: "bg-success" },
 ];
@@ -63,11 +64,10 @@ export function FunilHormozi() {
   const totalPerdidos = byStage.get(LOST_KEY)?.qtd ?? 0;
   const totalGeral = totalAtivos + totalPerdidos;
 
-  // Taxa de conversão total: Não iniciado → Contrato assinado
-  const iniciados = byStage.get(STAGES[0].key)?.qtd ?? 0;
+  // Taxa de conversão total: Contato feito → Contrato assinado
   const fechados = byStage.get("Contrato assinado")?.qtd ?? 0;
-  // Close rate sobre quem SAIU do "Não iniciado" (teve algum toque):
-  const trabalhados = totalAtivos - iniciados + fechados; // todos menos os não iniciados
+  // Sem etapa "Não iniciado", todos contam como "trabalhados" (todos tiveram algum toque):
+  const trabalhados = totalAtivos + totalPerdidos;
   const closeRate = totalGeral > 0
     ? ((fechados / Math.max(1, totalGeral)) * 100)
     : 0;
@@ -219,15 +219,10 @@ export function FunilHormozi() {
         <div className="space-y-1.5 text-xs text-muted-foreground">
           {(() => {
             const insights: string[] = [];
-            const iniciadosQtd = byStage.get("Não iniciado")?.qtd ?? 0;
             const contatosQtd = byStage.get("Contato feito")?.qtd ?? 0;
             const propostasQtd = byStage.get("Proposta enviada")?.qtd ?? 0;
             const negocQtd = byStage.get("Em negociação")?.qtd ?? 0;
             const fechadosQtd = byStage.get("Contrato assinado")?.qtd ?? 0;
-
-            if (iniciadosQtd > totalAtivos * 0.3) {
-              insights.push(`⚠ ${iniciadosQtd} prospecções (${((iniciadosQtd / Math.max(1, totalAtivos)) * 100).toFixed(0)}%) estão em "Não iniciado" — time precisa começar os toques. Cadência dorme dinheiro.`);
-            }
             if (contatosQtd > 0 && propostasQtd / Math.max(1, contatosQtd) < 0.5) {
               insights.push(`⚠ Só ${((propostasQtd / Math.max(1, contatosQtd)) * 100).toFixed(0)}% dos contatos avançam pra proposta. Mensagem não está causando desejo — revisar abordagem/template de abertura.`);
             }

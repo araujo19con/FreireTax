@@ -89,14 +89,14 @@ export default function Dashboard() {
     const totalContrato = filtProsp.reduce((s, p) => s + (Number(p.valor_contrato) || 0), 0);
 
     // Prospecção funnel with conversion rates
-    const prospStatuses = ["Não iniciado", "Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado", "Perdido"];
+    const prospStatuses = ["Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado", "Serviço iniciado", "Perdido"];
     const prospFunnel = prospStatuses.map((s) => ({
       name: s,
       value: filtProsp.filter((p) => p.status_prospeccao === s).length,
     })).filter((d) => d.value > 0);
 
     // Conversion rates between stages (excluding "Perdido")
-    const activeStatuses = ["Não iniciado", "Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado"];
+    const activeStatuses = ["Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado", "Serviço iniciado"];
     const funnelCounts = activeStatuses.map(s => filtProsp.filter(p => p.status_prospeccao === s).length);
     // Cumulative: items that reached at least stage i = sum of all stages from i onwards
     const cumulativeFunnel = activeStatuses.map((_, i) => funnelCounts.slice(i).reduce((a, b) => a + b, 0));
@@ -448,11 +448,11 @@ export default function Dashboard() {
                   const max = Math.max(...stats.prospFunnel.map((d) => d.value));
                   const pct = max > 0 ? (item.value / max) * 100 : 0;
                   const colors = {
-                    "Não iniciado": "bg-muted-foreground/20",
                     "Contato feito": "bg-info/60",
-                    "Proposta enviada": "bg-warning/60",
+                    "Proposta enviada": "bg-orange-500/60",
                     "Em negociação": "bg-primary/60",
                     "Contrato assinado": "bg-success/60",
+                    "Serviço iniciado": "bg-accent/60",
                     "Perdido": "bg-destructive/60",
                   } as Record<string, string>;
                   return (

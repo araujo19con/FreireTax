@@ -11,11 +11,11 @@ import { logAudit } from "@/lib/audit";
 import { Handshake } from "lucide-react";
 
 const STATUS_OPTIONS = [
-  "Não iniciado",
   "Contato feito",
   "Proposta enviada",
   "Em negociação",
   "Contrato assinado",
+  "Serviço iniciado",
   "Perdido",
 ];
 
@@ -31,14 +31,14 @@ interface Props {
 
 export function ProspeccaoRapidaDialog({ open, onOpenChange, elegId, empresaId, acaoId, empresaNome, onSuccess }: Props) {
   const { user } = useAuth();
-  const [status, setStatus] = useState("Não iniciado");
+  const [status, setStatus] = useState("Contato feito");
   const [observacoes, setObservacoes] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleClose = (v: boolean) => {
     if (!saving) {
       onOpenChange(v);
-      if (!v) { setStatus("Não iniciado"); setObservacoes(""); }
+      if (!v) { setStatus("Contato feito"); setObservacoes(""); }
     }
   };
 

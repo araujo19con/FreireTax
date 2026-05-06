@@ -11,7 +11,6 @@ import { getCapitaisForUFs, normalizeMunicipio } from "@/lib/municipiosBrasil";
 export type StatusCombinadoKey =
   | "nao_elegivel"
   | "aguardando"
-  | "Não iniciado"
   | "Contato feito"
   | "Proposta enviada"
   | "Em negociação"

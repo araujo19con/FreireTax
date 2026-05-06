@@ -33,7 +33,7 @@ interface ProspRow {
   // processed
   cnpj: string | null;
   cnpjErro: string | null;   // motivo se CNPJ inválido
-  statusProspeccao: string;
+  statusProspeccao: string | null;  // null = sem status -> não cria prospecção, fica como "Aguardando"
   numeroProcesso: string | null;
   valorCausa: number | null;
   // resolution
@@ -122,9 +122,10 @@ function parseProcesso(raw: string): string | null {
 
 // Chaves devem bater exatamente com PROSPECCAO_STATUSES em src/lib/prospeccaoStatus.ts
 // "CONTATO RD" / "CONTATO" = só indica facilidade de acesso ao contato, não que houve contato
-const SITUACAO_MAP: Record<string, string> = {
-  "CONTATO RD":        "Não iniciado",
-  "CONTATO":           "Não iniciado",
+// (mapeiam pra null → fica como "Aguardando", sem prospecção criada)
+const SITUACAO_MAP: Record<string, string | null> = {
+  "CONTATO RD":        null,
+  "CONTATO":           null,
   "PROTOCOLADO":       "Contato feito",
   "CONTRATO ENVIADO":  "Proposta enviada",
   "PROPOSTA ENVIADA":  "Proposta enviada",
@@ -136,16 +137,16 @@ const SITUACAO_MAP: Record<string, string> = {
   "PERDIDO":           "Perdido",
 };
 
-function mapSituacao(raw: string): string {
+// Retorna null se não existe status válido — nesse caso a prospecção NÃO é criada
+// e a empresa fica como "Aguardando" no painel.
+function mapSituacao(raw: string): string | null {
   const s = String(raw || "").trim().toUpperCase();
-  if (!s) return "Não iniciado";
-  // exact match first
-  if (SITUACAO_MAP[s]) return SITUACAO_MAP[s];
-  // partial match
+  if (!s) return null;
+  if (s in SITUACAO_MAP) return SITUACAO_MAP[s];
   for (const [key, val] of Object.entries(SITUACAO_MAP)) {
     if (s.includes(key)) return val;
   }
-  return "Não iniciado";
+  return null;
 }
 
 function findColIdx(headers: string[], candidates: string[]): number {
@@ -419,33 +420,41 @@ export function ImportacaoProspeccaoDialog({
           elegId = (newEleg as { id: string }).id;
         }
 
-        // 3) Prospecção — vincula apenas por elegibilidade_id
-        // empresa_id e acao_id não existem em produção (migration 20260421 não aplicada)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: existingProsp } = await (supabase as any)
-          .from("prospeccoes")
-          .select("id")
-          .eq("elegibilidade_id", elegId!)
-          .maybeSingle();
-
-        if (!existingProsp) {
+        // 3) Prospecção — só cria/atualiza se houver status válido
+        // statusProspeccao=null significa "Aguardando" (sem prospecção criada)
+        if (row.statusProspeccao) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
-            elegibilidade_id: elegId,
-            status_prospeccao: row.statusProspeccao,
-            user_id: user!.id,
-            notas_prospeccao: row.obsRaw || null,
-            valor_contrato: row.valorCausa,
-          });
-          // Não lança erro de prospecção — elegibilidade já foi criada e é suficiente
-          if (prospErr) console.warn("Prospecção não criada:", row.nomeRaw, prospErr);
+          const { data: existingProsp } = await (supabase as any)
+            .from("prospeccoes")
+            .select("id")
+            .eq("elegibilidade_id", elegId!)
+            .maybeSingle();
+
+          if (!existingProsp) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
+              elegibilidade_id: elegId,
+              status_prospeccao: row.statusProspeccao,
+              user_id: user!.id,
+              notas_prospeccao: row.obsRaw || null,
+              valor_contrato: row.valorCausa,
+            });
+            // Não lança erro de prospecção — elegibilidade já foi criada e é suficiente
+            if (prospErr) console.warn("Prospecção não criada:", row.nomeRaw, prospErr);
+          } else {
+            // Atualiza o status no reimport (importações anteriores podem ter status errado)
+            const existingId = (existingProsp as { id: string }).id;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase.from("prospeccoes") as any)
+              .update({ status_prospeccao: row.statusProspeccao })
+              .eq("id", existingId);
+          }
         } else {
-          // Atualiza o status no reimport (importações anteriores podem ter status errado)
-          const existingId = (existingProsp as { id: string }).id;
+          // Sem status válido: se já existia prospecção, deleta (volta pra Aguardando)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (supabase.from("prospeccoes") as any)
-            .update({ status_prospeccao: row.statusProspeccao })
-            .eq("id", existingId);
+            .delete()
+            .eq("elegibilidade_id", elegId!);
         }
 
         // 4) Processo (se tiver número)
@@ -671,7 +680,7 @@ export function ImportacaoProspeccaoDialog({
                         <span className="truncate block text-[10px]">{r.numeroProcesso ?? "—"}</span>
                       </td>
                       <td className="py-1.5 px-2">
-                        <span className="text-foreground/80">{r.statusProspeccao}</span>
+                        <span className="text-foreground/80">{r.statusProspeccao ?? "Aguardando"}</span>
                         {r.situacaoRaw && r.situacaoRaw !== r.statusProspeccao && (
                           <span className="text-muted-foreground ml-1">({r.situacaoRaw})</span>
                         )}

@@ -117,7 +117,7 @@ interface Prospeccao {
 
 const faseOptions = ["Inicial", "Recurso", "Sentença", "Acórdão", "Trânsito em Julgado", "Execução", "Finalizado"];
 const statusProcessoOptions = ["Em andamento", "Favorável", "Desfavorável", "Suspenso", "Finalizado"];
-const statusProspeccaoOptions = ["Não iniciado", "Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado", "Perdido"];
+const statusProspeccaoOptions = ["Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado", "Serviço iniciado", "Perdido"];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -187,7 +187,7 @@ export default function Acoes() {
   const [prospContatoTel, setProspContatoTel] = useState("");
   const [prospContatoEmail, setProspContatoEmail] = useState("");
   const [prospContatoCargo, setProspContatoCargo] = useState("");
-  const [prospStatus, setProspStatus] = useState("Não iniciado");
+  const [prospStatus, setProspStatus] = useState("Contato feito");
   const [prospNotas, setProspNotas] = useState("");
   const [prospValorContrato, setProspValorContrato] = useState("");
   const [prospTipoContrato, setProspTipoContrato] = useState("");
@@ -568,7 +568,7 @@ export default function Acoes() {
     } else {
       setEditingProsp(null);
       setProspContatoNome(""); setProspContatoTel(""); setProspContatoEmail(""); setProspContatoCargo("");
-      setProspStatus("Não iniciado"); setProspNotas("");
+      setProspStatus("Contato feito"); setProspNotas("");
       setProspValorContrato(""); setProspTipoContrato(""); setProspDataContrato(""); setProspDataAssinatura(""); setProspObsContrato("");
     }
     setProspDialogOpen(true);

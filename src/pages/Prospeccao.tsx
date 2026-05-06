@@ -442,7 +442,7 @@ export default function Prospeccao() {
     const payload = {
       elegibilidade_id: createElegId,
       user_id: user!.id,
-      status_prospeccao: "Não iniciado",
+      status_prospeccao: "Contato feito",
       contato_nome: createContatoNome,
       contato_telefone: createContatoTel,
       contato_email: createContatoEmail,

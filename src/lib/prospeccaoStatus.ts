@@ -9,14 +9,16 @@ export interface ProspeccaoStatusDef {
   order: number;     // 0..6 — usado pela ordenação "status do funil"
 }
 
+// "Não iniciado" foi removido — empresas sem prospecção agora aparecem como "Aguardando"
+// (badge dedicado no painel quando elegível && sem prospecção).
+// "Proposta enviada" mudou de warning (amber) para orange — antes confundia com Aguardando.
 export const PROSPECCAO_STATUSES: ProspeccaoStatusDef[] = [
-  { key: "Não iniciado",      label: "Não Iniciado",      color: "bg-muted text-muted-foreground",      dotColor: "bg-muted-foreground", order: 0 },
-  { key: "Contato feito",     label: "Contato Feito",     color: "bg-info/10 text-info",                dotColor: "bg-info",             order: 1 },
-  { key: "Proposta enviada",  label: "Proposta Enviada",  color: "bg-warning/10 text-warning",          dotColor: "bg-warning",          order: 2 },
-  { key: "Em negociação",     label: "Em Negociação",     color: "bg-primary/10 text-primary",          dotColor: "bg-primary",          order: 3 },
-  { key: "Contrato assinado", label: "Contrato Assinado", color: "bg-success/10 text-success",          dotColor: "bg-success",          order: 4 },
-  { key: "Serviço iniciado",  label: "Serviço Iniciado",  color: "bg-accent/15 text-accent-foreground", dotColor: "bg-accent",           order: 5 },
-  { key: "Perdido",           label: "Perdido",           color: "bg-destructive/10 text-destructive",  dotColor: "bg-destructive",      order: 6 },
+  { key: "Contato feito",     label: "Contato Feito",     color: "bg-info/10 text-info",                                  dotColor: "bg-info",             order: 1 },
+  { key: "Proposta enviada",  label: "Proposta Enviada",  color: "bg-orange-500/10 text-orange-600 dark:text-orange-400", dotColor: "bg-orange-500",       order: 2 },
+  { key: "Em negociação",     label: "Em Negociação",     color: "bg-primary/10 text-primary",                            dotColor: "bg-primary",          order: 3 },
+  { key: "Contrato assinado", label: "Contrato Assinado", color: "bg-success/10 text-success",                            dotColor: "bg-success",          order: 4 },
+  { key: "Serviço iniciado",  label: "Serviço Iniciado",  color: "bg-accent/15 text-accent-foreground",                   dotColor: "bg-accent",           order: 5 },
+  { key: "Perdido",           label: "Perdido",           color: "bg-destructive/10 text-destructive",                    dotColor: "bg-destructive",      order: 6 },
 ];
 
 const BY_KEY = new Map(PROSPECCAO_STATUSES.map((s) => [s.key, s]));

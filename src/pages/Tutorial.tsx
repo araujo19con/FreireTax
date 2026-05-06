@@ -227,7 +227,7 @@ const STEPS: Step[] = [
     icon: Handshake,
     resumo: "Pipeline Kanban com 7 estágios até fechar ou perder o deal.",
     detalhe:
-      "Ao qualificar uma empresa numa ação, ela vira uma prospecção automaticamente. Arraste pelo Kanban: Não iniciado → Contato inicial → Qualificação → Proposta enviada → Negociação → Contrato assinado → Serviço iniciado (ou Perdido). Cada mudança é auditada.",
+      "Ao qualificar uma empresa numa ação, ela vira uma prospecção automaticamente. Arraste pelo Kanban: Contato feito → Proposta enviada → Em negociação → Contrato assinado → Serviço iniciado (ou Perdido). Empresas elegíveis sem prospecção ainda iniciada aparecem como Aguardando. Cada mudança é auditada.",
     link: { to: "/prospeccao", label: "Abrir Prospecção" },
     dicas: [
       "Ao criar uma prospecção, uma tarefa 'Contato inicial' é criada automaticamente no Meu Espaço.",

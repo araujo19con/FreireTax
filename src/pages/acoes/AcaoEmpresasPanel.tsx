@@ -98,12 +98,12 @@ type PresetKey = "todas" | "elegiveis" | "aguardando" | "em_prospeccao";
 const PRESETS: Record<PresetKey, StatusCombinadoKey[] | undefined> = {
   todas: undefined,
   elegiveis: [
-    "aguardando", "Não iniciado", "Contato feito", "Proposta enviada",
+    "aguardando", "Contato feito", "Proposta enviada",
     "Em negociação", "Contrato assinado", "Serviço iniciado", "Perdido",
   ],
   aguardando: ["aguardando"],
   em_prospeccao: [
-    "Não iniciado", "Contato feito", "Proposta enviada",
+    "Contato feito", "Proposta enviada",
     "Em negociação", "Contrato assinado", "Serviço iniciado",
   ],
 };
