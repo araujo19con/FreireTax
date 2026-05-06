@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { validateCNPJ } from "@/lib/cnpj";
+// import { validateCNPJ } from "@/lib/cnpj"; // mod 11 muito estrito pro import — dados legados frequentemente falham
 import { toast } from "sonner";
 import {
   Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle,
@@ -64,8 +64,10 @@ function resolveCNPJ(raw: unknown): { cnpj: string | null; erro: string | null }
 
   let digits = String(raw).replace(/\D/g, "");
 
-  // Excel armazena CNPJ como número → perde zero à esquerda (13 → 14 dígitos)
+  // Excel armazena CNPJ como número → perde zeros à esquerda
   if (digits.length === 13) digits = "0" + digits;
+  if (digits.length === 12) digits = "00" + digits;
+  if (digits.length === 11) digits = "000" + digits;
 
   if (digits.length !== 14) {
     return {
@@ -74,12 +76,9 @@ function resolveCNPJ(raw: unknown): { cnpj: string | null; erro: string | null }
     };
   }
 
-  if (!validateCNPJ(digits)) {
-    return {
-      cnpj: null,
-      erro: "Dígitos verificadores incorretos",
-    };
-  }
+  // Não validamos mod 11 aqui — planilhas legadas frequentemente têm CNPJs com
+  // dígitos verificadores errados (typos no cadastro original) mas a empresa existe.
+  // O enriquecimento RFB rejeitará CNPJs realmente inválidos.
 
   return { cnpj: digits, erro: null };
 }
@@ -275,8 +274,9 @@ export function ImportacaoProspeccaoDialog({
           cnpj, cnpjErro, statusProspeccao, numeroProcesso, valorCausa,
           empresaId, empresaNome,
           rowStatus,
-          // sem_cnpj não pode ser importada (cnpj é NOT NULL em empresas)
-          selected: rowStatus !== "ja_importada" && rowStatus !== "sem_cnpj" && rowStatus !== "cnpj_invalido",
+          // sem_cnpj e cnpj_invalido agora são importáveis (cnpj nullable em empresas);
+          // ja_importada continua bloqueada
+          selected: rowStatus !== "ja_importada",
         });
       }
 
@@ -317,6 +317,15 @@ export function ImportacaoProspeccaoDialog({
             .eq("cnpj", row.cnpj)
             .maybeSingle();
           empresaId = (existingByC as { id: string } | null)?.id ?? null;
+        } else {
+          // Sem CNPJ: dedup por nome (case-insensitive) pra evitar criar empresas duplicadas em re-imports
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: byName } = await (supabase as any)
+            .from("empresas")
+            .select("id")
+            .ilike("nome", row.nomeRaw)
+            .limit(1);
+          empresaId = (byName as Array<{ id: string }> | null)?.[0]?.id ?? null;
         }
 
         // Criar empresa se não encontrou pelo CNPJ (nova ou sem CNPJ)
@@ -427,10 +436,28 @@ export function ImportacaoProspeccaoDialog({
 
     setImporting(false);
 
-    if (erros > 0) {
-      toast.warning(`${importadas} importadas, ${erros} com erro — veja o console`);
+    // Diagnóstico detalhado — facilita identificar rows que sumiram
+    const total = rows.length;
+    const semCnpj = rows.filter(r => r.rowStatus === "sem_cnpj").length;
+    const cnpjInvalido = rows.filter(r => r.rowStatus === "cnpj_invalido").length;
+    const jaImportada = rows.filter(r => r.rowStatus === "ja_importada").length;
+    const naoSelecionadas = rows.filter(
+      r => !r.selected && r.rowStatus !== "ja_importada"
+        && r.rowStatus !== "sem_cnpj" && r.rowStatus !== "cnpj_invalido"
+    ).length;
+
+    const partes: string[] = [`${importadas} importadas`];
+    if (erros > 0) partes.push(`${erros} com erro`);
+    if (jaImportada > 0) partes.push(`${jaImportada} já existiam`);
+    if (semCnpj > 0) partes.push(`${semCnpj} sem CNPJ`);
+    if (cnpjInvalido > 0) partes.push(`${cnpjInvalido} CNPJ inválido`);
+    if (naoSelecionadas > 0) partes.push(`${naoSelecionadas} desmarcadas`);
+
+    const msg = `${partes.join(" • ")} (total ${total})`;
+    if (erros > 0 || semCnpj > 0 || cnpjInvalido > 0) {
+      toast.warning(msg);
     } else {
-      toast.success(`${importadas} empresa(s) importada(s) com sucesso!`);
+      toast.success(msg);
     }
     onImported();
     handleClose();
@@ -572,12 +599,12 @@ export function ImportacaoProspeccaoDialog({
                   {rows.map((r, i) => (
                     <tr
                       key={i}
-                      className={`border-t border-border/50 ${r.rowStatus === "ja_importada" || r.rowStatus === "sem_cnpj" || r.rowStatus === "cnpj_invalido" ? "opacity-40" : ""} hover:bg-muted/30`}
+                      className={`border-t border-border/50 ${r.rowStatus === "ja_importada" ? "opacity-40" : ""} hover:bg-muted/30`}
                     >
                       <td className="py-1.5 px-2">
                         <Checkbox
                           checked={r.selected}
-                          disabled={r.rowStatus === "ja_importada" || r.rowStatus === "sem_cnpj" || r.rowStatus === "cnpj_invalido"}
+                          disabled={r.rowStatus === "ja_importada"}
                           onCheckedChange={() => toggleRow(i)}
                         />
                       </td>
