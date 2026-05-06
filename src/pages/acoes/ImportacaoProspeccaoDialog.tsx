@@ -338,18 +338,18 @@ export function ImportacaoProspeccaoDialog({
           elegId = (newEleg as { id: string }).id;
         }
 
-        // 3) Prospecção — usa elegibilidade_id (acao_id não existe em produção ainda)
-        const { data: existingProsp } = await supabase
+        // 3) Prospecção — vincula apenas por elegibilidade_id
+        // empresa_id e acao_id não existem em produção (migration 20260421 não aplicada)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: existingProsp } = await (supabase as any)
           .from("prospeccoes")
-          .select("id, status_prospeccao")
-          .eq("empresa_id", empresaId!)
+          .select("id")
           .eq("elegibilidade_id", elegId!)
           .maybeSingle();
 
         if (!existingProsp) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
-            empresa_id: empresaId,
             elegibilidade_id: elegId,
             status_prospeccao: row.statusProspeccao,
             responsavel_id: user!.id,

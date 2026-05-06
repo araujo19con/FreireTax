@@ -132,14 +132,25 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
   const [desqMotivo, setDesqMotivo] = useState("");
   const [desqLoading, setDesqLoading] = useState(false);
 
-  const items = useMemo(() => elegs.map(el => ({
-    el,
-    empresa: empresasMap.get(el.empresa_id),
-    prosp: prospeccoes.find(p =>
-      p.elegibilidade_id === el.id ||
-      (p.empresa_id === el.empresa_id && p.acao_id === acaoId)
-    ),
-  })), [elegs, empresasMap, prospeccoes, acaoId]);
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Array<{ el: ElegAcao; empresa: EmpresaAcao; prosp: ProspMin | undefined }> = [];
+    for (const el of elegs) {
+      const empresa = empresasMap.get(el.empresa_id);
+      if (!empresa) continue; // oculta registros órfãos (empresa removida)
+      if (seen.has(el.empresa_id)) continue; // deduplica por empresa
+      seen.add(el.empresa_id);
+      result.push({
+        el,
+        empresa,
+        prosp: prospeccoes.find(p =>
+          p.elegibilidade_id === el.id ||
+          (p.empresa_id === el.empresa_id && p.acao_id === acaoId)
+        ),
+      });
+    }
+    return result;
+  }, [elegs, empresasMap, prospeccoes, acaoId]);
 
   // Counts dos chips de topo são sempre contra `items`, não `filtered`,
   // pra que o usuário sempre veja o "tamanho real" de cada bucket.
