@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks, FileSpreadsheet, Upload, CheckCircle2, XCircle } from "lucide-react";
 import { AcaoEmpresasPanel, type ProspMin, type AcaoEmpresasExportPayload } from "./acoes/AcaoEmpresasPanel";
+import { ImportacaoProspeccaoDialog } from "./acoes/ImportacaoProspeccaoDialog";
 import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import { exportEmpresasAcaoXlsx, type ExportRow } from "@/lib/exportEmpresasAcao";
 import { ProspeccaoRapidaDialog } from "./acoes/ProspeccaoRapidaDialog";
@@ -133,6 +134,7 @@ export default function Acoes() {
   const [loading, setLoading] = useState(true);
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
   const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
+  const [importProspAcao, setImportProspAcao] = useState<{ id: string; nome: string } | null>(null);
   const [detailEmpresaId, setDetailEmpresaId] = useState<string | null>(null);
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -677,6 +679,9 @@ export default function Acoes() {
                         <UserCheck className="mr-1 h-3 w-3" />{elegiveisCount} elegíveis
                       </Badge>
                     )}
+                    <Button variant="ghost" size="sm" onClick={() => setImportProspAcao({ id: a.id, nome: a.nome })}>
+                      <FileSpreadsheet className="mr-1 h-3 w-3" />Importar
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => openElegDialog(a.id)}>
                       <Plus className="mr-1 h-3 w-3" />Elegibilidade
                     </Button>
@@ -747,6 +752,18 @@ export default function Acoes() {
       />
 
       <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
+
+      {importProspAcao && (
+        <ImportacaoProspeccaoDialog
+          acaoId={importProspAcao.id}
+          acaoNome={importProspAcao.nome}
+          open={!!importProspAcao}
+          onClose={() => setImportProspAcao(null)}
+          onImported={() => { fetchAll(); setImportProspAcao(null); }}
+          empresasMap={empresasMap}
+          elegibilidades={elegibilidades}
+        />
+      )}
 
       {/* Elegibilidade Dialog */}
       <Dialog open={elegDialogOpen} onOpenChange={setElegDialogOpen}>
