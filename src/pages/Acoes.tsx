@@ -198,12 +198,12 @@ export default function Acoes() {
   const fetchAll = async () => {
     const [acoesRes, empRes, elegRes, pastasRes, itemsRes, procRes, prospRes] = await Promise.all([
       supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-      (supabase.from("empresas") as any).select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 4999),
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto"),
+      (supabase.from("empresas") as any).select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 49999),
+      (supabase.from("elegibilidade") as any).select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto").range(0, 49999),
       supabase.from("pastas_empresas").select("id, nome"),
       supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
-      supabase.from("processos").select("*") as any,
-      supabase.from("prospeccoes").select("*") as any,
+      ((supabase.from("processos") as any).select("*").range(0, 9999)),
+      ((supabase.from("prospeccoes") as any).select("*").range(0, 9999)),
     ]);
     setAcoes(acoesRes.data || []);
     setEmpresas(empRes.data || []);
@@ -655,7 +655,16 @@ export default function Acoes() {
           const acaoElegs = getElegibilidadesForAcao(a.id);
           const isExpanded = expandedAcao === a.id;
           const totals = getTotalsForAcao(a.id);
-          const elegiveisCount = acaoElegs.filter((e) => e.elegivel).length;
+          // Contagens deduplicadas por empresa_id e sem órfãos — bate com o painel
+          const seenAll = new Set<string>();
+          const seenEleg = new Set<string>();
+          for (const eleg of acaoElegs) {
+            if (!empresasMap.has(eleg.empresa_id)) continue;
+            seenAll.add(eleg.empresa_id);
+            if (eleg.elegivel) seenEleg.add(eleg.empresa_id);
+          }
+          const empresasCount = seenAll.size;
+          const elegiveisCount = seenEleg.size;
 
           return (
             <Card key={a.id} className="shadow-card hover:shadow-elevated transition-shadow">
@@ -685,7 +694,7 @@ export default function Acoes() {
                       a.status === "Ativa" ? "bg-success/10 text-success" : a.status === "Inativa" ? "bg-muted text-muted-foreground" : "bg-warning/10 text-warning"
                     }`}>{a.status}</span>
                     <Badge variant="outline" className="text-[10px]">
-                      <Users className="mr-1 h-3 w-3" />{acaoElegs.length} empresas
+                      <Users className="mr-1 h-3 w-3" />{empresasCount} empresas
                     </Badge>
                     {elegiveisCount > 0 && (
                       <Badge variant="outline" className="text-[10px] border-success/30 text-success">

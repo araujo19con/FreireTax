@@ -216,9 +216,9 @@ export default function Prospeccao() {
   const fetchAll = async () => {
     const [prospRes, elegRes, empRes, acoesRes, profsRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.from("prospeccoes").select("*") as any),
-      supabase.from("elegibilidade").select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado"),
-      (supabase.from("empresas") as any).select("id, nome, cnpj").range(0, 4999),
+      ((supabase.from("prospeccoes") as any).select("*").range(0, 9999)),
+      (supabase.from("elegibilidade") as any).select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado").range(0, 49999),
+      (supabase.from("empresas") as any).select("id, nome, cnpj").range(0, 49999),
       supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
       supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
     ]);
