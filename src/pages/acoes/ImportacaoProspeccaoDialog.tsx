@@ -100,18 +100,20 @@ function parseProcesso(raw: string): string | null {
   return s;
 }
 
+// Chaves devem bater exatamente com PROSPECCAO_STATUSES em src/lib/prospeccaoStatus.ts
+// "CONTATO RD" / "CONTATO" = só indica facilidade de acesso ao contato, não que houve contato
 const SITUACAO_MAP: Record<string, string> = {
-  "CONTATO RD": "Contato inicial",
-  "CONTATO": "Contato inicial",
-  "PROTOCOLADO": "Qualificação",
-  "CONTRATO ENVIADO": "Proposta enviada",
-  "PROPOSTA ENVIADA": "Proposta enviada",
-  "NEGOCIACAO": "Negociação",
-  "NEGOCIAÇÃO": "Negociação",
+  "CONTATO RD":        "Não iniciado",
+  "CONTATO":           "Não iniciado",
+  "PROTOCOLADO":       "Contato feito",
+  "CONTRATO ENVIADO":  "Proposta enviada",
+  "PROPOSTA ENVIADA":  "Proposta enviada",
+  "NEGOCIACAO":        "Em negociação",
+  "NEGOCIAÇÃO":        "Em negociação",
   "CONTRATO ASSINADO": "Contrato assinado",
-  "SERVICO INICIADO": "Serviço iniciado",
-  "SERVIÇO INICIADO": "Serviço iniciado",
-  "PERDIDO": "Perdido",
+  "SERVICO INICIADO":  "Serviço iniciado",
+  "SERVIÇO INICIADO":  "Serviço iniciado",
+  "PERDIDO":           "Perdido",
 };
 
 function mapSituacao(raw: string): string {
