@@ -245,7 +245,8 @@ export function ImportacaoProspeccaoDialog({
           cnpj, cnpjErro, statusProspeccao, numeroProcesso, valorCausa,
           empresaId, empresaNome,
           rowStatus,
-          selected: rowStatus !== "ja_importada",
+          // sem_cnpj não pode ser importada (cnpj é NOT NULL em empresas)
+          selected: rowStatus !== "ja_importada" && rowStatus !== "sem_cnpj" && rowStatus !== "cnpj_invalido",
         });
       }
 
@@ -337,19 +338,18 @@ export function ImportacaoProspeccaoDialog({
           elegId = (newEleg as { id: string }).id;
         }
 
-        // 3) Prospecção
+        // 3) Prospecção — usa elegibilidade_id (acao_id não existe em produção ainda)
         const { data: existingProsp } = await supabase
           .from("prospeccoes")
           .select("id, status_prospeccao")
           .eq("empresa_id", empresaId!)
-          .eq("acao_id", acaoId)
+          .eq("elegibilidade_id", elegId!)
           .maybeSingle();
 
         if (!existingProsp) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
             empresa_id: empresaId,
-            acao_id: acaoId,
             elegibilidade_id: elegId,
             status_prospeccao: row.statusProspeccao,
             responsavel_id: user!.id,
@@ -534,12 +534,12 @@ export function ImportacaoProspeccaoDialog({
                   {rows.map((r, i) => (
                     <tr
                       key={i}
-                      className={`border-t border-border/50 ${r.rowStatus === "ja_importada" ? "opacity-40" : ""} hover:bg-muted/30`}
+                      className={`border-t border-border/50 ${r.rowStatus === "ja_importada" || r.rowStatus === "sem_cnpj" || r.rowStatus === "cnpj_invalido" ? "opacity-40" : ""} hover:bg-muted/30`}
                     >
                       <td className="py-1.5 px-2">
                         <Checkbox
                           checked={r.selected}
-                          disabled={r.rowStatus === "ja_importada"}
+                          disabled={r.rowStatus === "ja_importada" || r.rowStatus === "sem_cnpj" || r.rowStatus === "cnpj_invalido"}
                           onCheckedChange={() => toggleRow(i)}
                         />
                       </td>
