@@ -198,23 +198,59 @@ export default function Acoes() {
   const [prospDataAssinatura, setProspDataAssinatura] = useState("");
   const [prospObsContrato, setProspObsContrato] = useState("");
 
+  // PostgREST cap em max-rows (~1000) faz range(0, 49999) parar em 1k. Pra
+  // bancos grandes (empresas/eleg/prosp acima de 1k) o painel mostrava só
+  // uma fatia, quebrando o filtro por empresa via deep-link. Pagina em
+  // chunks de 1000 até esgotar.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fetchAllPaginated = async <T,>(buildQuery: (from: number, to: number) => any): Promise<T[]> => {
+    const PAGE = 1000;
+    const out: T[] = [];
+    let from = 0;
+    for (;;) {
+      const { data, error } = await buildQuery(from, from + PAGE - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as T[];
+      out.push(...rows);
+      if (rows.length < PAGE) break;
+      from += PAGE;
+    }
+    return out;
+  };
+
   const fetchAll = async () => {
-    const [acoesRes, empRes, elegRes, pastasRes, itemsRes, procRes, prospRes] = await Promise.all([
+    const [acoesRes, empresas, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] = await Promise.all([
       supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-      (supabase.from("empresas") as any).select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados").range(0, 49999),
-      (supabase.from("elegibilidade") as any).select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto").range(0, 49999),
+      fetchAllPaginated<Empresa>((from, to) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase.from("empresas") as any)
+          .select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados")
+          .range(from, to),
+      ),
+      fetchAllPaginated<ElegibilidadeRow>((from, to) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase.from("elegibilidade") as any)
+          .select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto")
+          .range(from, to),
+      ),
       supabase.from("pastas_empresas").select("id, nome"),
       supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
-      ((supabase.from("processos") as any).select("*").range(0, 9999)),
-      ((supabase.from("prospeccoes") as any).select("*").range(0, 9999)),
+      fetchAllPaginated<Processo>((from, to) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase.from("processos") as any).select("*").range(from, to),
+      ),
+      fetchAllPaginated<Prospeccao>((from, to) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (supabase.from("prospeccoes") as any).select("*").range(from, to),
+      ),
     ]);
     setAcoes(acoesRes.data || []);
-    setEmpresas(empRes.data || []);
-    setElegibilidades(elegRes.data || []);
+    setEmpresas(empresas);
+    setElegibilidades(elegibilidades);
     setPastas(pastasRes.data || []);
     setPastaItems(itemsRes.data || []);
-    setProcessos(procRes.data || []);
-    setProspeccoes(prospRes.data || []);
+    setProcessos(processos);
+    setProspeccoes(prospeccoes);
     setLoading(false);
   };
 
