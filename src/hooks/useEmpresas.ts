@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
-import { unmaskCNPJ } from "@/lib/cnpj";
+import { unmaskCNPJ, maskCNPJ } from "@/lib/cnpj";
 import { getCapitaisForUFs, normalizeMunicipio } from "@/lib/municipiosBrasil";
 
 export type EmpresaStatus = "prospect" | "cliente" | "inativo";
@@ -15,7 +15,7 @@ export interface EmpresaFilters {
   porte?: EmpresaPorte[];
   situacao?: EmpresaSituacao[];
   uf?: string[];
-  opcaoSimples?: boolean | null;   // null = qualquer, true = sim, false = não
+  opcaoSimples?: boolean | null; // null = qualquer, true = sim, false = não
   enriquecida?: "yes" | "no" | "error" | null;
   temAcao?: boolean | null;
   pastaId?: string | null;
@@ -55,8 +55,8 @@ export interface UseEmpresasParams {
   search?: string;
   filters?: EmpresaFilters;
   sort?: EmpresaSort;
-  page?: number;      // 1-based
-  pageSize?: number;  // default 25
+  page?: number; // 1-based
+  pageSize?: number; // default 25
 }
 
 export interface Empresa {
@@ -122,13 +122,19 @@ type QB = {
 
 function applySort(query: QB, sort: EmpresaSort) {
   switch (sort) {
-    case "nome_asc":            return query.order("nome", { ascending: true });
-    case "nome_desc":           return query.order("nome", { ascending: false });
-    case "valor_desc":          return query.order("valor_potencial_total", { ascending: false, nullsFirst: false });
-    case "capital_desc":        return query.order("capital_social", { ascending: false, nullsFirst: false });
-    case "data_abertura_desc":  return query.order("data_abertura", { ascending: false, nullsFirst: false });
+    case "nome_asc":
+      return query.order("nome", { ascending: true });
+    case "nome_desc":
+      return query.order("nome", { ascending: false });
+    case "valor_desc":
+      return query.order("valor_potencial_total", { ascending: false, nullsFirst: false });
+    case "capital_desc":
+      return query.order("capital_social", { ascending: false, nullsFirst: false });
+    case "data_abertura_desc":
+      return query.order("data_abertura", { ascending: false, nullsFirst: false });
     case "recent":
-    default:                    return query.order("created_at", { ascending: false });
+    default:
+      return query.order("created_at", { ascending: false });
   }
 }
 
@@ -140,7 +146,7 @@ function aplicarFiltroFaixa(
   chaveMeta: string,
   min: number | null | undefined,
   max: number | null | undefined,
-  faixasTexto: string[] | undefined,
+  faixasTexto: string[] | undefined
 ): QB {
   const temNum = min != null || max != null;
   const temTxt = (faixasTexto?.length ?? 0) > 0;
@@ -148,7 +154,8 @@ function aplicarFiltroFaixa(
 
   const partes: string[] = [];
   if (temNum) {
-    if (min != null && max != null) partes.push(`and(${colunaNum}.gte.${min},${colunaNum}.lte.${max})`);
+    if (min != null && max != null)
+      partes.push(`and(${colunaNum}.gte.${min},${colunaNum}.lte.${max})`);
     else if (min != null) partes.push(`${colunaNum}.gte.${min}`);
     else if (max != null) partes.push(`${colunaNum}.lte.${max}`);
   }
@@ -190,7 +197,7 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
     "Faixa de Funcionários",
     filters.funcionariosMin,
     filters.funcionariosMax,
-    filters.faixaFuncionarios,
+    filters.faixaFuncionarios
   );
   query = aplicarFiltroFaixa(
     query,
@@ -198,15 +205,18 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
     "Faixa de Faturamento",
     filters.faturamentoMin,
     filters.faturamentoMax,
-    filters.faixaFaturamento,
+    filters.faixaFaturamento
   );
-  if (filters.regimeTributario?.length) query = query.in("regime_tributario", filters.regimeTributario);
+  if (filters.regimeTributario?.length)
+    query = query.in("regime_tributario", filters.regimeTributario);
   if (filters.enriquecida === "yes") query = query.not("receita_atualizada_em", "is", null);
   if (filters.enriquecida === "no") query = query.is("receita_atualizada_em", null);
   if (filters.enriquecida === "error") query = query.not("receita_erro", "is", null);
   if (filters.municipios?.length) {
     // Normaliza para uppercase sem acento — banco armazena nomes da RFB (ex: "MOSSORO")
-    const orFilter = filters.municipios.map((m) => `municipio.ilike.${normalizeMunicipio(m)}`).join(",");
+    const orFilter = filters.municipios
+      .map((m) => `municipio.ilike.${normalizeMunicipio(m)}`)
+      .join(",");
     query = query.or(orFilter);
   } else if (filters.interior && filters.uf?.length) {
     const caps = getCapitaisForUFs(filters.uf);
@@ -228,13 +238,7 @@ function applyFilters(query: QB, filters: EmpresaFilters) {
  * (buscam os vínculos em queries separadas para não complicar o SQL).
  */
 export function useEmpresas(params: UseEmpresasParams = {}) {
-  const {
-    search = "",
-    filters = {},
-    sort = "recent",
-    page = 1,
-    pageSize = 25,
-  } = params;
+  const { search = "", filters = {}, sort = "recent", page = 1, pageSize = 25 } = params;
 
   return useQuery({
     queryKey: ["empresas", { search, filters, sort, page, pageSize }],
@@ -276,9 +280,7 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      let query = supabase
-        .from("empresas")
-        .select("*", { count: "exact" }) as unknown as QB;
+      let query = supabase.from("empresas").select("*", { count: "exact" }) as unknown as QB;
 
       // Search: or(ilike) em 4 campos
       if (search.trim()) {
@@ -304,7 +306,11 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
 
       query = query.range(from, to);
 
-      const result = await (query as unknown as PromiseLike<{ data: Empresa[] | null; error: Error | null; count: number | null }>);
+      const result = await (query as unknown as PromiseLike<{
+        data: Empresa[] | null;
+        error: Error | null;
+        count: number | null;
+      }>);
       const { data, error, count } = result;
       if (error) throw error;
 
@@ -328,19 +334,25 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
  *
  * Limite por página = 1000 (default PostgREST). Loop até `count` ou bloco vazio.
  */
-export async function fetchAllEmpresas(params: Omit<UseEmpresasParams, "page" | "pageSize"> = {}): Promise<Empresa[]> {
+export async function fetchAllEmpresas(
+  params: Omit<UseEmpresasParams, "page" | "pageSize"> = {}
+): Promise<Empresa[]> {
   const { search = "", filters = {}, sort = "recent" } = params;
 
   // Pré-resolve restrictIds (mesma lógica de useEmpresas)
   let restrictIds: Set<string> | null = null;
   if (filters.pastaId) {
     const { data } = await supabase
-      .from("pasta_empresa_items").select("empresa_id").eq("pasta_id", filters.pastaId);
+      .from("pasta_empresa_items")
+      .select("empresa_id")
+      .eq("pasta_id", filters.pastaId);
     restrictIds = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
   }
   if (filters.acaoId) {
     const { data } = await supabase
-      .from("elegibilidade").select("empresa_id").eq("acao_id", filters.acaoId);
+      .from("elegibilidade")
+      .select("empresa_id")
+      .eq("acao_id", filters.acaoId);
     const idsInAcao = new Set((data || []).map((r: { empresa_id: string }) => r.empresa_id));
     restrictIds = restrictIds
       ? new Set(Array.from(restrictIds).filter((id) => idsInAcao.has(id)))
@@ -384,7 +396,10 @@ export async function fetchAllEmpresas(params: Omit<UseEmpresasParams, "page" | 
 
     query = query.range(from, from + PAGE - 1);
 
-    const result = await (query as unknown as PromiseLike<{ data: Empresa[] | null; error: Error | null }>);
+    const result = await (query as unknown as PromiseLike<{
+      data: Empresa[] | null;
+      error: Error | null;
+    }>);
     if (result.error) throw result.error;
     const batch = (result.data || []) as Empresa[];
     all.push(...batch);
@@ -423,7 +438,9 @@ export function useFaixasDistintas() {
           .select("metadados")
           .range(from, from + PAGE - 1);
         if (error) throw error;
-        const batch = ((data || []) as unknown) as Array<{ metadados: Record<string, string> | null }>;
+        const batch = (data || []) as unknown as Array<{
+          metadados: Record<string, string> | null;
+        }>;
         for (const r of batch) {
           const f = r.metadados?.["Faixa de Funcionários"];
           const g = r.metadados?.["Faixa de Faturamento"];
@@ -476,14 +493,18 @@ export function parseFaixaRange(text: string | null | undefined): [number, numbe
   if (!text) return null;
   const t = text.trim().toLowerCase();
   // Padrão range: "N [sufixo] A|até|- M [sufixo]"
-  const rng = t.match(/(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*(?:a|at[ée]|-|–|—|to)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?/i);
+  const rng = t.match(
+    /(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*(?:a|at[ée]|-|–|—|to)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?/i
+  );
   if (rng) {
     const min = aplicarSufixo(rng[1], rng[2]);
     const max = aplicarSufixo(rng[3], rng[4]);
     if (min != null && max != null) return [Math.min(min, max), Math.max(min, max)];
   }
   // "acima de 1000", "mais de 1000", "1000+"
-  const acima = t.match(/(?:acima de|mais de|>\s*|superior a)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?|(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*\+/i);
+  const acima = t.match(
+    /(?:acima de|mais de|>\s*|superior a)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?|(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*\+/i
+  );
   if (acima) {
     const num = acima[1] ?? acima[3];
     const suf = acima[2] ?? acima[4];
@@ -537,13 +558,37 @@ export function useEmpresasKpi() {
     staleTime: 60_000,
     queryFn: async () => {
       // Supabase retorna no máximo 1000 linhas por query; usar count: exact evita o truncamento.
-      const [totalRes, prospectRes, clienteRes, inativoRes, enrichedRes, withErrorRes, valorRes, elegRes] = await Promise.all([
+      const [
+        totalRes,
+        prospectRes,
+        clienteRes,
+        inativoRes,
+        enrichedRes,
+        withErrorRes,
+        valorRes,
+        elegRes,
+      ] = await Promise.all([
         supabase.from("empresas").select("*", { count: "exact", head: true }),
-        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "prospect"),
-        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "cliente"),
-        supabase.from("empresas").select("*", { count: "exact", head: true }).eq("status", "inativo"),
-        supabase.from("empresas").select("id", { count: "exact", head: true }).not("receita_atualizada_em", "is", null),
-        supabase.from("empresas").select("*", { count: "exact", head: true }).not("receita_erro", "is", null),
+        supabase
+          .from("empresas")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "prospect"),
+        supabase
+          .from("empresas")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "cliente"),
+        supabase
+          .from("empresas")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "inativo"),
+        supabase
+          .from("empresas")
+          .select("id", { count: "exact", head: true })
+          .not("receita_atualizada_em", "is", null),
+        supabase
+          .from("empresas")
+          .select("*", { count: "exact", head: true })
+          .not("receita_erro", "is", null),
         supabase.from("empresas").select("valor_potencial_total").limit(10000),
         supabase.from("elegibilidade").select("empresa_id").limit(10000),
       ]);
@@ -556,9 +601,11 @@ export function useEmpresasKpi() {
       const enriched = enrichedRes.count ?? 0;
       const withError = withErrorRes.count ?? 0;
       const valorPotencial = (valorRes.data ?? []).reduce(
-        (sum, r: { valor_potencial_total: number | null }) => sum + (r.valor_potencial_total ?? 0), 0
+        (sum, r: { valor_potencial_total: number | null }) => sum + (r.valor_potencial_total ?? 0),
+        0
       );
-      const comAcao = new Set((elegRes.data ?? []).map((r: { empresa_id: string }) => r.empresa_id)).size;
+      const comAcao = new Set((elegRes.data ?? []).map((r: { empresa_id: string }) => r.empresa_id))
+        .size;
       return { total, byStatus, enriched, withError, valorPotencial, comAcao };
     },
   });
@@ -569,12 +616,24 @@ export function useCreateEmpresa() {
   const { user } = useAuth();
   return useMutation({
     mutationFn: async (input: Record<string, unknown>) => {
-      const payload = { ...input, user_id: user!.id };
+      // Normaliza CNPJ pro formato mascarado XX.XXX.XXX/XXXX-XX antes de salvar.
+      // Defensivo: o banco tem trigger normalize_cnpj que faz o mesmo, mas evitamos
+      // depender só dele e mantemos consistência caso o trigger seja desabilitado.
+      const rawCnpj = typeof input.cnpj === "string" ? input.cnpj : null;
+      const cnpj = rawCnpj && rawCnpj.trim() ? maskCNPJ(rawCnpj) : rawCnpj;
+      const payload = { ...input, cnpj, user_id: user!.id };
       // cast: Supabase's generated types requer Insert shape completo; aceitamos payload parcial aqui.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.from("empresas") as any).insert(payload).select().single();
+      const { data, error } = await (supabase.from("empresas") as any)
+        .insert(payload)
+        .select()
+        .single();
       if (error) throw error;
-      await logAudit({ tabela: "empresas", acao: "Criou empresa", detalhes: { nome: input.nome, cnpj: input.cnpj } });
+      await logAudit({
+        tabela: "empresas",
+        acao: "Criou empresa",
+        detalhes: { nome: input.nome, cnpj },
+      });
       return data as Empresa;
     },
     onSuccess: (emp) => {
@@ -597,10 +656,21 @@ export function useUpdateEmpresa() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      // Normaliza CNPJ no update tb (consistente com create — ver useCreateEmpresa).
+      const payload = (() => {
+        if (!("cnpj" in data)) return data;
+        const raw = typeof data.cnpj === "string" ? data.cnpj : null;
+        return { ...data, cnpj: raw && raw.trim() ? maskCNPJ(raw) : raw };
+      })();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from("empresas") as any).update(data).eq("id", id);
+      const { error } = await (supabase.from("empresas") as any).update(payload).eq("id", id);
       if (error) throw error;
-      await logAudit({ tabela: "empresas", acao: "Editou empresa", registro_id: id, detalhes: { nome: data.nome } });
+      await logAudit({
+        tabela: "empresas",
+        acao: "Editou empresa",
+        registro_id: id,
+        detalhes: { nome: data.nome },
+      });
     },
     onSuccess: () => {
       toast.success("Empresa atualizada");
@@ -616,7 +686,12 @@ export function useDeleteEmpresa() {
     mutationFn: async ({ id, nome }: { id: string; nome?: string }) => {
       const { error } = await supabase.from("empresas").delete().eq("id", id);
       if (error) throw error;
-      await logAudit({ tabela: "empresas", acao: "Removeu empresa", registro_id: id, detalhes: { nome } });
+      await logAudit({
+        tabela: "empresas",
+        acao: "Removeu empresa",
+        registro_id: id,
+        detalhes: { nome },
+      });
     },
     onSuccess: () => {
       toast.success("Empresa removida");
@@ -633,7 +708,11 @@ export function useBulkDeleteEmpresas() {
       if (!ids.length) return;
       const { error } = await supabase.from("empresas").delete().in("id", ids);
       if (error) throw error;
-      await logAudit({ tabela: "empresas", acao: "Removeu empresas em lote", detalhes: { count: ids.length, ids } });
+      await logAudit({
+        tabela: "empresas",
+        acao: "Removeu empresas em lote",
+        detalhes: { count: ids.length, ids },
+      });
     },
     onSuccess: (_r, ids) => {
       toast.success(`${ids.length} empresa(s) removida(s)`);
@@ -658,18 +737,28 @@ export function useEnrichEmpresa() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const ctx = (error as any).context;
           if (ctx?.body) {
-            const text = typeof ctx.body === "string" ? ctx.body : await new Response(ctx.body).text();
+            const text =
+              typeof ctx.body === "string" ? ctx.body : await new Response(ctx.body).text();
             try {
               const parsed = JSON.parse(text);
               realMsg = parsed.error || parsed.detail || parsed.message || text;
-            } catch { realMsg = text; }
+            } catch {
+              realMsg = text;
+            }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         console.error("[enriquecer-cnpj] error:", error, "body:", realMsg);
         throw new Error(realMsg || error.message || "falha");
       }
       if (data?.error) throw new Error(data.error);
-      await logAudit({ tabela: "empresas", acao: "Enriqueceu dados RFB", registro_id: id, detalhes: { cnpj } });
+      await logAudit({
+        tabela: "empresas",
+        acao: "Enriqueceu dados RFB",
+        registro_id: id,
+        detalhes: { cnpj },
+      });
       return data;
     },
     onSuccess: (data: { data?: { razao_social?: string } } | undefined) => {
@@ -687,7 +776,12 @@ export function useUpdateEmpresaStatus() {
     mutationFn: async ({ id, status }: { id: string; status: EmpresaStatus }) => {
       const { error } = await supabase.from("empresas").update({ status }).eq("id", id);
       if (error) throw error;
-      await logAudit({ tabela: "empresas", acao: `Mudou status para ${status}`, registro_id: id, detalhes: { status } });
+      await logAudit({
+        tabela: "empresas",
+        acao: `Mudou status para ${status}`,
+        registro_id: id,
+        detalhes: { status },
+      });
     },
     onMutate: async ({ id, status }) => {
       // Optimistic update
@@ -699,7 +793,7 @@ export function useUpdateEmpresaStatus() {
         if (v?.rows) {
           qc.setQueryData(key, {
             ...v,
-            rows: v.rows.map((e) => e.id === id ? { ...e, status } : e),
+            rows: v.rows.map((e) => (e.id === id ? { ...e, status } : e)),
           });
         }
       });
