@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,8 @@ export default function Acoes() {
   const [prospeccoes, setProspeccoes] = useState<Prospeccao[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
+  const acaoCardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const [searchParams] = useSearchParams();
   const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
   const [importProspAcao, setImportProspAcao] = useState<{ id: string; nome: string } | null>(null);
   const [detailEmpresaId, setDetailEmpresaId] = useState<string | null>(null);
@@ -220,6 +223,27 @@ export default function Acoes() {
   const acoesIniciais = acoes.filter((a) => a.tipo === "INICIAL").map((a) => ({ id: a.id, nome: a.nome }));
 
   const empresasMap = useMemo(() => new Map(empresas.map(e => [e.id, e])), [empresas]);
+
+  // Deep-link: /acoes?acao=<id>&empresa=<id> abre a ação expandida e pré-filtra
+  // o painel pela empresa. Usado pelo "click na ação" dentro do EmpresaDetailSheet.
+  const urlAcaoId = searchParams.get("acao");
+  const urlEmpresaId = searchParams.get("empresa");
+  const urlEmpresaNome = useMemo(
+    () => (urlEmpresaId ? empresasMap.get(urlEmpresaId)?.nome ?? "" : ""),
+    [urlEmpresaId, empresasMap],
+  );
+
+  // Expande a ação alvo assim que a lista de ações chega e rola pra ela.
+  useEffect(() => {
+    if (!urlAcaoId) return;
+    if (acoes.length === 0) return;
+    if (!acoes.some((a) => a.id === urlAcaoId)) return; // id inválido
+    setExpandedAcao(urlAcaoId);
+    // Rola pra ação no próximo tick (depois do render do painel)
+    requestAnimationFrame(() => {
+      acaoCardRefs.current.get(urlAcaoId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [urlAcaoId, acoes]);
 
   const handleProspectar = (elegId: string, empresaId: string) => {
     setProspRapidaElegId(elegId);
@@ -671,7 +695,14 @@ export default function Acoes() {
           const elegiveisCount = seenEleg.size;
 
           return (
-            <Card key={a.id} className="shadow-card hover:shadow-elevated transition-shadow">
+            <Card
+              key={a.id}
+              ref={(node) => {
+                if (node) acaoCardRefs.current.set(a.id, node);
+                else acaoCardRefs.current.delete(a.id);
+              }}
+              className="shadow-card hover:shadow-elevated transition-shadow"
+            >
               <div className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1.5">
@@ -760,6 +791,7 @@ export default function Acoes() {
                     onUpdateContexto={handleUpdateContexto}
                     onExport={handleExportAcao}
                     onViewEmpresaId={setDetailEmpresaId}
+                    initialSearch={a.id === urlAcaoId ? urlEmpresaNome : undefined}
                   />
                 </div>
               )}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,9 @@ interface Props {
   onUpdateContexto?: (elegId: string, destaque: boolean, notas: string | null) => Promise<void>;
   onExport: (payload: AcaoEmpresasExportPayload) => Promise<void>;
   onViewEmpresaId?: (id: string) => void;
+  /** Busca inicial do painel (usado quando vem de /acoes?empresa=<id> pra
+   *  filtrar direto na empresa que veio do Detail Sheet). */
+  initialSearch?: string;
 }
 
 // Presets dos chips do topo. Cada um define um conjunto de StatusCombinadoKey
@@ -125,9 +128,15 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "valor_desc",            label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onUpdateContexto, onExport, onViewEmpresaId }: Props) {
+export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onUpdateContexto, onExport, onViewEmpresaId, initialSearch }: Props) {
   const navigate = useNavigate();
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialSearch ?? "");
+
+  // Quando a busca inicial muda (ex: usuário clica em outra empresa no
+  // Detail Sheet sem fechar o /acoes), sincroniza o input.
+  useEffect(() => {
+    if (initialSearch !== undefined) setQ(initialSearch);
+  }, [initialSearch]);
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
   const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
   const [exporting, setExporting] = useState(false);

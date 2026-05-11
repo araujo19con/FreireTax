@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -127,8 +128,17 @@ const TAREFA_STATUS_COLOR: Record<string, string> = {
 };
 
 export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDelete }: EmpresaDetailSheetProps) {
+  const navigate = useNavigate();
   const open = !!empresa;
   const [tab, setTab] = useState("overview");
+
+  // Click numa ação dentro do card → fecha o sheet e leva pra /acoes com a
+  // ação expandida e a empresa pré-filtrada no painel (deep-link).
+  const openAcaoForEmpresa = (acaoId: string) => {
+    if (!empresa) return;
+    onClose();
+    navigate(`/acoes?acao=${acaoId}&empresa=${empresa.id}`);
+  };
 
   // Reseta aba para "overview" quando a empresa muda
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -444,8 +454,34 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                   </Card>
                 ) : (
                   <div className="space-y-2">
-                    {relations.eleg.map((el) => (
-                      <Card key={el.id} className="p-3">
+                    {relations.eleg.map((el) => {
+                      const acaoRemovida = !el.acoes_tributarias;
+                      return (
+                      <Card
+                        key={el.id}
+                        className={cn(
+                          "p-3 transition-colors",
+                          !acaoRemovida && "cursor-pointer hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        )}
+                        role={!acaoRemovida ? "button" : undefined}
+                        tabIndex={!acaoRemovida ? 0 : undefined}
+                        onClick={acaoRemovida ? undefined : () => openAcaoForEmpresa(el.acao_id)}
+                        onKeyDown={
+                          acaoRemovida
+                            ? undefined
+                            : (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openAcaoForEmpresa(el.acao_id);
+                                }
+                              }
+                        }
+                        aria-label={
+                          acaoRemovida
+                            ? undefined
+                            : `Abrir ${el.acoes_tributarias?.nome} no painel de Ações`
+                        }
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
@@ -453,6 +489,9 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                               <span className="font-medium text-sm truncate">
                                 {el.acoes_tributarias?.nome || "Ação removida"}
                               </span>
+                              {!acaoRemovida && (
+                                <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0 ml-auto" aria-hidden="true" />
+                              )}
                             </div>
                             {el.acoes_tributarias?.tipo && (
                               <span className="text-[11px] text-muted-foreground ml-5">{el.acoes_tributarias.tipo}</span>
@@ -471,7 +510,8 @@ export function EmpresaDetailSheet({ empresa, onClose, onEnrichir, onEdit, onDel
                           </div>
                         </div>
                       </Card>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>
