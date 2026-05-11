@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Bun legacy binary lockfile (use bun.lock instead)
+bun.lockb
+
 # Secrets & env
 .env
 .env.local

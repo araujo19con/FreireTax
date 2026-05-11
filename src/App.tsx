@@ -39,7 +39,13 @@ const queryClient = new QueryClient({
       // Evita refetch agressivo em cada foco da aba; o CRM não precisa.
       refetchOnWindowFocus: false,
       staleTime: 30_000,
-      retry: 1,
+      // Não retry em 4xx (bad request/auth); retry 2x em 5xx/network — resiliente em rede móvel.
+      retry: (failureCount, error: unknown) => {
+        const status = (error as { status?: number })?.status;
+        if (typeof status === "number" && status >= 400 && status < 500) return false;
+        return failureCount < 2;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
     },
   },
 });
@@ -47,13 +53,13 @@ const queryClient = new QueryClient({
 function PageFallback() {
   return (
     <div
-      className="min-h-[40vh] flex items-center justify-center"
+      className="flex min-h-[40vh] items-center justify-center"
       role="status"
       aria-live="polite"
       aria-label="Carregando página"
     >
-      <div className="flex items-center gap-3 text-muted-foreground text-sm">
-        <span className="h-2 w-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-primary" aria-hidden="true" />
         <span>Preparando a interface…</span>
       </div>
     </div>
@@ -77,12 +83,15 @@ function AppRoutes() {
   if (loading) {
     return (
       <div
-        className="min-h-screen flex flex-col items-center justify-center bg-background gap-4"
+        className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background"
         role="status"
         aria-live="polite"
       >
-        <div className="h-11 w-11 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center" aria-hidden="true">
-          <span className="h-5 w-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <div
+          className="flex h-11 w-11 items-center justify-center rounded-lg border border-primary/20 bg-primary/10"
+          aria-hidden="true"
+        >
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
         <p className="font-heading text-sm text-muted-foreground">Carregando Tax Trakker…</p>
       </div>
