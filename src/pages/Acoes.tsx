@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -135,7 +135,7 @@ export default function Acoes() {
   const [loading, setLoading] = useState(true);
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
   const acaoCardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [criteriosAcaoId, setCriteriosAcaoId] = useState<string | null>(null);
   const [importProspAcao, setImportProspAcao] = useState<{ id: string; nome: string } | null>(null);
   const [detailEmpresaId, setDetailEmpresaId] = useState<string | null>(null);
@@ -224,14 +224,16 @@ export default function Acoes() {
 
   const empresasMap = useMemo(() => new Map(empresas.map(e => [e.id, e])), [empresas]);
 
-  // Deep-link: /acoes?acao=<id>&empresa=<id> abre a ação expandida e pré-filtra
+  // Deep-link: /acoes?acao=<id>&empresa=<id> abre a ação expandida e filtra
   // o painel pela empresa. Usado pelo "click na ação" dentro do EmpresaDetailSheet.
   const urlAcaoId = searchParams.get("acao");
   const urlEmpresaId = searchParams.get("empresa");
-  const urlEmpresaNome = useMemo(
-    () => (urlEmpresaId ? empresasMap.get(urlEmpresaId)?.nome ?? "" : ""),
-    [urlEmpresaId, empresasMap],
-  );
+
+  const clearPinnedEmpresa = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("empresa");
+    setSearchParams(next, { replace: true });
+  };
 
   // Expande a ação alvo assim que a lista de ações chega e rola pra ela.
   useEffect(() => {
@@ -791,7 +793,8 @@ export default function Acoes() {
                     onUpdateContexto={handleUpdateContexto}
                     onExport={handleExportAcao}
                     onViewEmpresaId={setDetailEmpresaId}
-                    initialSearch={a.id === urlAcaoId ? urlEmpresaNome : undefined}
+                    pinnedEmpresaId={a.id === urlAcaoId ? urlEmpresaId : null}
+                    onClearPinnedEmpresa={a.id === urlAcaoId ? clearPinnedEmpresa : undefined}
                   />
                 </div>
               )}

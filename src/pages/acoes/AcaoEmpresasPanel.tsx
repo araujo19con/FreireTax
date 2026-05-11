@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,9 +89,12 @@ interface Props {
   onUpdateContexto?: (elegId: string, destaque: boolean, notas: string | null) => Promise<void>;
   onExport: (payload: AcaoEmpresasExportPayload) => Promise<void>;
   onViewEmpresaId?: (id: string) => void;
-  /** Busca inicial do painel (usado quando vem de /acoes?empresa=<id> pra
-   *  filtrar direto na empresa que veio do Detail Sheet). */
-  initialSearch?: string;
+  /** Quando setado, o painel mostra só a empresa com esse id (e um chip
+   *  "Filtrando: <nome> ×" no topo). Usado pelo deep-link vindo do
+   *  EmpresaDetailSheet (/acoes?empresa=<id>). */
+  pinnedEmpresaId?: string | null;
+  /** Limpa o pin (some o chip). */
+  onClearPinnedEmpresa?: () => void;
 }
 
 // Presets dos chips do topo. Cada um define um conjunto de StatusCombinadoKey
@@ -128,15 +131,15 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "valor_desc",            label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onUpdateContexto, onExport, onViewEmpresaId, initialSearch }: Props) {
+export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onUpdateContexto, onExport, onViewEmpresaId, pinnedEmpresaId, onClearPinnedEmpresa }: Props) {
   const navigate = useNavigate();
-  const [q, setQ] = useState(initialSearch ?? "");
+  const [q, setQ] = useState("");
 
-  // Quando a busca inicial muda (ex: usuário clica em outra empresa no
-  // Detail Sheet sem fechar o /acoes), sincroniza o input.
-  useEffect(() => {
-    if (initialSearch !== undefined) setQ(initialSearch);
-  }, [initialSearch]);
+  // Nome da empresa pinada — sai do empresasMap ou cai pro id (parcial) se a
+  // empresa não estiver carregada (caso raro: RLS / paginação).
+  const pinnedEmpresaNome = pinnedEmpresaId
+    ? empresasMap.get(pinnedEmpresaId)?.nome ?? `Empresa ${pinnedEmpresaId.slice(0, 8)}…`
+    : null;
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
   const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
   const [exporting, setExporting] = useState(false);
@@ -183,10 +186,12 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
     emProspeccao:  items.filter(i => !!i.prosp && i.prosp.status_prospeccao !== "Perdido").length,
   }), [items]);
 
-  const filtered = useMemo(
-    () => applyAcaoSort(applyAcaoFilters(items, filters, q), sort),
-    [items, filters, q, sort],
-  );
+  const filtered = useMemo(() => {
+    const base = pinnedEmpresaId
+      ? items.filter((i) => i.el.empresa_id === pinnedEmpresaId)
+      : items;
+    return applyAcaoSort(applyAcaoFilters(base, filters, q), sort);
+  }, [items, filters, q, sort, pinnedEmpresaId]);
 
   const applyPreset = (key: PresetKey) => {
     setFilters((prev) => ({ ...prev, statusCombinado: PRESETS[key] }));
@@ -236,6 +241,23 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
   return (
     <div className="space-y-3">
+      {pinnedEmpresaId && (
+        <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">Filtrando empresa:</span>
+          <span className="font-medium text-foreground truncate">{pinnedEmpresaNome}</span>
+          {onClearPinnedEmpresa && (
+            <button
+              type="button"
+              onClick={onClearPinnedEmpresa}
+              className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+              aria-label="Limpar filtro de empresa"
+            >
+              <XCircle className="h-3.5 w-3.5" /> limpar
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Presets — escrevem em filters.statusCombinado */}
       <div className="flex flex-wrap gap-2">
         {presetChips.map(chip => (
