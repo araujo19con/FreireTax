@@ -1,16 +1,43 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Search, CheckCircle2, MapPin, Users, FileText, Calendar, Building2, Loader2, Trash2, X } from "lucide-react";
+import {
+  Plus,
+  Search,
+  CheckCircle2,
+  MapPin,
+  Users,
+  FileText,
+  Calendar,
+  Building2,
+  Loader2,
+  Trash2,
+  X,
+  ScanSearch,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { validateCNPJ as validateCNPJReal, validateCNPJMessage, maskCNPJ } from "@/lib/cnpj";
 import { FieldHelp } from "@/components/FieldHelp";
+import { BuscarCNPJDialog } from "@/components/BuscarCNPJDialog";
+import type { CandidatoCNPJ } from "@/hooks/useBuscarCNPJ";
 
 // Payload que vai pro banco — inclui campos RFB (todos opcionais)
 export interface EmpresaFormData {
@@ -35,6 +62,7 @@ export interface EmpresaFormData {
   opcao_mei?: boolean | null;
   cnae_principal?: string | null;
   cnae_principal_desc?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cnaes_secundarios?: any[];
   logradouro?: string | null;
   numero_endereco?: string | null;
@@ -49,6 +77,7 @@ export interface EmpresaFormData {
   email_manual?: boolean | null;
   /** true quando telefone_receita foi setado manualmente — protege da sobrescrita pela RFB */
   telefone_manual?: boolean | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   qsa?: any[];
   receita_atualizada_em?: string | null;
   // Campos manuais (importáveis via planilha)
@@ -76,12 +105,20 @@ const validateCNPJ = validateCNPJReal;
 
 function formatBRL(v: number | null | undefined) {
   if (!v || v <= 0) return "—";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(v);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(v);
 }
 
 export function EmpresaDialog({
-  onSave, trigger, initialData, title = "Nova Empresa",
-  open: openProp, onOpenChange,
+  onSave,
+  trigger,
+  initialData,
+  title = "Nova Empresa",
+  open: openProp,
+  onOpenChange,
 }: EmpresaDialogProps) {
   const [openState, setOpenState] = useState(false);
   const isControlled = openProp !== undefined;
@@ -98,7 +135,87 @@ export function EmpresaDialog({
     ...initialData,
   });
   const [fetchingRFB, setFetchingRFB] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [rfbPreview, setRfbPreview] = useState<any | null>(null);
+  const [buscarNomeOpen, setBuscarNomeOpen] = useState(false);
+
+  /** Quando user escolhe candidato do BuscarCNPJDialog: preenche CNPJ e
+   *  dispara enriquecimento RFB automaticamente. */
+  const onSelectCandidatoNome = async (c: CandidatoCNPJ) => {
+    const cnpjFormatado = formatCNPJ(c.cnpj);
+    // Aplica imediatamente o CNPJ e dados básicos do candidato, depois enriquece
+    setForm((curr) => ({
+      ...curr,
+      cnpj: cnpjFormatado,
+      nome: curr.nome.trim() || c.razao_social,
+      razao_social: c.razao_social,
+      nome_fantasia: c.nome_fantasia ?? curr.nome_fantasia,
+      uf: c.uf,
+      municipio: c.municipio ?? curr.municipio,
+    }));
+    toast.success(`CNPJ ${cnpjFormatado} selecionado — consultando Receita...`);
+    // Aguarda próximo tick pra setForm refletir antes de chamar buscarReceita
+    setTimeout(() => {
+      buscarReceitaCom(c.cnpj);
+    }, 50);
+  };
+
+  /** Versão direta que recebe o CNPJ ao invés de ler do form (evita race com setState) */
+  const buscarReceitaCom = async (cnpj: string) => {
+    if (!validateCNPJ(cnpj)) {
+      toast.error("CNPJ inválido");
+      return;
+    }
+    setFetchingRFB(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("enriquecer-cnpj", {
+        body: { cnpj },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      if (!data?.ok || !data?.data) throw new Error("Sem dados retornados");
+      const rfb = data.data;
+      setForm((curr) => ({
+        ...curr,
+        nome: curr.nome.trim() || rfb.razao_social || rfb.nome_fantasia || "",
+        razao_social: rfb.razao_social,
+        nome_fantasia: rfb.nome_fantasia,
+        data_abertura: rfb.data_abertura,
+        situacao_cadastral: rfb.situacao_cadastral,
+        situacao_cadastral_data: rfb.situacao_cadastral_data,
+        motivo_situacao: rfb.motivo_situacao,
+        natureza_juridica: rfb.natureza_juridica,
+        capital_social: rfb.capital_social,
+        porte: rfb.porte,
+        opcao_simples: rfb.opcao_simples,
+        data_opcao_simples: rfb.data_opcao_simples,
+        opcao_mei: rfb.opcao_mei,
+        cnae_principal: rfb.cnae_principal,
+        cnae_principal_desc: rfb.cnae_principal_desc,
+        cnaes_secundarios: rfb.cnaes_secundarios,
+        logradouro: rfb.logradouro,
+        numero_endereco: rfb.numero_endereco,
+        complemento: rfb.complemento,
+        bairro: rfb.bairro,
+        municipio: rfb.municipio,
+        uf: rfb.uf,
+        cep: rfb.cep,
+        telefone_receita: rfb.telefone_receita,
+        email_receita: rfb.email_receita,
+        email_manual: false,
+        telefone_manual: false,
+        qsa: rfb.qsa,
+        receita_atualizada_em: rfb.receita_atualizada_em,
+      }));
+      setRfbPreview(rfb);
+      toast.success(`Dados da Receita carregados: ${rfb.razao_social}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      toast.error("Erro: " + (e?.message ?? "falha ao consultar Receita"));
+    } finally {
+      setFetchingRFB(false);
+    }
+  };
 
   const buscarReceita = async () => {
     if (!validateCNPJ(form.cnpj)) {
@@ -159,8 +276,8 @@ export function EmpresaDialog({
 
       // Faixa de Funcionários, Faixa de Faturamento e Regime Tributário não são
       // inferidos automaticamente — devem ser preenchidos manualmente ou via importação.
-    } catch (e: any) {
-      toast.error("Erro: " + (e?.message ?? "falha ao consultar Receita"));
+    } catch (e) {
+      toast.error("Erro: " + ((e as Error)?.message ?? "falha ao consultar Receita"));
     } finally {
       setFetchingRFB(false);
     }
@@ -170,9 +287,15 @@ export function EmpresaDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-    if (!form.nome.trim()) { toast.error("Nome empresarial é obrigatório"); return; }
+    if (!form.nome.trim()) {
+      toast.error("Nome empresarial é obrigatório");
+      return;
+    }
     const cnpjErr = validateCNPJMessage(form.cnpj);
-    if (cnpjErr) { toast.error(cnpjErr); return; }
+    if (cnpjErr) {
+      toast.error(cnpjErr);
+      return;
+    }
 
     // Bloqueia duplicidade de CNPJ — proativo (UX) + UNIQUE constraint no DB (defensivo)
     setSubmitting(true);
@@ -202,7 +325,8 @@ export function EmpresaDialog({
   const situacaoColor = (s: string | null | undefined) => {
     if (!s) return "";
     if (s === "ATIVA") return "bg-success/10 text-success";
-    if (s === "BAIXADA" || s === "INAPTA" || s === "NULA") return "bg-destructive/10 text-destructive";
+    if (s === "BAIXADA" || s === "INAPTA" || s === "NULA")
+      return "bg-destructive/10 text-destructive";
     return "bg-warning/10 text-warning";
   };
 
@@ -218,11 +342,11 @@ export function EmpresaDialog({
           )}
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="font-heading">{title}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+        <form onSubmit={handleSubmit} className="mt-2 space-y-4">
           {/* CNPJ + botão busca */}
           <div className="space-y-2">
             <Label htmlFor="cnpj">CNPJ *</Label>
@@ -242,26 +366,60 @@ export function EmpresaDialog({
                 title="Busca dados oficiais na Receita Federal"
               >
                 {fetchingRFB ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Consultando...</>
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Consultando...
+                  </>
                 ) : (
-                  <><Search className="mr-2 h-4 w-4" />Buscar na Receita</>
+                  <>
+                    <Search className="mr-2 h-4 w-4" />
+                    Buscar na Receita
+                  </>
                 )}
               </Button>
             </div>
             <p className="text-[10px] text-muted-foreground">
               Preenche automaticamente razão social, endereço, porte, CNAE, quadro societário.
             </p>
+            {/* Atalho: não sabe o CNPJ? busca pelo nome na base RFB indexada */}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <p className="text-[10px] text-muted-foreground">
+                Não tem o CNPJ? Busque pelo nome da empresa na Receita.
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={() => setBuscarNomeOpen(true)}
+              >
+                <ScanSearch className="mr-1 h-3.5 w-3.5" />
+                Buscar pelo nome
+              </Button>
+            </div>
           </div>
+
+          {/* Dialog de busca por nome — aciona enriquecimento ao selecionar */}
+          <BuscarCNPJDialog
+            open={buscarNomeOpen}
+            onOpenChange={setBuscarNomeOpen}
+            termoInicial={form.nome || form.razao_social || ""}
+            ufInicial={form.uf || ""}
+            onSelect={onSelectCandidatoNome}
+          />
 
           {/* Aviso de origem RFB (quando aplicável) */}
           {form.receita_atualizada_em && (
-            <div className="px-3 py-2 rounded-md border border-success/30 bg-success/5 flex items-center justify-between gap-2 text-[11px]">
+            <div className="flex items-center justify-between gap-2 rounded-md border border-success/30 bg-success/5 px-3 py-2 text-[11px]">
               <span className="flex items-center gap-1.5 text-success">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Dados RFB carregados — todos os campos são editáveis
               </span>
               {form.situacao_cadastral && (
-                <Badge className={`text-[10px] ${situacaoColor(form.situacao_cadastral)}`} variant="secondary">
+                <Badge
+                  className={`text-[10px] ${situacaoColor(form.situacao_cadastral)}`}
+                  variant="secondary"
+                >
                   {form.situacao_cadastral}
                 </Badge>
               )}
@@ -284,7 +442,8 @@ export function EmpresaDialog({
               Status no CRM
               <FieldHelp>
                 Prospect = ainda não é cliente. Cliente = contrato assinado em pelo menos uma tese.
-                Inativo = relacionamento encerrado. Independe do estado de elegibilidade em cada ação.
+                Inativo = relacionamento encerrado. Independe do estado de elegibilidade em cada
+                ação.
               </FieldHelp>
             </Label>
             <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
@@ -305,8 +464,9 @@ export function EmpresaDialog({
               <Label htmlFor="qtd_func">
                 Quantidade de funcionários
                 <FieldHelp>
-                  Campo manual ou preenchido via importação de planilha. Se sua planilha trouxe uma faixa
-                  textual ("500 A 999"), ela fica em "Campos personalizados" — deixe este campo em branco.
+                  Campo manual ou preenchido via importação de planilha. Se sua planilha trouxe uma
+                  faixa textual ("500 A 999"), ela fica em "Campos personalizados" — deixe este
+                  campo em branco.
                 </FieldHelp>
               </Label>
               <Input
@@ -316,10 +476,13 @@ export function EmpresaDialog({
                 min={0}
                 placeholder="Ex: 50"
                 value={form.quantidade_funcionarios ?? ""}
-                onChange={(e) => setForm({
-                  ...form,
-                  quantidade_funcionarios: e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    quantidade_funcionarios:
+                      e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                  })
+                }
               />
             </div>
             <div className="space-y-2">
@@ -332,10 +495,13 @@ export function EmpresaDialog({
                 step="0.01"
                 placeholder="Ex: 1500000"
                 value={form.faturamento_anual ?? ""}
-                onChange={(e) => setForm({
-                  ...form,
-                  faturamento_anual: e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
-                })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    faturamento_anual:
+                      e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+                  })
+                }
               />
             </div>
           </div>
@@ -345,7 +511,7 @@ export function EmpresaDialog({
           ============================================================ */}
           <Section title="Identificação">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5 col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="razao_social">Razão social</Label>
                 <Input
                   id="razao_social"
@@ -353,7 +519,7 @@ export function EmpresaDialog({
                   onChange={(e) => setForm({ ...form, razao_social: e.target.value || null })}
                 />
               </div>
-              <div className="space-y-1.5 col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="nome_fantasia">Nome fantasia</Label>
                 <Input
                   id="nome_fantasia"
@@ -390,9 +556,13 @@ export function EmpresaDialog({
                 <Label>Situação cadastral</Label>
                 <Select
                   value={form.situacao_cadastral ?? "_none"}
-                  onValueChange={(v) => setForm({ ...form, situacao_cadastral: v === "_none" ? null : v })}
+                  onValueChange={(v) =>
+                    setForm({ ...form, situacao_cadastral: v === "_none" ? null : v })
+                  }
                 >
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">— não informado —</SelectItem>
                     <SelectItem value="ATIVA">ATIVA</SelectItem>
@@ -409,7 +579,9 @@ export function EmpresaDialog({
                   value={form.porte ?? "_none"}
                   onValueChange={(v) => setForm({ ...form, porte: v === "_none" ? null : v })}
                 >
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">— não informado —</SelectItem>
                     <SelectItem value="MEI">MEI</SelectItem>
@@ -424,7 +596,9 @@ export function EmpresaDialog({
                 <Input
                   type="date"
                   value={form.situacao_cadastral_data ?? ""}
-                  onChange={(e) => setForm({ ...form, situacao_cadastral_data: e.target.value || null })}
+                  onChange={(e) =>
+                    setForm({ ...form, situacao_cadastral_data: e.target.value || null })
+                  }
                 />
               </div>
               <div className="space-y-1.5">
@@ -437,17 +611,26 @@ export function EmpresaDialog({
               <div className="space-y-1.5">
                 <Label>Capital social (R$)</Label>
                 <Input
-                  type="number" inputMode="decimal" min={0} step="0.01"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
                   value={form.capital_social ?? ""}
-                  onChange={(e) => setForm({ ...form, capital_social: e.target.value === "" ? null : Number(e.target.value) })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      capital_social: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
                 />
               </div>
               <div className="space-y-1.5">
                 <Label>
                   Regime tributário
                   <FieldHelp>
-                    Preenchimento manual — o sistema não infere. Simples e MEI vêm da opção na Receita,
-                    mas Lucro Presumido vs Real precisa ser informado. Se não souber, deixe "não informado".
+                    Preenchimento manual — o sistema não infere. Simples e MEI vêm da opção na
+                    Receita, mas Lucro Presumido vs Real precisa ser informado. Se não souber, deixe
+                    "não informado".
                   </FieldHelp>
                 </Label>
                 <Select
@@ -456,16 +639,25 @@ export function EmpresaDialog({
                     const reg = v === "_none" ? null : v;
                     // Atualiza derivados RFB pra manter consistência (filtros antigos)
                     const opcao_simples =
-                      reg === "simples" || reg === "mei" ? true :
-                      reg === "lucro_presumido" || reg === "lucro_real" || reg === "imune_isento" ? false :
-                      form.opcao_simples ?? null;
-                    const opcao_mei = reg === "mei" ? true :
-                      reg && reg !== "mei" ? false :
-                      form.opcao_mei ?? null;
+                      reg === "simples" || reg === "mei"
+                        ? true
+                        : reg === "lucro_presumido" ||
+                            reg === "lucro_real" ||
+                            reg === "imune_isento"
+                          ? false
+                          : (form.opcao_simples ?? null);
+                    const opcao_mei =
+                      reg === "mei"
+                        ? true
+                        : reg && reg !== "mei"
+                          ? false
+                          : (form.opcao_mei ?? null);
                     setForm({ ...form, regime_tributario: reg, opcao_simples, opcao_mei });
                   }}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_none">— não informado —</SelectItem>
                     <SelectItem value="simples">Simples Nacional</SelectItem>
@@ -488,7 +680,9 @@ export function EmpresaDialog({
                 <Label>Descrição CNAE</Label>
                 <Input
                   value={form.cnae_principal_desc ?? ""}
-                  onChange={(e) => setForm({ ...form, cnae_principal_desc: e.target.value || null })}
+                  onChange={(e) =>
+                    setForm({ ...form, cnae_principal_desc: e.target.value || null })
+                  }
                 />
               </div>
             </div>
@@ -499,33 +693,58 @@ export function EmpresaDialog({
           ============================================================ */}
           <Section title="Endereço">
             <div className="grid grid-cols-6 gap-3">
-              <div className="space-y-1.5 col-span-4">
+              <div className="col-span-4 space-y-1.5">
                 <Label>Logradouro</Label>
-                <Input value={form.logradouro ?? ""} onChange={(e) => setForm({ ...form, logradouro: e.target.value || null })} />
+                <Input
+                  value={form.logradouro ?? ""}
+                  onChange={(e) => setForm({ ...form, logradouro: e.target.value || null })}
+                />
               </div>
-              <div className="space-y-1.5 col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Número</Label>
-                <Input value={form.numero_endereco ?? ""} onChange={(e) => setForm({ ...form, numero_endereco: e.target.value || null })} />
+                <Input
+                  value={form.numero_endereco ?? ""}
+                  onChange={(e) => setForm({ ...form, numero_endereco: e.target.value || null })}
+                />
               </div>
-              <div className="space-y-1.5 col-span-3">
+              <div className="col-span-3 space-y-1.5">
                 <Label>Complemento</Label>
-                <Input value={form.complemento ?? ""} onChange={(e) => setForm({ ...form, complemento: e.target.value || null })} />
+                <Input
+                  value={form.complemento ?? ""}
+                  onChange={(e) => setForm({ ...form, complemento: e.target.value || null })}
+                />
               </div>
-              <div className="space-y-1.5 col-span-3">
+              <div className="col-span-3 space-y-1.5">
                 <Label>Bairro</Label>
-                <Input value={form.bairro ?? ""} onChange={(e) => setForm({ ...form, bairro: e.target.value || null })} />
+                <Input
+                  value={form.bairro ?? ""}
+                  onChange={(e) => setForm({ ...form, bairro: e.target.value || null })}
+                />
               </div>
-              <div className="space-y-1.5 col-span-3">
+              <div className="col-span-3 space-y-1.5">
                 <Label>Município</Label>
-                <Input value={form.municipio ?? ""} onChange={(e) => setForm({ ...form, municipio: e.target.value || null })} />
+                <Input
+                  value={form.municipio ?? ""}
+                  onChange={(e) => setForm({ ...form, municipio: e.target.value || null })}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>UF</Label>
-                <Input maxLength={2} className="uppercase" value={form.uf ?? ""} onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase().slice(0, 2) || null })} />
+                <Input
+                  maxLength={2}
+                  className="uppercase"
+                  value={form.uf ?? ""}
+                  onChange={(e) =>
+                    setForm({ ...form, uf: e.target.value.toUpperCase().slice(0, 2) || null })
+                  }
+                />
               </div>
-              <div className="space-y-1.5 col-span-2">
+              <div className="col-span-2 space-y-1.5">
                 <Label>CEP</Label>
-                <Input value={form.cep ?? ""} onChange={(e) => setForm({ ...form, cep: e.target.value || null })} />
+                <Input
+                  value={form.cep ?? ""}
+                  onChange={(e) => setForm({ ...form, cep: e.target.value || null })}
+                />
               </div>
             </div>
           </Section>
@@ -538,7 +757,14 @@ export function EmpresaDialog({
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5">
                   Telefone
-                  {form.telefone_manual && <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/10 text-primary border-0">manual</Badge>}
+                  {form.telefone_manual && (
+                    <Badge
+                      variant="secondary"
+                      className="h-4 border-0 bg-primary/10 px-1.5 text-[9px] text-primary"
+                    >
+                      manual
+                    </Badge>
+                  )}
                 </Label>
                 <Input
                   value={form.telefone_receita ?? ""}
@@ -558,7 +784,14 @@ export function EmpresaDialog({
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5">
                   E-mail
-                  {form.email_manual && <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/10 text-primary border-0">manual</Badge>}
+                  {form.email_manual && (
+                    <Badge
+                      variant="secondary"
+                      className="h-4 border-0 bg-primary/10 px-1.5 text-[9px] text-primary"
+                    >
+                      manual
+                    </Badge>
+                  )}
                 </Label>
                 <Input
                   type="email"
@@ -599,9 +832,13 @@ export function EmpresaDialog({
             />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-border sticky bottom-0 bg-background py-3 -mx-6 px-6 -mb-6">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button type="submit" disabled={submitting}>{submitting ? "Verificando..." : "Salvar"}</Button>
+          <div className="sticky bottom-0 -mx-6 -mb-6 flex justify-end gap-2 border-t border-border bg-background px-6 py-3 pt-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Verificando..." : "Salvar"}
+            </Button>
           </div>
         </form>
       </DialogContent>
@@ -614,8 +851,10 @@ export function EmpresaDialog({
 // =========================================================================
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-3 pt-3 border-t border-border">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+    <div className="space-y-3 border-t border-border pt-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -653,7 +892,7 @@ function CamposPersonalizados({ metadados, onChange }: CamposPersonalizadosProps
 
   const addPair = () => {
     // Gera chave única "campo 1", "campo 2", etc.
-    let base = "Novo campo";
+    const base = "Novo campo";
     let i = 1;
     let key = base;
     while (key in metadados) {
@@ -664,12 +903,14 @@ function CamposPersonalizados({ metadados, onChange }: CamposPersonalizadosProps
 
   return (
     <Section title="Campos personalizados">
-      <p className="text-[11px] text-muted-foreground -mt-1">
-        Adicione campos livres (ex: "Indicado por", "Código interno", "Tags").
-        Aparecem no detalhe da empresa e são pesquisáveis.
+      <p className="-mt-1 text-[11px] text-muted-foreground">
+        Adicione campos livres (ex: "Indicado por", "Código interno", "Tags"). Aparecem no detalhe
+        da empresa e são pesquisáveis.
       </p>
       {entries.length === 0 ? (
-        <p className="text-xs text-muted-foreground italic py-2">Nenhum campo personalizado ainda.</p>
+        <p className="py-2 text-xs italic text-muted-foreground">
+          Nenhum campo personalizado ainda.
+        </p>
       ) : (
         <div className="space-y-1.5">
           {entries.map(([key, value]) => (
@@ -687,7 +928,10 @@ function CamposPersonalizados({ metadados, onChange }: CamposPersonalizadosProps
                 className="flex-1"
               />
               <Button
-                type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive"
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 text-destructive hover:text-destructive"
                 onClick={() => removePair(key)}
                 aria-label={`Remover ${key}`}
               >
@@ -698,7 +942,8 @@ function CamposPersonalizados({ metadados, onChange }: CamposPersonalizadosProps
         </div>
       )}
       <Button type="button" variant="outline" size="sm" onClick={addPair}>
-        <Plus className="mr-1.5 h-3.5 w-3.5" />Adicionar campo
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Adicionar campo
       </Button>
     </Section>
   );

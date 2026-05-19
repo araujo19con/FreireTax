@@ -4,21 +4,31 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Popover, PopoverContent, PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
-import { Search, Handshake, FileText, ArrowUpRight, ArrowUpDown, Trash2, Download, Loader2, XCircle, Star } from "lucide-react";
+import {
+  Search,
+  Handshake,
+  FileText,
+  ArrowUpRight,
+  ArrowUpDown,
+  Trash2,
+  Download,
+  Loader2,
+  XCircle,
+  Star,
+} from "lucide-react";
 import { toast } from "sonner";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
 import { prospStatusColor } from "@/lib/prospeccaoStatus";
 import type { StatusEmpresaAcao } from "@/lib/exportEmpresasAcao";
-import {
-  AcaoEmpresasFilterPopover,
-  AcaoEmpresasFilterChips,
-} from "./AcaoEmpresasFilterPopover";
+import { AcaoEmpresasFilterPopover, AcaoEmpresasFilterChips } from "./AcaoEmpresasFilterPopover";
 import {
   applyAcaoFilters,
   applyAcaoSort,
@@ -69,11 +79,14 @@ export interface AcaoEmpresasExportPayload {
   acaoNome: string;
   empresaIds: string[];
   statusByEmpresaId: Map<string, StatusEmpresaAcao>;
-  elegInfoByEmpresaId: Map<string, {
-    elegivel: boolean;
-    justificativa: string | null;
-    valor_potencial_estimado: number | null;
-  }>;
+  elegInfoByEmpresaId: Map<
+    string,
+    {
+      elegivel: boolean;
+      justificativa: string | null;
+      valor_potencial_estimado: number | null;
+    }
+  >;
 }
 
 interface Props {
@@ -104,13 +117,21 @@ type PresetKey = "todas" | "elegiveis" | "aguardando" | "em_prospeccao";
 const PRESETS: Record<PresetKey, StatusCombinadoKey[] | undefined> = {
   todas: undefined,
   elegiveis: [
-    "aguardando", "Contato feito", "Proposta enviada",
-    "Em negociação", "Contrato assinado", "Serviço iniciado", "Perdido",
+    "aguardando",
+    "Contato feito",
+    "Proposta enviada",
+    "Em negociação",
+    "Contrato assinado",
+    "Serviço iniciado",
+    "Perdido",
   ],
   aguardando: ["aguardando"],
   em_prospeccao: [
-    "Contato feito", "Proposta enviada",
-    "Em negociação", "Contrato assinado", "Serviço iniciado",
+    "Contato feito",
+    "Proposta enviada",
+    "Em negociação",
+    "Contrato assinado",
+    "Serviço iniciado",
   ],
 };
 
@@ -125,20 +146,35 @@ function arraysEqUnordered<T>(a: T[] | undefined, b: T[] | undefined): boolean {
 
 const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "elegibilidade_recente", label: "Mais recentes" },
-  { value: "nome_asc",              label: "Nome A→Z" },
-  { value: "nome_desc",             label: "Nome Z→A" },
-  { value: "status_funil",          label: "Status do funil" },
-  { value: "valor_desc",            label: "Maior valor potencial" },
+  { value: "nome_asc", label: "Nome A→Z" },
+  { value: "nome_desc", label: "Nome Z→A" },
+  { value: "status_funil", label: "Status do funil" },
+  { value: "valor_desc", label: "Maior valor potencial" },
 ];
 
-export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospeccoes, onProspectar, onOpenProcesso, onDeleteEleg, onDesqualificar, onUpdateContexto, onExport, onViewEmpresaId, pinnedEmpresaId, onClearPinnedEmpresa }: Props) {
+export function AcaoEmpresasPanel({
+  acaoId,
+  acaoNome,
+  empresasMap,
+  elegs,
+  prospeccoes,
+  onProspectar,
+  onOpenProcesso,
+  onDeleteEleg,
+  onDesqualificar,
+  onUpdateContexto,
+  onExport,
+  onViewEmpresaId,
+  pinnedEmpresaId,
+  onClearPinnedEmpresa,
+}: Props) {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
 
   // Nome da empresa pinada — sai do empresasMap ou cai pro id (parcial) se a
   // empresa não estiver carregada (caso raro: RLS / paginação).
   const pinnedEmpresaNome = pinnedEmpresaId
-    ? empresasMap.get(pinnedEmpresaId)?.nome ?? `Empresa ${pinnedEmpresaId.slice(0, 8)}…`
+    ? (empresasMap.get(pinnedEmpresaId)?.nome ?? `Empresa ${pinnedEmpresaId.slice(0, 8)}…`)
     : null;
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
   const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
@@ -168,9 +204,9 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
       result.push({
         el,
         empresa,
-        prosp: prospeccoes.find(p =>
-          p.elegibilidade_id === el.id ||
-          (p.empresa_id === el.empresa_id && p.acao_id === acaoId)
+        prosp: prospeccoes.find(
+          (p) =>
+            p.elegibilidade_id === el.id || (p.empresa_id === el.empresa_id && p.acao_id === acaoId)
         ),
       });
     }
@@ -179,17 +215,24 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
   // Counts dos chips de topo são sempre contra `items`, não `filtered`,
   // pra que o usuário sempre veja o "tamanho real" de cada bucket.
-  const stats = useMemo(() => ({
-    total:         items.length,
-    elegiveis:     items.filter(i => i.el.elegivel).length,
-    aguardando:    items.filter(i => i.el.elegivel && !i.prosp).length,
-    emProspeccao:  items.filter(i => !!i.prosp && i.prosp.status_prospeccao !== "Perdido").length,
-  }), [items]);
+  // emProspeccao só conta elegíveis — match com o filtro do chip
+  // (statusOf devolve "nao_elegivel" antes de checar prosp em
+  // applyAcaoEmpresaFilters.ts:73, então contar prosp de inelegível
+  // virava número que sumia ao clicar no chip).
+  const stats = useMemo(
+    () => ({
+      total: items.length,
+      elegiveis: items.filter((i) => i.el.elegivel).length,
+      aguardando: items.filter((i) => i.el.elegivel && !i.prosp).length,
+      emProspeccao: items.filter(
+        (i) => i.el.elegivel && !!i.prosp && i.prosp.status_prospeccao !== "Perdido"
+      ).length,
+    }),
+    [items]
+  );
 
   const filtered = useMemo(() => {
-    const base = pinnedEmpresaId
-      ? items.filter((i) => i.el.empresa_id === pinnedEmpresaId)
-      : items;
+    const base = pinnedEmpresaId ? items.filter((i) => i.el.empresa_id === pinnedEmpresaId) : items;
     return applyAcaoSort(applyAcaoFilters(base, filters, q), sort);
   }, [items, filters, q, sort, pinnedEmpresaId]);
 
@@ -209,7 +252,10 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
     try {
       const empresaIds: string[] = [];
       const statusByEmpresaId = new Map<string, StatusEmpresaAcao>();
-      const elegInfoByEmpresaId = new Map<string, { elegivel: boolean; justificativa: string | null; valor_potencial_estimado: number | null }>();
+      const elegInfoByEmpresaId = new Map<
+        string,
+        { elegivel: boolean; justificativa: string | null; valor_potencial_estimado: number | null }
+      >();
       for (const { el, prosp } of filtered) {
         if (!el.empresa_id) continue;
         empresaIds.push(el.empresa_id);
@@ -233,10 +279,34 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
   type StatChip = { key: PresetKey; label: string; count: number; base: string; active: string };
   const presetChips: StatChip[] = [
-    { key: "todas",         label: "Total",         count: stats.total,        base: "bg-muted/60 text-foreground hover:bg-muted",     active: "bg-muted ring-2 ring-foreground/20" },
-    { key: "elegiveis",     label: "Elegíveis",     count: stats.elegiveis,    base: "bg-success/10 text-success hover:bg-success/20", active: "bg-success/20 ring-2 ring-success/30" },
-    { key: "aguardando",    label: "Aguardando",    count: stats.aguardando,   base: "bg-warning/10 text-warning hover:bg-warning/20", active: "bg-warning/20 ring-2 ring-warning/30" },
-    { key: "em_prospeccao", label: "Em prospecção", count: stats.emProspeccao, base: "bg-primary/10 text-primary hover:bg-primary/20", active: "bg-primary/20 ring-2 ring-primary/30" },
+    {
+      key: "todas",
+      label: "Total",
+      count: stats.total,
+      base: "bg-muted/60 text-foreground hover:bg-muted",
+      active: "bg-muted ring-2 ring-foreground/20",
+    },
+    {
+      key: "elegiveis",
+      label: "Elegíveis",
+      count: stats.elegiveis,
+      base: "bg-success/10 text-success hover:bg-success/20",
+      active: "bg-success/20 ring-2 ring-success/30",
+    },
+    {
+      key: "aguardando",
+      label: "Aguardando",
+      count: stats.aguardando,
+      base: "bg-warning/10 text-warning hover:bg-warning/20",
+      active: "bg-warning/20 ring-2 ring-warning/30",
+    },
+    {
+      key: "em_prospeccao",
+      label: "Em prospecção",
+      count: stats.emProspeccao,
+      base: "bg-primary/10 text-primary hover:bg-primary/20",
+      active: "bg-primary/20 ring-2 ring-primary/30",
+    },
   ];
 
   return (
@@ -244,7 +314,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
       {pinnedEmpresaId && (
         <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
           <span className="text-muted-foreground">Filtrando empresa:</span>
-          <span className="font-medium text-foreground truncate">{pinnedEmpresaNome}</span>
+          <span className="truncate font-medium text-foreground">{pinnedEmpresaNome}</span>
           {onClearPinnedEmpresa && (
             <button
               type="button"
@@ -260,7 +330,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
       {/* Presets — escrevem em filters.statusCombinado */}
       <div className="flex flex-wrap gap-2">
-        {presetChips.map(chip => (
+        {presetChips.map((chip) => (
           <button
             key={chip.key}
             onClick={() => applyPreset(chip.key)}
@@ -274,24 +344,26 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
       {/* Linha de controles: busca + filtros + ordenação */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Buscar nome ou CNPJ..."
             value={q}
-            onChange={e => setQ(e.target.value)}
-            className="pl-8 h-8 text-sm"
+            onChange={(e) => setQ(e.target.value)}
+            className="h-8 pl-8 text-sm"
           />
         </div>
         <AcaoEmpresasFilterPopover filters={filters} onChange={setFilters} />
         <Select value={sort} onValueChange={(v) => setSort(v as AcaoEmpresaSort)}>
           <SelectTrigger className="h-8 w-[180px] text-xs">
-            <ArrowUpDown className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {SORT_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+              <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                {opt.label}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -303,7 +375,11 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
           disabled={exporting || filtered.length === 0}
           title="Exportar empresas filtradas para XLSX"
         >
-          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {exporting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
           Exportar ({filtered.length})
         </Button>
       </div>
@@ -312,18 +388,24 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
 
       {/* Tabela */}
       {filtered.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-6 text-center">Nenhuma empresa neste filtro.</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          Nenhuma empresa neste filtro.
+        </p>
       ) : (
-        <div className="rounded-md border border-border overflow-hidden">
-          <div className="overflow-y-auto max-h-[460px]">
+        <div className="overflow-hidden rounded-md border border-border">
+          <div className="max-h-[460px] overflow-y-auto">
             <table className="w-full text-xs">
-              <thead className="bg-muted/40 sticky top-0 z-10">
+              <thead className="sticky top-0 z-10 bg-muted/40">
                 <tr>
-                  <th className="text-left py-2 px-3 font-medium text-muted-foreground">Empresa</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground hidden sm:table-cell">Porte · UF</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground hidden md:table-cell">Regime</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Status</th>
-                  <th className="py-2 px-3 text-right font-medium text-muted-foreground">Ações</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Empresa</th>
+                  <th className="hidden px-2 py-2 text-left font-medium text-muted-foreground sm:table-cell">
+                    Porte · UF
+                  </th>
+                  <th className="hidden px-2 py-2 text-left font-medium text-muted-foreground md:table-cell">
+                    Regime
+                  </th>
+                  <th className="px-2 py-2 text-left font-medium text-muted-foreground">Status</th>
+                  <th className="px-3 py-2 text-right font-medium text-muted-foreground">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -334,34 +416,46 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                       key={el.id}
                       className={`border-t border-border transition-colors hover:bg-muted/20 ${el.destaque ? "bg-amber-50/50 dark:bg-amber-950/10" : idx % 2 !== 0 ? "bg-muted/5" : ""}`}
                     >
-                      <td className="py-2 px-3">
+                      <td className="px-3 py-2">
                         {empresa ? (
                           <>
                             <button
                               type="button"
-                              className="font-medium truncate max-w-[180px] leading-tight text-left hover:underline focus-visible:underline"
-                              onClick={(e) => { e.stopPropagation(); onViewEmpresaId?.(el.empresa_id); }}
+                              className="max-w-[180px] truncate text-left font-medium leading-tight hover:underline focus-visible:underline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onViewEmpresaId?.(el.empresa_id);
+                              }}
                             >
                               {empresa.nome}
                             </button>
-                            <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{empresa.cnpj}</div>
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              {empresa.cnpj}
+                            </div>
                           </>
                         ) : (
                           <>
-                            <div className="font-medium text-destructive truncate max-w-[180px] leading-tight">Empresa removida</div>
-                            <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{el.empresa_id.slice(0, 8)}…</div>
+                            <div className="max-w-[180px] truncate font-medium leading-tight text-destructive">
+                              Empresa removida
+                            </div>
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              {el.empresa_id.slice(0, 8)}…
+                            </div>
                           </>
                         )}
                       </td>
 
-                      <td className="py-2 px-2 hidden sm:table-cell whitespace-nowrap">
+                      <td className="hidden whitespace-nowrap px-2 py-2 sm:table-cell">
                         <span className="text-muted-foreground">{empresa?.porte ?? "—"}</span>
                         {empresa?.uf && <span className="ml-1 font-medium">{empresa.uf}</span>}
                       </td>
 
-                      <td className="py-2 px-2 hidden md:table-cell">
+                      <td className="hidden px-2 py-2 md:table-cell">
                         {empresa?.regime_tributario ? (
-                          <Badge variant="outline" className={`text-[10px] border ${regimeColor(empresa.regime_tributario)}`}>
+                          <Badge
+                            variant="outline"
+                            className={`border text-[10px] ${regimeColor(empresa.regime_tributario)}`}
+                          >
                             {regimeShort(empresa.regime_tributario)}
                           </Badge>
                         ) : (
@@ -369,19 +463,32 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                         )}
                       </td>
 
-                      <td className="py-2 px-2">
+                      <td className="px-2 py-2">
                         {!el.elegivel ? (
-                          <Badge variant="outline" className="text-[10px] border-0 bg-destructive/10 text-destructive">Não elegível</Badge>
+                          <Badge
+                            variant="outline"
+                            className="border-0 bg-destructive/10 text-[10px] text-destructive"
+                          >
+                            Não elegível
+                          </Badge>
                         ) : prosp ? (
-                          <Badge variant="outline" className={`text-[10px] border-0 ${prospStatusColor(prosp.status_prospeccao)}`}>
+                          <Badge
+                            variant="outline"
+                            className={`border-0 text-[10px] ${prospStatusColor(prosp.status_prospeccao)}`}
+                          >
                             {prosp.status_prospeccao}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-[10px] border-0 bg-warning/10 text-warning">Aguardando</Badge>
+                          <Badge
+                            variant="outline"
+                            className="border-0 bg-warning/10 text-[10px] text-warning"
+                          >
+                            Aguardando
+                          </Badge>
                         )}
                       </td>
 
-                      <td className="py-2 px-3 text-right">
+                      <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {onUpdateContexto && (
                             <Popover
@@ -399,22 +506,28 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                   className="h-6 w-6 p-0"
                                   title="Contexto e contatos"
                                 >
-                                  <Star className={`h-3 w-3 transition-colors ${(el.destaque ?? false) ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+                                  <Star
+                                    className={`h-3 w-3 transition-colors ${(el.destaque ?? false) ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`}
+                                  />
                                 </Button>
                               </PopoverTrigger>
-                              <PopoverContent className="w-72 p-3 space-y-2.5" align="end">
+                              <PopoverContent className="w-72 space-y-2.5 p-3" align="end">
                                 <p className="text-xs font-semibold">Contexto e contatos</p>
                                 <button
                                   type="button"
-                                  className={`flex items-center gap-2 text-xs rounded px-2 py-1.5 w-full text-left transition-colors ${ctxDestaque ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400" : "hover:bg-muted text-muted-foreground"}`}
-                                  onClick={() => setCtxDestaque(d => !d)}
+                                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${ctxDestaque ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400" : "text-muted-foreground hover:bg-muted"}`}
+                                  onClick={() => setCtxDestaque((d) => !d)}
                                 >
-                                  <Star className={`h-3.5 w-3.5 shrink-0 ${ctxDestaque ? "fill-amber-400 text-amber-400" : ""}`} />
-                                  {ctxDestaque ? "Destaque ativo — visível para todos" : "Marcar como destaque"}
+                                  <Star
+                                    className={`h-3.5 w-3.5 shrink-0 ${ctxDestaque ? "fill-amber-400 text-amber-400" : ""}`}
+                                  />
+                                  {ctxDestaque
+                                    ? "Destaque ativo — visível para todos"
+                                    : "Marcar como destaque"}
                                 </button>
                                 <Textarea
                                   placeholder="Contatos, contexto, observações..."
-                                  className="text-xs min-h-[72px] resize-none"
+                                  className="min-h-[72px] resize-none text-xs"
                                   value={ctxNotas}
                                   onChange={(e) => setCtxNotas(e.target.value)}
                                 />
@@ -423,7 +536,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    className="flex-1 h-7 text-xs"
+                                    className="h-7 flex-1 text-xs"
                                     onClick={() => setCtxOpen(null)}
                                   >
                                     Cancelar
@@ -431,11 +544,15 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                   <Button
                                     type="button"
                                     size="sm"
-                                    className="flex-1 h-7 text-xs gap-1"
+                                    className="h-7 flex-1 gap-1 text-xs"
                                     disabled={ctxLoading}
                                     onClick={async () => {
                                       setCtxLoading(true);
-                                      await onUpdateContexto(el.id, ctxDestaque, ctxNotas.trim() || null);
+                                      await onUpdateContexto(
+                                        el.id,
+                                        ctxDestaque,
+                                        ctxNotas.trim() || null
+                                      );
                                       setCtxLoading(false);
                                       setCtxOpen(null);
                                     }}
@@ -490,14 +607,15 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                       <XCircle className="h-3 w-3" />
                                     </Button>
                                   </PopoverTrigger>
-                                  <PopoverContent className="w-64 p-3 space-y-2" align="end">
+                                  <PopoverContent className="w-64 space-y-2 p-3" align="end">
                                     <p className="text-xs font-semibold">Marcar como inelegível</p>
                                     <p className="text-[11px] text-muted-foreground">
-                                      {empresa?.nome ?? "Esta empresa"} será removida do pool elegível desta ação.
+                                      {empresa?.nome ?? "Esta empresa"} será removida do pool
+                                      elegível desta ação.
                                     </p>
                                     <Textarea
                                       placeholder="Motivo (opcional)..."
-                                      className="text-xs min-h-[60px] resize-none"
+                                      className="min-h-[60px] resize-none text-xs"
                                       value={desqMotivo}
                                       onChange={(e) => setDesqMotivo(e.target.value)}
                                     />
@@ -506,8 +624,11 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        className="flex-1 h-7 text-xs"
-                                        onClick={() => { setDesqOpen(null); setDesqMotivo(""); }}
+                                        className="h-7 flex-1 text-xs"
+                                        onClick={() => {
+                                          setDesqOpen(null);
+                                          setDesqMotivo("");
+                                        }}
                                       >
                                         Cancelar
                                       </Button>
@@ -515,7 +636,7 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                         type="button"
                                         variant="destructive"
                                         size="sm"
-                                        className="flex-1 h-7 text-xs gap-1"
+                                        className="h-7 flex-1 gap-1 text-xs"
                                         disabled={desqLoading}
                                         onClick={async () => {
                                           setDesqLoading(true);
@@ -525,7 +646,11 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                           setDesqMotivo("");
                                         }}
                                       >
-                                        {desqLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <XCircle className="h-3 w-3" />}
+                                        {desqLoading ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <XCircle className="h-3 w-3" />
+                                        )}
                                         Confirmar
                                       </Button>
                                     </div>
@@ -537,10 +662,11 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                 <Button
                                   type="button"
                                   size="sm"
-                                  className="h-6 text-[10px] px-2 gap-1"
+                                  className="h-6 gap-1 px-2 text-[10px]"
                                   onClick={() => onProspectar(el.id, el.empresa_id)}
                                 >
-                                  <Handshake className="h-3 w-3" />Prospectar
+                                  <Handshake className="h-3 w-3" />
+                                  Prospectar
                                 </Button>
                               )}
                               {el.elegivel && prosp && (
@@ -548,10 +674,11 @@ export function AcaoEmpresasPanel({ acaoId, acaoNome, empresasMap, elegs, prospe
                                   type="button"
                                   variant="outline"
                                   size="sm"
-                                  className="h-6 text-[10px] px-2 gap-1"
+                                  className="h-6 gap-1 px-2 text-[10px]"
                                   onClick={() => navigate("/prospeccao")}
                                 >
-                                  <ArrowUpRight className="h-3 w-3" />Ver
+                                  <ArrowUpRight className="h-3 w-3" />
+                                  Ver
                                 </Button>
                               )}
                             </>

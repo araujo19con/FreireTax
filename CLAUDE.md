@@ -41,7 +41,8 @@ Aliases: `@/` → `src/`.
 
 ## Schema Supabase (tabelas principais)
 
-- `empresas` — cadastro RFB-enriquecido. Campos manuais relevantes: `quantidade_funcionarios`, `faturamento_anual`, `regime_tributario` (simples/mei/lucro_presumido/lucro_real/imune_isento), `metadados jsonb` (campos personalizados). **CNPJ tem UNIQUE constraint** (mig 20260425).
+- `empresas` — cadastro RFB-enriquecido. Campos manuais relevantes: `quantidade_funcionarios`, `faturamento_anual`, `regime_tributario` (simples/mei/lucro_presumido/lucro_real/imune_isento), `metadados jsonb` (campos personalizados). **CNPJ tem UNIQUE constraint** (mig 20260425) e é NULLABLE (mig 20260506).
+- `rfb_estabelecimentos_busca` — slim da RFB pra buscar CNPJ por razão social (mig 20260514). Populado via `tools/import-rfb-slim.mjs` (só ATIVAS, só UFs configuradas — default RN+PB). Consultada via RPC `buscar_rfb_por_nome(termo, uf, limite)` ou edge function `buscar-cnpj-por-nome`.
 - `acoes_tributarias` — teses jurídicas; campo `regras_elegibilidade jsonb` filtra pool
 - `criterios_elegibilidade` — critérios c/ `regra_excludente jsonb` (mig 20260422)
 - `elegibilidade` — qualificação empresa×ação (estados: nao_avaliada/qualificada/desqualificada/em_prospeccao/fechada/perdida)
@@ -65,7 +66,8 @@ Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
 ## Componentes compartilhados (src/components/) — REUSE
 
 - `EmpresaFilterPopover` + `EmpresaFilterChips` — usado em **Empresas** E **Matriz Elegibilidade**. Não duplique a UI de filtros.
-- `EmpresaDialog` — criação/edição com validação CNPJ duplicado embutida
+- `EmpresaDialog` — criação/edição com validação CNPJ duplicado embutida + botão "Buscar pelo nome" (via `BuscarCNPJDialog`) pra empresas sem CNPJ
+- `BuscarCNPJDialog` — busca fuzzy de CNPJ pela razão social na base RFB indexada (RN+PB). Usado em `EmpresaDialog` e `EmpresaDetailSheet`.
 - `PropostaDialog` + `RichTextEditor` (Tiptap) — proposta com timbrado, preview e print
 - `TarefaDialog`, `ReuniaoDialog` — pattern de loadRelations (profiles+empresas+prospeccoes)
 - `PageHeader`, `EmptyState`, `LoadingState` — UX consistente
@@ -94,7 +96,7 @@ Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
 ## Convenções de código
 
 - Texto de UI em **português** (labels, mensagens, toasts)
-- Comentários em português, curtos, explicando *porquê* (não *o quê*)
+- Comentários em português, curtos, explicando _porquê_ (não _o quê_)
 - Nada de emoji em código ou arquivos salvo se o user pedir
 - `date-fns` para datas (locale pt-BR quando mostrar)
 - Toast: `import { toast } from "sonner"` (preferir sonner ao radix toast)
@@ -110,6 +112,22 @@ Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
 - **Importação**: distinguir status CRM (`prospect/cliente/inativo`) de situação RFB (`ATIVA/SUSPENSA/...`). Use `findColumnExact` pra "status" para evitar falso positivo com "situação".
 - **Erros Postgres**: PostgrestError NÃO é `instanceof Error`. Use `extractErrorMessage(err)` (em `src/pages/Importacao.tsx`) ou checagem de `e.code === "23505"` para unique violation (CNPJ duplicado).
 - **Print PDF (PropostaDialog)**: para timbrado em todas as páginas, usar `<table>` com `<thead>`/`<tfoot>` (nunca `position: fixed`, que só ancora na primeira página no Chrome print).
+
+## Enriquecimento por nome (empresas sem CNPJ)
+
+Empresas cadastradas sem CNPJ podem ser enriquecidas buscando o CNPJ pela
+razão social na base slim da RFB (`rfb_estabelecimentos_busca`):
+
+- **UI individual**: botão "Buscar pelo nome" em `EmpresaDialog`; botão "Buscar
+  CNPJ" no header de `EmpresaDetailSheet` (aparece apenas quando `empresa.cnpj`
+  é vazio).
+- **UI em lote**: scope `"sem_cnpj"` no `BulkEnrichDialog` — busca o melhor
+  match (score ≥ 0.5) e enriquece automaticamente.
+- **Backend**: edge function `buscar-cnpj-por-nome` → RPC `buscar_rfb_por_nome`.
+
+⚠️ A tabela `rfb_estabelecimentos_busca` precisa estar populada (via
+`tools/import-rfb-slim.mjs` — ver `tools/README-import-rfb.md`). Sem isso, a
+busca retorna lista vazia.
 
 ## Fluxo de deploy
 
