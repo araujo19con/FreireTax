@@ -85,7 +85,11 @@ const OBJECOES_COMUNS = [
 
 interface Prospeccao {
   id: string;
+  /** Vínculo legado — pode ser null/obsoleto. Não usar pra resolver empresa/ação. */
   elegibilidade_id: string;
+  /** Colunas diretas (NOT NULL desde a migration 20260421). Fonte de verdade. */
+  empresa_id: string | null;
+  acao_id: string | null;
   contato_nome: string;
   contato_telefone: string;
   contato_email: string;
@@ -277,16 +281,21 @@ export default function Prospeccao() {
     fetchAll();
   }, []);
 
-  const getEmpresa = (elegId: string) => {
-    const eleg = elegibilidades.find((e) => e.id === elegId);
-    if (!eleg) return null;
-    return empresas.find((emp) => emp.id === eleg.empresa_id);
+  // Resolve empresa/ação pela coluna direta da prospecção; cai pra elegibilidade
+  // só em registros legados sem a coluna preenchida.
+  const empresaIdDe = (p: Prospeccao) =>
+    p.empresa_id ?? elegibilidades.find((e) => e.id === p.elegibilidade_id)?.empresa_id ?? null;
+  const acaoIdDe = (p: Prospeccao) =>
+    p.acao_id ?? elegibilidades.find((e) => e.id === p.elegibilidade_id)?.acao_id ?? null;
+
+  const getEmpresa = (p: Prospeccao) => {
+    const empId = empresaIdDe(p);
+    return empId ? (empresas.find((emp) => emp.id === empId) ?? null) : null;
   };
 
-  const getAcao = (elegId: string) => {
-    const eleg = elegibilidades.find((e) => e.id === elegId);
-    if (!eleg) return null;
-    return acoes.find((a) => a.id === eleg.acao_id);
+  const getAcao = (p: Prospeccao) => {
+    const acaoId = acaoIdDe(p);
+    return acaoId ? (acoes.find((a) => a.id === acaoId) ?? null) : null;
   };
 
   const getElegibilidade = (elegId: string) => elegibilidades.find((e) => e.id === elegId);
@@ -294,19 +303,16 @@ export default function Prospeccao() {
     Number(getElegibilidade(elegId)?.valor_potencial_estimado ?? 0);
 
   const filteredProspeccoes = useMemo(() => {
-    // Remove prospecções órfãs (eleg deletada OU empresa deletada) — eram cards com nome "—"
+    // Remove só prospecções realmente órfãs (empresa deletada). Antes o filtro
+    // exigia uma elegibilidade válida e descartava silenciosamente qualquer
+    // prospecção sem ela — empresas "sumiam" do kanban sem motivo.
     const empresaIdSet = new Set(empresas.map((e) => e.id));
-    const elegMap = new Map(elegibilidades.map((e) => [e.id, e]));
     let items = prospeccoes.filter((p) => {
-      const eleg = elegMap.get(p.elegibilidade_id);
-      if (!eleg) return false;
-      return empresaIdSet.has(eleg.empresa_id);
+      const empId = empresaIdDe(p);
+      return !!empId && empresaIdSet.has(empId);
     });
     if (filterAcao !== "all") {
-      const elegIds = new Set(
-        elegibilidades.filter((e) => e.acao_id === filterAcao).map((e) => e.id)
-      );
-      items = items.filter((p) => elegIds.has(p.elegibilidade_id));
+      items = items.filter((p) => acaoIdDe(p) === filterAcao);
     }
     // Filtro por responsável: 'all' | '_me' (logado) | '_none' (sem) | <profile_id>
     if (filterResponsavel === "_me") {
@@ -322,8 +328,8 @@ export default function Prospeccao() {
     if (search.trim()) {
       const q = search.toLowerCase();
       items = items.filter((p) => {
-        const emp = getEmpresa(p.elegibilidade_id);
-        const acao = getAcao(p.elegibilidade_id);
+        const emp = getEmpresa(p);
+        const acao = getAcao(p);
         return (
           emp?.nome.toLowerCase().includes(q) ||
           p.contato_nome?.toLowerCase().includes(q) ||
@@ -377,8 +383,8 @@ export default function Prospeccao() {
   };
 
   const openContatos = (p: Prospeccao) => {
-    const emp = getEmpresa(p.elegibilidade_id);
-    const acao = getAcao(p.elegibilidade_id);
+    const emp = getEmpresa(p);
+    const acao = getAcao(p);
     setContatosProspId(p.id);
     setContatosLabel(`${emp?.nome ?? "—"} — ${acao?.nome ?? "—"}`);
     setContatosOpen(true);
@@ -764,8 +770,8 @@ export default function Prospeccao() {
                       </div>
                     )}
                     {items.map((p) => {
-                      const emp = getEmpresa(p.elegibilidade_id);
-                      const acao = getAcao(p.elegibilidade_id);
+                      const emp = getEmpresa(p);
+                      const acao = getAcao(p);
                       const valorPot = getValorPotencial(p.elegibilidade_id);
                       const prescricao = prescricaoInfo(acao?.data_limite_prescricao ?? null);
                       const cadencia = cadenciaStatus(p.numero_contatos);
@@ -1021,10 +1027,8 @@ export default function Prospeccao() {
             <div className="space-y-4">
               {/* Info header */}
               <div className="space-y-1 rounded-lg bg-muted/50 p-3 text-sm">
-                <p className="font-medium">{getEmpresa(editProsp.elegibilidade_id)?.nome}</p>
-                <p className="text-xs text-muted-foreground">
-                  {getAcao(editProsp.elegibilidade_id)?.nome}
-                </p>
+                <p className="font-medium">{getEmpresa(editProsp)?.nome}</p>
+                <p className="text-xs text-muted-foreground">{getAcao(editProsp)?.nome}</p>
                 <div className="flex items-center gap-3 pt-1 text-[10px] text-muted-foreground">
                   <span>
                     Toques:{" "}
@@ -1538,8 +1542,8 @@ export default function Prospeccao() {
       {/* Sprint 2: Templates de mensagem */}
       {editProsp &&
         (() => {
-          const emp = getEmpresa(editProsp.elegibilidade_id);
-          const acao = getAcao(editProsp.elegibilidade_id);
+          const emp = getEmpresa(editProsp);
+          const acao = getAcao(editProsp);
           const valorPot = getValorPotencial(editProsp.elegibilidade_id);
           const dias = acao?.data_limite_prescricao
             ? differenceInDays(parseISO(acao.data_limite_prescricao), new Date())
@@ -1565,8 +1569,8 @@ export default function Prospeccao() {
       {propostaOpen &&
         propostaProsp &&
         (() => {
-          const emp = getEmpresa(propostaProsp.elegibilidade_id);
-          const acao = getAcao(propostaProsp.elegibilidade_id);
+          const emp = getEmpresa(propostaProsp);
+          const acao = getAcao(propostaProsp);
           const valorPot = getValorPotencial(propostaProsp.elegibilidade_id);
           return (
             <PropostaDialog
