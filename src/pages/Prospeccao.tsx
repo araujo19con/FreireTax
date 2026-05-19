@@ -85,11 +85,8 @@ const OBJECOES_COMUNS = [
 
 interface Prospeccao {
   id: string;
-  /** Vínculo legado — pode ser null/obsoleto. Não usar pra resolver empresa/ação. */
+  /** Único vínculo a empresa/ação: prospeccoes não tem FK direta. */
   elegibilidade_id: string;
-  /** Colunas diretas (NOT NULL desde a migration 20260421). Fonte de verdade. */
-  empresa_id: string | null;
-  acao_id: string | null;
   contato_nome: string;
   contato_telefone: string;
   contato_email: string;
@@ -135,6 +132,33 @@ interface Acao {
   nome: string;
   data_limite_prescricao: string | null;
   tipo_prazo: string | null;
+}
+
+/**
+ * Busca todas as linhas de uma tabela paginando de 1000 em 1000.
+ * O PostgREST corta cada resposta no limite `max-rows` (~1000), então um
+ * `.range(0, 49999)` não traz a tabela inteira — só os primeiros 1000.
+ */
+async function fetchAllRows<T>(table: string, select: string): Promise<T[]> {
+  const PAGE = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await (
+      supabase.from(table) as never as {
+        select: (s: string) => {
+          range: (a: number, b: number) => Promise<{ data: T[] | null; error: unknown }>;
+        };
+      }
+    )
+      .select(select)
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = data ?? [];
+    out.push(...batch);
+    if (batch.length < PAGE) break;
+    if (from > 200_000) break; // trava de segurança
+  }
+  return out;
 }
 
 const MOTIVOS_PERDIDO: { value: MotivoPerdido; label: string }[] = [
@@ -257,21 +281,41 @@ export default function Prospeccao() {
   const [propostaProsp, setPropostaProsp] = useState<Prospeccao | null>(null);
 
   const fetchAll = async () => {
-    const [prospRes, elegRes, empRes, acoesRes, profsRes] = await Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.from("prospeccoes") as any).select("*").range(0, 9999),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.from("elegibilidade") as any)
-        .select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado")
-        .range(0, 49999),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.from("empresas") as any).select("id, nome, cnpj").range(0, 49999),
+    // prospeccoes e elegibilidade são paginadas — o PostgREST corta respostas
+    // grandes em ~1000 linhas e empresas tem ~5k. Buscar `empresas` inteira
+    // truncava silenciosamente: prospecções cuja empresa caía fora das 1000
+    // primeiras sumiam do kanban. Aqui buscamos só as empresas referenciadas
+    // pelas elegibilidades, por id.
+    const [prospRows, elegRows, acoesRes, profsRes] = await Promise.all([
+      fetchAllRows<Prospeccao>("prospeccoes", "*"),
+      fetchAllRows<ElegibilidadeRow>(
+        "elegibilidade",
+        "id, empresa_id, acao_id, elegivel, valor_potencial_estimado"
+      ),
       supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
       supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
     ]);
-    setProspeccoes(prospRes.data || []);
-    setElegibilidades(elegRes.data || []);
-    setEmpresas(empRes.data || []);
+
+    // Empresas: só as referenciadas pelas elegibilidades, buscadas por id em
+    // lotes de 100 (evita URL longa demais no filtro .in).
+    const empresaIds = [...new Set(elegRows.map((e) => e.empresa_id).filter(Boolean))];
+    const empresasData: Empresa[] = [];
+    for (let i = 0; i < empresaIds.length; i += 100) {
+      const { data } = await (
+        supabase.from("empresas") as never as {
+          select: (s: string) => {
+            in: (c: string, v: string[]) => Promise<{ data: Empresa[] | null }>;
+          };
+        }
+      )
+        .select("id, nome, cnpj")
+        .in("id", empresaIds.slice(i, i + 100));
+      if (data) empresasData.push(...data);
+    }
+
+    setProspeccoes(prospRows);
+    setElegibilidades(elegRows);
+    setEmpresas(empresasData);
     setProfiles((profsRes.data ?? []) as Array<{ id: string; nome: string; email: string }>);
     setAcoes((acoesRes.data as Acao[]) || []);
     setLoading(false);
@@ -281,21 +325,17 @@ export default function Prospeccao() {
     fetchAll();
   }, []);
 
-  // Resolve empresa/ação pela coluna direta da prospecção; cai pra elegibilidade
-  // só em registros legados sem a coluna preenchida.
-  const empresaIdDe = (p: Prospeccao) =>
-    p.empresa_id ?? elegibilidades.find((e) => e.id === p.elegibilidade_id)?.empresa_id ?? null;
-  const acaoIdDe = (p: Prospeccao) =>
-    p.acao_id ?? elegibilidades.find((e) => e.id === p.elegibilidade_id)?.acao_id ?? null;
+  // prospeccoes liga a empresa/ação só via elegibilidade_id (sem FK direta).
+  const elegDe = (p: Prospeccao) => elegibilidades.find((e) => e.id === p.elegibilidade_id);
 
   const getEmpresa = (p: Prospeccao) => {
-    const empId = empresaIdDe(p);
-    return empId ? (empresas.find((emp) => emp.id === empId) ?? null) : null;
+    const eleg = elegDe(p);
+    return eleg ? (empresas.find((emp) => emp.id === eleg.empresa_id) ?? null) : null;
   };
 
   const getAcao = (p: Prospeccao) => {
-    const acaoId = acaoIdDe(p);
-    return acaoId ? (acoes.find((a) => a.id === acaoId) ?? null) : null;
+    const eleg = elegDe(p);
+    return eleg ? (acoes.find((a) => a.id === eleg.acao_id) ?? null) : null;
   };
 
   const getElegibilidade = (elegId: string) => elegibilidades.find((e) => e.id === elegId);
@@ -303,16 +343,15 @@ export default function Prospeccao() {
     Number(getElegibilidade(elegId)?.valor_potencial_estimado ?? 0);
 
   const filteredProspeccoes = useMemo(() => {
-    // Remove só prospecções realmente órfãs (empresa deletada). Antes o filtro
-    // exigia uma elegibilidade válida e descartava silenciosamente qualquer
-    // prospecção sem ela — empresas "sumiam" do kanban sem motivo.
+    // Remove só prospecções realmente órfãs (elegibilidade ou empresa deletada).
     const empresaIdSet = new Set(empresas.map((e) => e.id));
+    const elegMap = new Map(elegibilidades.map((e) => [e.id, e]));
     let items = prospeccoes.filter((p) => {
-      const empId = empresaIdDe(p);
-      return !!empId && empresaIdSet.has(empId);
+      const eleg = elegMap.get(p.elegibilidade_id);
+      return !!eleg && empresaIdSet.has(eleg.empresa_id);
     });
     if (filterAcao !== "all") {
-      items = items.filter((p) => acaoIdDe(p) === filterAcao);
+      items = items.filter((p) => elegMap.get(p.elegibilidade_id)?.acao_id === filterAcao);
     }
     // Filtro por responsável: 'all' | '_me' (logado) | '_none' (sem) | <profile_id>
     if (filterResponsavel === "_me") {
