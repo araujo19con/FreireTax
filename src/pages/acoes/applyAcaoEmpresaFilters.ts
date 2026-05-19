@@ -25,8 +25,12 @@ export interface StatusCombinadoOption {
 }
 
 export const STATUS_COMBINADO_OPTIONS: StatusCombinadoOption[] = [
-  { key: "nao_elegivel", label: "Não elegível", color: "bg-destructive/10 text-destructive border-destructive/30" },
-  { key: "aguardando",   label: "Aguardando",   color: "bg-warning/10 text-warning border-warning/30" },
+  {
+    key: "nao_elegivel",
+    label: "Não elegível",
+    color: "bg-destructive/10 text-destructive border-destructive/30",
+  },
+  { key: "aguardando", label: "Aguardando", color: "bg-warning/10 text-warning border-warning/30" },
   ...PROSPECCAO_STATUSES.map<StatusCombinadoOption>((s) => ({
     key: s.key as StatusCombinadoKey,
     label: s.label,
@@ -84,7 +88,11 @@ function lower(s: string | null | undefined): string {
   return (s ?? "").toLowerCase();
 }
 
-function inRange(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined): boolean {
+function inRange(
+  value: number | null | undefined,
+  min: number | null | undefined,
+  max: number | null | undefined
+): boolean {
   if (min == null && max == null) return true;
   if (value == null) return false; // se há um bound, exige valor presente
   if (min != null && value < min) return false;
@@ -104,17 +112,17 @@ export function activeFiltersCount(f: AcaoEmpresaFilters): number {
   if (f.interior) n++;
   if (f.cnae?.trim()) n++;
   if (f.capitalMin != null || f.capitalMax != null) n++;
+  // funcionários/faturamento contam 1 cada — faixaFuncionarios/faixaFaturamento
+  // são derivadas do intervalo, não filtros independentes.
   if (f.funcionariosMin != null || f.funcionariosMax != null) n++;
   if (f.faturamentoMin != null || f.faturamentoMax != null) n++;
-  if (f.faixaFuncionarios?.length) n += f.faixaFuncionarios.length;
-  if (f.faixaFaturamento?.length) n += f.faixaFaturamento.length;
   return n;
 }
 
 export function applyAcaoFilters(
   items: AcaoEmpresaItem[],
   filters: AcaoEmpresaFilters,
-  search: string,
+  search: string
 ): AcaoEmpresaItem[] {
   let list = items;
 
@@ -143,7 +151,9 @@ export function applyAcaoFilters(
 
   if (filters.regimeTributario?.length) {
     const set = new Set(filters.regimeTributario);
-    list = list.filter((i) => i.empresa?.regime_tributario != null && set.has(i.empresa.regime_tributario));
+    list = list.filter(
+      (i) => i.empresa?.regime_tributario != null && set.has(i.empresa.regime_tributario)
+    );
   }
 
   if (filters.opcaoSimples != null) {
@@ -163,42 +173,55 @@ export function applyAcaoFilters(
     list = list.filter(
       (i) =>
         lower(i.empresa?.cnae_principal).includes(needle) ||
-        lower(i.empresa?.cnae_principal_desc).includes(needle),
+        lower(i.empresa?.cnae_principal_desc).includes(needle)
     );
   }
 
   if (filters.capitalMin != null || filters.capitalMax != null) {
-    list = list.filter((i) => inRange(i.empresa?.capital_social, filters.capitalMin, filters.capitalMax));
+    list = list.filter((i) =>
+      inRange(i.empresa?.capital_social, filters.capitalMin, filters.capitalMax)
+    );
   }
 
-  if (filters.funcionariosMin != null || filters.funcionariosMax != null) {
-    list = list.filter((i) => inRange(i.empresa?.quantidade_funcionarios, filters.funcionariosMin, filters.funcionariosMax));
-  }
-
-  if (filters.faturamentoMin != null || filters.faturamentoMax != null) {
-    list = list.filter((i) => inRange(i.empresa?.faturamento_anual, filters.faturamentoMin, filters.faturamentoMax));
-  }
-
-  if (filters.faixaFuncionarios?.length) {
-    const set = new Set(filters.faixaFuncionarios);
+  // Funcionários e Faturamento: numérico OU faixa textual (metadados) combinados
+  // via OR — a empresa pode ter só uma das duas formas. As faixaFuncionarios/
+  // faixaFaturamento já vêm derivadas do intervalo (faixasNoIntervalo).
+  const temNumFunc = filters.funcionariosMin != null || filters.funcionariosMax != null;
+  const temTxtFunc = (filters.faixaFuncionarios?.length ?? 0) > 0;
+  if (temNumFunc || temTxtFunc) {
+    const setTxt = new Set(filters.faixaFuncionarios ?? []);
     list = list.filter((i) => {
+      const okNum = temNumFunc
+        ? inRange(
+            i.empresa?.quantidade_funcionarios,
+            filters.funcionariosMin,
+            filters.funcionariosMax
+          )
+        : false;
       const v = i.empresa?.metadados?.["Faixa de Funcionários"];
-      return !!v && set.has(v);
+      const okTxt = temTxtFunc ? !!v && setTxt.has(v) : false;
+      return temNumFunc && temTxtFunc ? okNum || okTxt : temNumFunc ? okNum : okTxt;
     });
   }
 
-  if (filters.faixaFaturamento?.length) {
-    const set = new Set(filters.faixaFaturamento);
+  const temNumFat = filters.faturamentoMin != null || filters.faturamentoMax != null;
+  const temTxtFat = (filters.faixaFaturamento?.length ?? 0) > 0;
+  if (temNumFat || temTxtFat) {
+    const setTxt = new Set(filters.faixaFaturamento ?? []);
     list = list.filter((i) => {
+      const okNum = temNumFat
+        ? inRange(i.empresa?.faturamento_anual, filters.faturamentoMin, filters.faturamentoMax)
+        : false;
       const v = i.empresa?.metadados?.["Faixa de Faturamento"];
-      return !!v && set.has(v);
+      const okTxt = temTxtFat ? !!v && setTxt.has(v) : false;
+      return temNumFat && temTxtFat ? okNum || okTxt : temNumFat ? okNum : okTxt;
     });
   }
 
   if (search.trim()) {
     const q = lower(search.trim());
     list = list.filter(
-      (i) => lower(i.empresa?.nome).includes(q) || (i.empresa?.cnpj ?? "").includes(q),
+      (i) => lower(i.empresa?.nome).includes(q) || (i.empresa?.cnpj ?? "").includes(q)
     );
   }
 
@@ -207,8 +230,8 @@ export function applyAcaoFilters(
 
 // Order key used by status_funil sort. Lower comes first.
 function funilOrder(item: AcaoEmpresaItem): number {
-  if (!item.el.elegivel) return 100;          // não elegíveis ao fim
-  if (!item.prosp) return -1;                 // aguardando primeiro
+  if (!item.el.elegivel) return 100; // não elegíveis ao fim
+  if (!item.prosp) return -1; // aguardando primeiro
   return prospStatusOrder(item.prosp.status_prospeccao);
 }
 

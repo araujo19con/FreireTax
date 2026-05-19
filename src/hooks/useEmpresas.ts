@@ -29,15 +29,20 @@ export interface EmpresaFilters {
   interior?: boolean;
   /** Busca em `cnae_principal` (código) OU `cnae_principal_desc` (descrição) via ilike */
   cnae?: string | null;
-  /** Quantidade de funcionários — range numérico (só casa empresas com valor manual/importado numérico) */
+  /** Quantidade de funcionários — intervalo [min, max]. Casa o valor numérico
+   *  (manual/RFB) e, via `faixaFuncionarios`, as faixas-texto importadas. */
   funcionariosMin?: number | null;
   funcionariosMax?: number | null;
-  /** Faturamento anual em R$ — range numérico (só casa empresas com valor manual/importado numérico) */
+  /** Faturamento anual em R$ — intervalo [min, max]. Casa o valor numérico e,
+   *  via `faixaFaturamento`, as faixas-texto importadas. */
   faturamentoMin?: number | null;
   faturamentoMax?: number | null;
-  /** Faixa de funcionários como texto (vindo da planilha — ex: "500 A 999") */
+  /** Faixas-texto de funcionários (ex: "500 A 999") que se sobrepõem ao
+   *  intervalo. DERIVADO de funcionariosMin/Max via `faixasNoIntervalo` —
+   *  não é um filtro independente; o usuário só informa min/max. */
   faixaFuncionarios?: string[];
-  /** Faixa de faturamento como texto (vindo da planilha — ex: "10M A 20M") */
+  /** Faixas-texto de faturamento que se sobrepõem ao intervalo.
+   *  DERIVADO de faturamentoMin/Max — ver `faixaFuncionarios`. */
   faixaFaturamento?: string[];
   /** Regime tributário (simples/mei/lucro_presumido/lucro_real/imune_isento) */
   regimeTributario?: string[];
@@ -501,9 +506,9 @@ export function parseFaixaRange(text: string | null | undefined): [number, numbe
     const max = aplicarSufixo(rng[3], rng[4]);
     if (min != null && max != null) return [Math.min(min, max), Math.max(min, max)];
   }
-  // "acima de 1000", "mais de 1000", "1000+"
+  // "acima de 1000", "mais de 1000", "1000+", "30000 OU MAIS", "5000 e acima"
   const acima = t.match(
-    /(?:acima de|mais de|>\s*|superior a)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?|(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*\+/i
+    /(?:acima de|mais de|>\s*|superior a)\s*(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?|(\d[\d.,]*)\s*(k|m|mi|mil|milh|bi)?\s*(?:\+|ou\s+mais|e\s+mais|ou\s+acima|e\s+acima|ou\s+superior)/i
   );
   if (acima) {
     const num = acima[1] ?? acima[3];
@@ -534,6 +539,26 @@ export function faixaSobrepoe(text: string, min: number | null, max: number | nu
   const lo = min ?? Number.NEGATIVE_INFINITY;
   const hi = max ?? Number.POSITIVE_INFINITY;
   return a <= hi && b >= lo;
+}
+
+/**
+ * Traduz um intervalo numérico [min, max] na lista de faixas textuais distintas
+ * (importadas da planilha) que se sobrepõem a ele.
+ *
+ * O filtro de funcionários/faturamento expõe só mínimo e máximo, mas os dados
+ * vêm de duas fontes: a coluna numérica e uma faixa em texto nos `metadados`
+ * (ex: "250 A 499"). O Postgres não parseia esse texto server-side, então o
+ * filtro precisa receber as faixas-texto já resolvidas — é o que esta função faz.
+ * Retorna undefined quando não há intervalo ou nenhuma faixa casa.
+ */
+export function faixasNoIntervalo(
+  faixasDistintas: string[],
+  min: number | null | undefined,
+  max: number | null | undefined
+): string[] | undefined {
+  if (min == null && max == null) return undefined;
+  const overlap = faixasDistintas.filter((v) => faixaSobrepoe(v, min ?? null, max ?? null));
+  return overlap.length ? overlap : undefined;
 }
 
 /** Lista simples (sem paginação) — usado em selects de combobox. */
