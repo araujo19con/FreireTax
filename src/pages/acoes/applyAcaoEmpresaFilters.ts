@@ -5,6 +5,7 @@
 
 import type { EmpresaAcao, ElegAcao, ProspMin } from "./AcaoEmpresasPanel";
 import type { EmpresaPorte, EmpresaSituacao } from "@/hooks/useEmpresas";
+import { parseFaixaRange } from "@/hooks/useEmpresas";
 import { prospStatusOrder, PROSPECCAO_STATUSES } from "@/lib/prospeccaoStatus";
 import { getCapitaisForUFs, normalizeMunicipio } from "@/lib/municipiosBrasil";
 
@@ -63,7 +64,9 @@ export type AcaoEmpresaSort =
   | "nome_asc"
   | "nome_desc"
   | "status_funil"
-  | "valor_desc";
+  | "valor_desc"
+  | "funcionarios_desc"
+  | "faturamento_desc";
 
 export interface AcaoEmpresaItem {
   el: ElegAcao;
@@ -241,6 +244,30 @@ function nameCompare(a: AcaoEmpresaItem, b: AcaoEmpresaItem): number {
   return an.localeCompare(bn, "pt-BR");
 }
 
+/** Valor numérico efetivo: usa a coluna; se vazia, tenta o limite inferior da
+ *  faixa-texto importada da planilha. Mantém ordenação consistente com a
+ *  filosofia do filtro (qualquer fonte). null = item sem valor (vai pro fim). */
+function effectiveMetric(
+  emp: EmpresaAcao | undefined,
+  numField: "quantidade_funcionarios" | "faturamento_anual",
+  faixaKey: "Faixa de Funcionários" | "Faixa de Faturamento"
+): number | null {
+  if (!emp) return null;
+  const n = emp[numField];
+  if (n != null) return n;
+  const txt = emp.metadados?.[faixaKey];
+  const r = txt ? parseFaixaRange(txt) : null;
+  return r ? r[0] : null;
+}
+
+/** Compara desc, com nulls indo pro fim e desempate alfabético por nome. */
+function metricDescCompare(a: number | null, b: number | null): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return b - a;
+}
+
 export function applyAcaoSort(items: AcaoEmpresaItem[], sort: AcaoEmpresaSort): AcaoEmpresaItem[] {
   const arr = items.slice();
   switch (sort) {
@@ -264,6 +291,24 @@ export function applyAcaoSort(items: AcaoEmpresaItem[], sort: AcaoEmpresaSort): 
         const va = a.el.valor_potencial_estimado ?? 0;
         const vb = b.el.valor_potencial_estimado ?? 0;
         const d = vb - va;
+        return d !== 0 ? d : nameCompare(a, b);
+      });
+      return arr;
+    case "funcionarios_desc":
+      arr.sort((a, b) => {
+        const d = metricDescCompare(
+          effectiveMetric(a.empresa, "quantidade_funcionarios", "Faixa de Funcionários"),
+          effectiveMetric(b.empresa, "quantidade_funcionarios", "Faixa de Funcionários")
+        );
+        return d !== 0 ? d : nameCompare(a, b);
+      });
+      return arr;
+    case "faturamento_desc":
+      arr.sort((a, b) => {
+        const d = metricDescCompare(
+          effectiveMetric(a.empresa, "faturamento_anual", "Faixa de Faturamento"),
+          effectiveMetric(b.empresa, "faturamento_anual", "Faixa de Faturamento")
+        );
         return d !== 0 ? d : nameCompare(a, b);
       });
       return arr;

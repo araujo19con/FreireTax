@@ -150,6 +150,8 @@ const SORT_OPTIONS: Array<{ value: AcaoEmpresaSort; label: string }> = [
   { value: "nome_desc", label: "Nome Z→A" },
   { value: "status_funil", label: "Status do funil" },
   { value: "valor_desc", label: "Maior valor potencial" },
+  { value: "funcionarios_desc", label: "Mais funcionários" },
+  { value: "faturamento_desc", label: "Maior faturamento" },
 ];
 
 export function AcaoEmpresasPanel({
