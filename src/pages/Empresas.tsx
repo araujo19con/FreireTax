@@ -7,17 +7,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
-import { FolderPlus, Folder, FolderOpen, X, Gavel, Users, Sparkles } from "lucide-react";
+import { FolderPlus, Folder, FolderOpen, X, Gavel, Users, Sparkles, Upload } from "lucide-react";
 import { BulkEnrichDialog } from "./empresas/BulkEnrichDialog";
+import { ImportarParaPastaDialog } from "./empresas/ImportarParaPastaDialog";
 
 import { PageHeader } from "@/components/PageHeader";
 import { EmpresaDialog } from "@/components/EmpresaDialog";
@@ -28,19 +44,37 @@ import { EmpresasTableView } from "./empresas/EmpresasTableView";
 import { EmpresasCardView } from "./empresas/EmpresasCardView";
 import { EmpresasKanbanView } from "./empresas/EmpresasKanbanView";
 import { EmpresaDetailSheet } from "./empresas/EmpresaDetailSheet";
-const EmpresasMapView = lazy(() => import("./empresas/EmpresasMapView").then(m => ({ default: m.EmpresasMapView })));
+const EmpresasMapView = lazy(() =>
+  import("./empresas/EmpresasMapView").then((m) => ({ default: m.EmpresasMapView }))
+);
 
 import {
-  useEmpresas, useCreateEmpresa, useUpdateEmpresa, useDeleteEmpresa,
-  useBulkDeleteEmpresas, useEnrichEmpresa, fetchAllEmpresas,
-  type Empresa, type EmpresaFilters, type EmpresaSort,
+  useEmpresas,
+  useCreateEmpresa,
+  useUpdateEmpresa,
+  useDeleteEmpresa,
+  useBulkDeleteEmpresas,
+  useEnrichEmpresa,
+  fetchAllEmpresas,
+  type Empresa,
+  type EmpresaFilters,
+  type EmpresaSort,
 } from "@/hooks/useEmpresas";
 import {
-  usePastas, usePastaItems, useCreatePasta, useDeletePasta,
-  useAddEmpresaToPasta, useRemoveEmpresaFromPasta, useBulkAddEmpresasToPasta,
+  usePastas,
+  usePastaItems,
+  useCreatePasta,
+  useDeletePasta,
+  useAddEmpresaToPasta,
+  useRemoveEmpresaFromPasta,
+  useBulkAddEmpresasToPasta,
 } from "@/hooks/usePastas";
 import { useAcoes } from "@/hooks/useAcoes";
-import { useElegibilidades, useCreateElegibilidade, useDeleteElegibilidade } from "@/hooks/useElegibilidades";
+import {
+  useElegibilidades,
+  useCreateElegibilidade,
+  useDeleteElegibilidade,
+} from "@/hooks/useElegibilidades";
 import { formatCNPJ } from "@/lib/format";
 
 export default function Empresas() {
@@ -60,7 +94,9 @@ export default function Empresas() {
 
   // reset page when search / filters / sort / view change
   const filtersKey = JSON.stringify(filters);
-  useEffect(() => { setPage(1); }, [debouncedSearch, filtersKey, sort, pageSize]);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filtersKey, sort, pageSize]);
 
   // Sinaliza pro empty state distinguir "pool vazio" (sem dados ainda) de
   // "filtro zerou resultado". CTA muda em cada caso.
@@ -114,6 +150,9 @@ export default function Empresas() {
 
   const [pastaDialogOpen, setPastaDialogOpen] = useState(false);
   const [newPastaName, setNewPastaName] = useState("");
+  const [importPastaTarget, setImportPastaTarget] = useState<{ id: string; nome: string } | null>(
+    null
+  );
   const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
 
   // drag-drop to pasta/ação
@@ -158,7 +197,8 @@ export default function Empresas() {
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -196,7 +236,10 @@ export default function Empresas() {
     const id = e.dataTransfer.getData("empresaId");
     if (!id) return;
     const already = pastaItems.some((i) => i.pasta_id === pastaId && i.empresa_id === id);
-    if (already) { toast.info("Empresa já está nesta pasta"); return; }
+    if (already) {
+      toast.info("Empresa já está nesta pasta");
+      return;
+    }
     await addEmpPasta.mutateAsync({ empresaId: id, pastaId });
     toast.success("Empresa adicionada à pasta");
   };
@@ -207,7 +250,10 @@ export default function Empresas() {
     const id = e.dataTransfer.getData("empresaId");
     if (!id) return;
     const already = elegs.some((el) => el.acao_id === acaoId && el.empresa_id === id);
-    if (already) { toast.info("Empresa já vinculada a esta ação"); return; }
+    if (already) {
+      toast.info("Empresa já vinculada a esta ação");
+      return;
+    }
     setElegEmpresaId(id);
     setElegAcaoId(acaoId);
     setElegElegivel("true");
@@ -240,7 +286,10 @@ export default function Empresas() {
   };
 
   const confirmBulkMovePasta = async () => {
-    if (!bulkTargetPastaId) { toast.error("Selecione uma pasta"); return; }
+    if (!bulkTargetPastaId) {
+      toast.error("Selecione uma pasta");
+      return;
+    }
     await bulkAddEmpPasta.mutateAsync({
       empresaIds: Array.from(selectedIds),
       pastaId: bulkTargetPastaId,
@@ -256,15 +305,23 @@ export default function Empresas() {
   };
 
   const confirmBulkVincularAcao = async () => {
-    if (!bulkTargetAcaoId) { toast.error("Selecione uma ação"); return; }
+    if (!bulkTargetAcaoId) {
+      toast.error("Selecione uma ação");
+      return;
+    }
     // Cria elegibilidades em lote — para empresas que ainda não têm vínculo com a ação
     const alreadyLinked = new Set(
-      elegs.filter((e) => e.acao_id === bulkTargetAcaoId).map((e) => e.empresa_id),
+      elegs.filter((e) => e.acao_id === bulkTargetAcaoId).map((e) => e.empresa_id)
     );
     const toLink = Array.from(selectedIds).filter((id) => !alreadyLinked.has(id));
-    if (!toLink.length) { toast.info("Todas as empresas selecionadas já estão vinculadas"); setBulkVincularAcaoOpen(false); return; }
+    if (!toLink.length) {
+      toast.info("Todas as empresas selecionadas já estão vinculadas");
+      setBulkVincularAcaoOpen(false);
+      return;
+    }
 
-    let ok = 0, fail = 0;
+    let ok = 0,
+      fail = 0;
     for (const empresaId of toLink) {
       try {
         await createEleg.mutateAsync({
@@ -274,7 +331,9 @@ export default function Empresas() {
           justificativa: "Vínculo em lote",
         });
         ok++;
-      } catch { fail++; }
+      } catch {
+        fail++;
+      }
     }
     toast.success(`${ok} vínculo(s) criado(s)${fail ? ` · ${fail} falharam` : ""}`);
     setBulkVincularAcaoOpen(false);
@@ -324,7 +383,9 @@ export default function Empresas() {
         Porte: e.porte || "",
         UF: e.uf || "",
         Município: e.municipio || "",
-        "CNAE Principal": e.cnae_principal ? `${e.cnae_principal} — ${e.cnae_principal_desc || ""}` : "",
+        "CNAE Principal": e.cnae_principal
+          ? `${e.cnae_principal} — ${e.cnae_principal_desc || ""}`
+          : "",
         "Simples Nacional": e.opcao_simples ? "Sim" : e.opcao_simples === false ? "Não" : "",
         "Capital Social": e.capital_social ?? "",
         "Valor Potencial": e.valor_potencial_total ?? "",
@@ -351,10 +412,14 @@ export default function Empresas() {
         const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url; a.download = filename; a.click();
+        a.href = url;
+        a.download = filename;
+        a.click();
         URL.revokeObjectURL(url);
       }
-      toast.success(`${data.length} empresa${data.length === 1 ? "" : "s"} exportada${data.length === 1 ? "" : "s"}`);
+      toast.success(
+        `${data.length} empresa${data.length === 1 ? "" : "s"} exportada${data.length === 1 ? "" : "s"}`
+      );
     } catch (e) {
       toast.error("Erro ao exportar: " + (e instanceof Error ? e.message : "falha"));
     } finally {
@@ -366,7 +431,7 @@ export default function Empresas() {
   const loading = empresasQ.isLoading || pastasQ.isLoading || acoesQ.isLoading;
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="animate-fade-in space-y-6">
       <PageHeader
         title="Empresas"
         description="Gerencie empresas: busque, filtre, arraste para pastas ou ações tributárias."
@@ -374,11 +439,17 @@ export default function Empresas() {
         helpTooltip="Fluxo: Cadastrar empresas"
         actions={
           <>
-            <Button variant="outline" onClick={() => setBulkEnrichOpen(true)} title="Atualizar dados da Receita Federal em lote">
-              <Sparkles className="mr-2 h-4 w-4" />Atualizar RFB
+            <Button
+              variant="outline"
+              onClick={() => setBulkEnrichOpen(true)}
+              title="Atualizar dados da Receita Federal em lote"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Atualizar RFB
             </Button>
             <Button variant="outline" onClick={() => setPastaDialogOpen(true)}>
-              <FolderPlus className="mr-2 h-4 w-4" />Nova Pasta
+              <FolderPlus className="mr-2 h-4 w-4" />
+              Nova Pasta
             </Button>
             <EmpresaDialog onSave={handleCreate} />
           </>
@@ -387,13 +458,19 @@ export default function Empresas() {
 
       <EmpresasHeader />
 
-      <div className="flex gap-5 items-start">
+      <div className="flex items-start gap-5">
         {/* LEFT — Pastas sidebar (oculta no modo mapa) */}
-        <aside className={`w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block ${view === "mapa" ? "!hidden" : ""}`}>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pastas</h3>
+        <aside
+          className={`sticky top-4 hidden w-56 shrink-0 space-y-1.5 lg:block ${view === "mapa" ? "!hidden" : ""}`}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Pastas
+            </h3>
             <Button
-              variant="ghost" size="icon" className="h-6 w-6"
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
               onClick={() => setPastaDialogOpen(true)}
               aria-label="Criar nova pasta"
               title="Criar nova pasta"
@@ -404,8 +481,10 @@ export default function Empresas() {
 
           <button
             type="button"
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors text-sm ${
-              !filters.pastaId ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50 text-muted-foreground"
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+              !filters.pastaId
+                ? "bg-primary/10 font-medium text-primary"
+                : "text-muted-foreground hover:bg-muted/50"
             }`}
             onClick={() => setFilters({ ...filters, pastaId: null })}
           >
@@ -414,8 +493,8 @@ export default function Empresas() {
           </button>
 
           {pastas.length === 0 && (
-            <div className="text-xs text-muted-foreground text-center py-4 border border-dashed rounded-lg">
-              <FolderPlus className="h-5 w-5 mx-auto mb-1 opacity-50" />
+            <div className="rounded-lg border border-dashed py-4 text-center text-xs text-muted-foreground">
+              <FolderPlus className="mx-auto mb-1 h-5 w-5 opacity-50" />
               Crie uma pasta
             </div>
           )}
@@ -427,26 +506,53 @@ export default function Empresas() {
             return (
               <div key={p.id}>
                 <div
-                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm ${
-                    isOver ? "bg-primary/10 ring-2 ring-primary scale-[1.02]" :
-                    isSelected ? "bg-primary/10 text-primary font-medium" :
-                    "hover:bg-muted/50 text-muted-foreground"
+                  className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-all ${
+                    isOver
+                      ? "scale-[1.02] bg-primary/10 ring-2 ring-primary"
+                      : isSelected
+                        ? "bg-primary/10 font-medium text-primary"
+                        : "text-muted-foreground hover:bg-muted/50"
                   }`}
                   onClick={() => setFilters({ ...filters, pastaId: isSelected ? null : p.id })}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverPastaId(p.id); }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "copy";
+                    setDragOverPastaId(p.id);
+                  }}
                   onDragLeave={() => setDragOverPastaId(null)}
                   onDrop={(e) => handleDropPasta(e, p.id)}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isOver ? <FolderOpen className="h-4 w-4 text-primary shrink-0" /> : <Folder className="h-4 w-4 shrink-0" />}
+                  <div className="flex min-w-0 items-center gap-2">
+                    {isOver ? (
+                      <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+                    ) : (
+                      <Folder className="h-4 w-4 shrink-0" />
+                    )}
                     <span className="truncate">{p.nome}</span>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">{idsInPasta.size}</Badge>
+                    <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                      {idsInPasta.size}
+                    </Badge>
                   </div>
-                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 text-muted-foreground hover:text-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImportPastaTarget({ id: p.id, nome: p.nome });
+                      }}
+                      aria-label={`Importar empresas para ${p.nome}`}
+                      title={`Importar empresas por planilha para ${p.nome}`}
+                    >
+                      <Upload className="h-2.5 w-2.5" />
+                    </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button
-                          variant="ghost" size="icon" className="h-5 w-5 text-destructive"
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 text-destructive"
                           onClick={(e) => e.stopPropagation()}
                           aria-label={`Excluir pasta ${p.nome}`}
                           title={`Excluir pasta ${p.nome}`}
@@ -457,14 +563,21 @@ export default function Empresas() {
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Excluir pasta "{p.nome}"?</AlertDialogTitle>
-                          <AlertDialogDescription>As empresas não serão removidas — só o vínculo.</AlertDialogDescription>
+                          <AlertDialogDescription>
+                            As empresas não serão removidas — só o vínculo.
+                          </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => {
-                            if (filters.pastaId === p.id) setFilters({ ...filters, pastaId: null });
-                            deletePasta.mutate(p.id);
-                          }}>Excluir</AlertDialogAction>
+                          <AlertDialogAction
+                            onClick={() => {
+                              if (filters.pastaId === p.id)
+                                setFilters({ ...filters, pastaId: null });
+                              deletePasta.mutate(p.id);
+                            }}
+                          >
+                            Excluir
+                          </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
@@ -472,26 +585,35 @@ export default function Empresas() {
                 </div>
 
                 {isOver && draggingId && (
-                  <div className="mx-3 mt-1 text-[10px] text-primary font-medium text-center py-1 border border-dashed border-primary rounded">
+                  <div className="mx-3 mt-1 rounded border border-dashed border-primary py-1 text-center text-[10px] font-medium text-primary">
                     Solte para adicionar
                   </div>
                 )}
 
                 {isSelected && idsInPasta.size > 0 && (
-                  <div className="ml-6 mt-1 space-y-0.5 max-h-32 overflow-y-auto">
-                    {rows.filter((r) => idsInPasta.has(r.id)).map((emp) => (
-                      <div key={emp.id} className="flex items-center justify-between text-[11px] text-muted-foreground px-2 py-1 rounded hover:bg-muted/50">
-                        <span className="truncate">{emp.nome}</span>
-                        <Button
-                          variant="ghost" size="icon" className="h-4 w-4 shrink-0 text-destructive hover:text-destructive"
-                          onClick={() => removeEmpPasta.mutate({ empresaId: emp.id, pastaId: p.id })}
-                          aria-label={`Remover ${emp.nome} da pasta ${p.nome}`}
-                          title={`Remover ${emp.nome} desta pasta`}
+                  <div className="ml-6 mt-1 max-h-32 space-y-0.5 overflow-y-auto">
+                    {rows
+                      .filter((r) => idsInPasta.has(r.id))
+                      .map((emp) => (
+                        <div
+                          key={emp.id}
+                          className="flex items-center justify-between rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted/50"
                         >
-                          <X className="h-2.5 w-2.5" />
-                        </Button>
-                      </div>
-                    ))}
+                          <span className="truncate">{emp.nome}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-4 w-4 shrink-0 text-destructive hover:text-destructive"
+                            onClick={() =>
+                              removeEmpPasta.mutate({ empresaId: emp.id, pastaId: p.id })
+                            }
+                            aria-label={`Remover ${emp.nome} da pasta ${p.nome}`}
+                            title={`Remover ${emp.nome} desta pasta`}
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </Button>
+                        </div>
+                      ))}
                   </div>
                 )}
               </div>
@@ -500,7 +622,7 @@ export default function Empresas() {
         </aside>
 
         {/* CENTER — Toolbar + View */}
-        <div className="flex-1 min-w-0 space-y-4">
+        <div className="min-w-0 flex-1 space-y-4">
           <EmpresasToolbar
             search={search}
             onSearchChange={setSearch}
@@ -582,21 +704,31 @@ export default function Empresas() {
           )}
 
           {view === "mapa" && (
-            <Suspense fallback={<div className="flex items-center justify-center h-96 text-muted-foreground text-sm">Carregando mapa…</div>}>
+            <Suspense
+              fallback={
+                <div className="flex h-96 items-center justify-center text-sm text-muted-foreground">
+                  Carregando mapa…
+                </div>
+              }
+            >
               <EmpresasMapView onOpenDetail={setDetailEmpresa} />
             </Suspense>
           )}
         </div>
 
         {/* RIGHT — Ações sidebar (oculta no modo mapa) */}
-        <aside className={`w-56 shrink-0 sticky top-4 space-y-1.5 hidden lg:block ${view === "mapa" ? "!hidden" : ""}`}>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Ações Tributárias</h3>
+        <aside
+          className={`sticky top-4 hidden w-56 shrink-0 space-y-1.5 lg:block ${view === "mapa" ? "!hidden" : ""}`}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Ações Tributárias
+            </h3>
           </div>
 
           {acoes.length === 0 && (
-            <div className="text-xs text-muted-foreground text-center py-4 border border-dashed rounded-lg">
-              <Gavel className="h-5 w-5 mx-auto mb-1 opacity-50" />
+            <div className="rounded-lg border border-dashed py-4 text-center text-xs text-muted-foreground">
+              <Gavel className="mx-auto mb-1 h-5 w-5 opacity-50" />
               Nenhuma ação cadastrada
             </div>
           )}
@@ -609,30 +741,37 @@ export default function Empresas() {
             return (
               <div
                 key={a.id}
-                className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all text-sm ${
-                  isOver ? "bg-accent/20 ring-2 ring-accent scale-[1.02]" :
-                  isSelected ? "bg-primary/10 text-primary font-medium" :
-                  "hover:bg-muted/50 text-muted-foreground"
+                className={`group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm transition-all ${
+                  isOver
+                    ? "scale-[1.02] bg-accent/20 ring-2 ring-accent"
+                    : isSelected
+                      ? "bg-primary/10 font-medium text-primary"
+                      : "text-muted-foreground hover:bg-muted/50"
                 }`}
                 onClick={() => setFilters({ ...filters, acaoId: isSelected ? null : a.id })}
-                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDragOverAcaoId(a.id); }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "copy";
+                  setDragOverAcaoId(a.id);
+                }}
                 onDragLeave={() => setDragOverAcaoId(null)}
                 onDrop={(e) => handleDropAcao(e, a.id)}
                 title={`Filtrar por: ${a.nome}`}
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <Gavel className={`h-4 w-4 shrink-0 ${isOver ? "text-accent-foreground" : ""}`} />
                   <div className="min-w-0">
-                    <span className="truncate block text-xs font-medium">{a.nome}</span>
+                    <span className="block truncate text-xs font-medium">{a.nome}</span>
                     <span className="text-[10px] text-muted-foreground">{a.tipo}</span>
                   </div>
                 </div>
-                <Badge variant="secondary" className="text-[10px] h-4 px-1.5 shrink-0">
-                  <Users className="mr-0.5 h-2.5 w-2.5" />{idsInAcao.size}
+                <Badge variant="secondary" className="h-4 shrink-0 px-1.5 text-[10px]">
+                  <Users className="mr-0.5 h-2.5 w-2.5" />
+                  {idsInAcao.size}
                 </Badge>
 
                 {isOver && draggingId && (
-                  <div className="absolute left-0 right-0 -bottom-5 mx-3 text-[10px] text-accent-foreground font-medium text-center py-1 border border-dashed border-accent rounded bg-background">
+                  <div className="absolute -bottom-5 left-0 right-0 mx-3 rounded border border-dashed border-accent bg-background py-1 text-center text-[10px] font-medium text-accent-foreground">
                     Solte para vincular
                   </div>
                 )}
@@ -659,12 +798,16 @@ export default function Empresas() {
         <EmpresaDialog
           key={empresaToEdit.id}
           open={!!empresaToEdit}
-          onOpenChange={(o) => { if (!o) setEmpresaToEdit(null); }}
+          onOpenChange={(o) => {
+            if (!o) setEmpresaToEdit(null);
+          }}
           onSave={async (data) => {
             await handleEdit(empresaToEdit.id, data);
             setEmpresaToEdit(null);
           }}
-          initialData={empresaToEdit as unknown as Parameters<typeof EmpresaDialog>[0]["initialData"]}
+          initialData={
+            empresaToEdit as unknown as Parameters<typeof EmpresaDialog>[0]["initialData"]
+          }
           title="Editar Empresa"
         />
       )}
@@ -680,7 +823,10 @@ export default function Empresas() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -696,7 +842,10 @@ export default function Empresas() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={confirmBulkDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Excluir todas
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -707,27 +856,40 @@ export default function Empresas() {
       <Dialog open={bulkMovePastaOpen} onOpenChange={setBulkMovePastaOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-heading">Mover {selectedIds.size} empresa(s) para pasta</DialogTitle>
+            <DialogTitle className="font-heading">
+              Mover {selectedIds.size} empresa(s) para pasta
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Pasta destino</Label>
               <Select value={bulkTargetPastaId} onValueChange={setBulkTargetPastaId}>
-                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
                 <SelectContent>
                   {pastas.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nome}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {pastas.length === 0 && (
-                <p className="text-xs text-muted-foreground">Nenhuma pasta cadastrada. Crie uma primeiro.</p>
+                <p className="text-xs text-muted-foreground">
+                  Nenhuma pasta cadastrada. Crie uma primeiro.
+                </p>
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkMovePastaOpen(false)}>Cancelar</Button>
-            <Button onClick={confirmBulkMovePasta} disabled={!bulkTargetPastaId || pastas.length === 0}>
+            <Button variant="outline" onClick={() => setBulkMovePastaOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmBulkMovePasta}
+              disabled={!bulkTargetPastaId || pastas.length === 0}
+            >
               Mover
             </Button>
           </DialogFooter>
@@ -738,32 +900,56 @@ export default function Empresas() {
       <Dialog open={bulkVincularAcaoOpen} onOpenChange={setBulkVincularAcaoOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-heading">Vincular {selectedIds.size} empresa(s) a ação</DialogTitle>
+            <DialogTitle className="font-heading">
+              Vincular {selectedIds.size} empresa(s) a ação
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Ação tributária</Label>
               <Select value={bulkTargetAcaoId} onValueChange={setBulkTargetAcaoId}>
-                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
                 <SelectContent>
                   {acoes.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>{a.nome}</SelectItem>
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.nome}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-muted-foreground">
-                Cria elegibilidades marcadas como "elegível" em lote. Empresas já vinculadas serão ignoradas.
+                Cria elegibilidades marcadas como "elegível" em lote. Empresas já vinculadas serão
+                ignoradas.
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkVincularAcaoOpen(false)}>Cancelar</Button>
-            <Button onClick={confirmBulkVincularAcao} disabled={!bulkTargetAcaoId || acoes.length === 0}>
+            <Button variant="outline" onClick={() => setBulkVincularAcaoOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmBulkVincularAcao}
+              disabled={!bulkTargetAcaoId || acoes.length === 0}
+            >
               Vincular
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Import to pasta via spreadsheet */}
+      {importPastaTarget && (
+        <ImportarParaPastaDialog
+          open={!!importPastaTarget}
+          onOpenChange={(v) => {
+            if (!v) setImportPastaTarget(null);
+          }}
+          pastaId={importPastaTarget.id}
+          pastaNome={importPastaTarget.nome}
+        />
+      )}
 
       {/* Create folder dialog */}
       <Dialog open={pastaDialogOpen} onOpenChange={setPastaDialogOpen}>
@@ -774,14 +960,23 @@ export default function Empresas() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Nome da Pasta</Label>
-              <Input value={newPastaName} onChange={(e) => setNewPastaName(e.target.value)} placeholder="Ex: Empresas de Serviço" />
+              <Input
+                value={newPastaName}
+                onChange={(e) => setNewPastaName(e.target.value)}
+                placeholder="Ex: Empresas de Serviço"
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPastaDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setPastaDialogOpen(false)}>
+              Cancelar
+            </Button>
             <Button
               onClick={() => {
-                if (!newPastaName.trim()) { toast.error("Nome obrigatório"); return; }
+                if (!newPastaName.trim()) {
+                  toast.error("Nome obrigatório");
+                  return;
+                }
                 createPasta.mutate(newPastaName.trim());
                 setNewPastaName("");
                 setPastaDialogOpen(false);
@@ -800,10 +995,12 @@ export default function Empresas() {
             <DialogTitle className="font-heading">Vincular Empresa à Ação</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="p-3 rounded-lg bg-muted/50 space-y-1 text-sm">
+            <div className="space-y-1 rounded-lg bg-muted/50 p-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Empresa:</span>{" "}
-                <span className="font-medium">{rows.find((r) => r.id === elegEmpresaId)?.nome || "—"}</span>
+                <span className="font-medium">
+                  {rows.find((r) => r.id === elegEmpresaId)?.nome || "—"}
+                </span>
               </div>
               <div>
                 <span className="text-muted-foreground">Ação:</span>{" "}
@@ -813,7 +1010,9 @@ export default function Empresas() {
             <div className="space-y-2">
               <Label>Elegível?</Label>
               <Select value={elegElegivel} onValueChange={setElegElegivel}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="true">Sim — Elegível</SelectItem>
                   <SelectItem value="false">Não — Não elegível</SelectItem>
@@ -822,11 +1021,18 @@ export default function Empresas() {
             </div>
             <div className="space-y-2">
               <Label>Justificativa</Label>
-              <Textarea value={elegJustificativa} onChange={(e) => setElegJustificativa(e.target.value)} placeholder="Motivo da decisão (opcional)" rows={3} />
+              <Textarea
+                value={elegJustificativa}
+                onChange={(e) => setElegJustificativa(e.target.value)}
+                placeholder="Motivo da decisão (opcional)"
+                rows={3}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setElegDialogOpen(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setElegDialogOpen(false)}>
+              Cancelar
+            </Button>
             <Button
               onClick={async () => {
                 await createEleg.mutateAsync({
@@ -846,4 +1052,3 @@ export default function Empresas() {
     </div>
   );
 }
-
