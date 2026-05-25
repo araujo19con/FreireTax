@@ -1093,47 +1093,45 @@ export function EmpresasMapView({ onOpenDetail, presetEmpresas }: EmpresasMapVie
                     <button
                       key={emp.id}
                       type="button"
-                      className="w-full border-b border-border/60 px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none active:bg-muted"
+                      className="w-full border-b border-border/60 py-3 pl-4 pr-5 text-left transition-colors last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none active:bg-muted"
                       onClick={() => onOpenDetail(emp)}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium leading-tight">{emp.nome}</p>
-                          {emp.cnpj && (
-                            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                              {formatCNPJ(emp.cnpj)}
-                            </p>
-                          )}
+                      <div className="flex min-w-0 flex-col gap-1.5">
+                        <p className="truncate text-sm font-medium leading-tight">{emp.nome}</p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                          {emp.cnpj && <span className="font-mono">{formatCNPJ(emp.cnpj)}</span>}
                           {emp.municipio && (
-                            <p className="mt-0.5 flex items-center gap-0.5 text-[11px] text-muted-foreground">
+                            <span className="flex items-center gap-0.5">
                               <MapPin className="h-2.5 w-2.5 shrink-0" />
                               {emp.municipio}
                               {emp.uf ? ` / ${emp.uf}` : ""}
-                            </p>
+                            </span>
                           )}
                         </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-                          {emp.situacao_cadastral && (
-                            <Badge
-                              variant="outline"
-                              className={`h-4 px-1.5 py-0 text-[10px] leading-none ${
-                                emp.situacao_cadastral === "ATIVA"
-                                  ? "border-green-500/40 bg-green-50 text-green-700"
-                                  : "border-destructive/40 bg-destructive/5 text-destructive"
-                              }`}
-                            >
-                              {emp.situacao_cadastral}
-                            </Badge>
-                          )}
-                          {emp.porte && (
-                            <Badge
-                              variant="secondary"
-                              className="h-4 px-1.5 py-0 text-[10px] leading-none"
-                            >
-                              {emp.porte}
-                            </Badge>
-                          )}
-                        </div>
+                        {(emp.situacao_cadastral || emp.porte) && (
+                          <div className="flex flex-wrap items-center gap-1">
+                            {emp.situacao_cadastral && (
+                              <Badge
+                                variant="outline"
+                                className={`h-4 px-1.5 py-0 text-[10px] leading-none ${
+                                  emp.situacao_cadastral === "ATIVA"
+                                    ? "border-green-500/40 bg-green-50 text-green-700"
+                                    : "border-destructive/40 bg-destructive/5 text-destructive"
+                                }`}
+                              >
+                                {emp.situacao_cadastral}
+                              </Badge>
+                            )}
+                            {emp.porte && (
+                              <Badge
+                                variant="secondary"
+                                className="h-4 px-1.5 py-0 text-[10px] leading-none"
+                              >
+                                {emp.porte}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </button>
                   ))}
