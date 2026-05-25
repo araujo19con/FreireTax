@@ -3,8 +3,12 @@ import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "re
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  UF_IBGE_CODE, UF_NOME, UF_LABEL_COORDS,
-  STATE_MAP_PROJECTIONS, fetchBrazilStatesGeoJSON, fetchStateMunicipiosGeoJSON,
+  UF_IBGE_CODE,
+  UF_NOME,
+  UF_LABEL_COORDS,
+  STATE_MAP_PROJECTIONS,
+  fetchBrazilStatesGeoJSON,
+  fetchStateMunicipiosGeoJSON,
   REGION_PALETTE,
 } from "@/lib/ibgeGeo";
 import { normalizeMunicipio } from "@/lib/municipiosBrasil";
@@ -14,8 +18,17 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ChevronLeft, ChevronRight, MapPin, Building2, X, Search, Loader2,
-  ZoomIn, ZoomOut, Layers, ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  MapPin,
+  Building2,
+  X,
+  Search,
+  Loader2,
+  ZoomIn,
+  ZoomOut,
+  Layers,
+  ArrowUpRight,
 } from "lucide-react";
 import { formatCNPJ } from "@/lib/format";
 import type { Empresa, EmpresaFilters } from "@/hooks/useEmpresas";
@@ -24,6 +37,10 @@ import { applyEmpresaFiltersInMemory } from "@/lib/empresaFiltersInMemory";
 
 interface EmpresasMapViewProps {
   onOpenDetail: (empresa: Empresa) => void;
+  /** Quando setado, o mapa opera sobre essa lista pré-carregada (em memória)
+   *  ao invés de buscar do Supabase. Usado pelo painel de ação tributária
+   *  para mostrar só o pool elegível daquela ação. */
+  presetEmpresas?: Empresa[];
 }
 
 interface PanelState {
@@ -94,27 +111,35 @@ function getMunicipalFill(opts: {
   return `hsl(215 55% ${l}%)`;
 }
 
-export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
+export function EmpresasMapView({ onOpenDetail, presetEmpresas }: EmpresasMapViewProps) {
+  const isPreset = presetEmpresas != null;
   // Multi-seleção: UF → "all" ou Set de chaves de município normalizadas
-  const [ufSelection, setUfSelection]  = useState<Map<string, UFSel>>(new Map());
+  const [ufSelection, setUfSelection] = useState<Map<string, UFSel>>(new Map());
   // Drill-down independente da seleção: qual UF está sendo "explorada" no mapa
-  const [viewUF, setViewUF]            = useState<string | null>(null);
+  const [viewUF, setViewUF] = useState<string | null>(null);
   // Modo regiões dentro do drill-down (microrregiões IBGE)
-  const [showRegions, setShowRegions]  = useState(false);
+  const [showRegions, setShowRegions] = useState(false);
 
-  const [hoveredCode, setHoveredCode]  = useState<string | null>(null);
+  const [hoveredCode, setHoveredCode] = useState<string | null>(null);
   const [panelFilters, setPanelFilters] = useState<PanelState>({ search: "", advanced: {} });
-  const [tooltip, setTooltip]          = useState<{ name: string; count: number; x: number; y: number } | null>(null);
-  const [mapPosition, setMapPosition]  = useState<{ zoom: number; center: [number, number] }>({
-    zoom: 1, center: BRAZIL_PROJECTION.center,
+  const [tooltip, setTooltip] = useState<{
+    name: string;
+    count: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [mapPosition, setMapPosition] = useState<{ zoom: number; center: [number, number] }>({
+    zoom: 1,
+    center: BRAZIL_PROJECTION.center,
   });
   const mapRef = useRef<HTMLDivElement>(null);
 
   // Reseta zoom ao trocar entre Brasil ↔ drill-down
   useEffect(() => {
-    const c: [number, number] = (viewUF && STATE_MAP_PROJECTIONS[viewUF])
-      ? STATE_MAP_PROJECTIONS[viewUF].center
-      : BRAZIL_PROJECTION.center;
+    const c: [number, number] =
+      viewUF && STATE_MAP_PROJECTIONS[viewUF]
+        ? STATE_MAP_PROJECTIONS[viewUF].center
+        : BRAZIL_PROJECTION.center;
     setMapPosition({ zoom: 1, center: c });
     // Sai do modo regiões ao voltar para Brasil
     if (!viewUF) setShowRegions(false);
@@ -122,7 +147,9 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   // ── Contagem global de empresas por UF (heatmap base, sempre exibido) ──────
   // Paginado para superar o cap de 1000 linhas do PostgREST.
-  const { data: ufCounts = {} } = useQuery({
+  // Em modo preset (pool de uma ação), deriva a contagem da lista em memória —
+  // não bate no Supabase.
+  const { data: ufCountsRemote = {} } = useQuery({
     queryKey: ["empresas-uf-counts"],
     queryFn: async () => {
       const PAGE = 1000;
@@ -145,8 +172,18 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
       }
       return counts;
     },
+    enabled: !isPreset,
     staleTime: 5 * 60 * 1000,
   });
+
+  const ufCounts = useMemo<Record<string, number>>(() => {
+    if (!isPreset) return ufCountsRemote;
+    const c: Record<string, number> = {};
+    for (const e of presetEmpresas!) {
+      if (e.uf) c[e.uf] = (c[e.uf] || 0) + 1;
+    }
+    return c;
+  }, [isPreset, presetEmpresas, ufCountsRemote]);
 
   // ── GeoJSON estados Brasil ─────────────────────────────────────────────────
   const { data: statesGeo, isLoading: loadingStates } = useQuery({
@@ -168,10 +205,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   // Lookup codarea → { nome, microrregião }
   const munMetaLookup = useMemo(() => {
-    const m: Record<string, { nome: string; microId: number | null; microNome: string | null }> = {};
+    const m: Record<string, { nome: string; microId: number | null; microNome: string | null }> =
+      {};
     if (!munGeo) return m;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const f of ((munGeo as any).features ?? [])) {
+    for (const f of (munGeo as any).features ?? []) {
       const p = f.properties;
       if (p?.codarea && p?.nome) {
         m[p.codarea] = {
@@ -189,12 +227,12 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     if (!munGeo) return [] as string[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const feats = ((munGeo as any).features ?? []) as Array<{ properties: { nome?: string } }>;
-    return feats.map(f => f.properties?.nome).filter((n): n is string => !!n);
+    return feats.map((f) => f.properties?.nome).filter((n): n is string => !!n);
   }, [munGeo]);
 
   const allMunKeysOfViewUF = useMemo(
     () => new Set(allMunsOfViewUF.map(normalizeMunicipio)),
-    [allMunsOfViewUF],
+    [allMunsOfViewUF]
   );
 
   // Microrregiões da UF em drill-down: id → { nome, municípios normalizados }
@@ -202,12 +240,13 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     const m: Record<string, { id: number; nome: string; munKeys: Set<string> }> = {};
     if (!munGeo) return m;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const f of ((munGeo as any).features ?? [])) {
+    for (const f of (munGeo as any).features ?? []) {
       const p = f.properties;
       const microId = p?.microrregiao_id;
       if (microId == null) continue;
       const key = String(microId);
-      if (!m[key]) m[key] = { id: microId, nome: p.microrregiao_nome ?? `#${microId}`, munKeys: new Set() };
+      if (!m[key])
+        m[key] = { id: microId, nome: p.microrregiao_nome ?? `#${microId}`, munKeys: new Set() };
       if (p.nome) m[key].munKeys.add(normalizeMunicipio(p.nome));
     }
     return m;
@@ -215,9 +254,13 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   // Map estável: microId → índice (para escolher cor da paleta)
   const microIdToIndex = useMemo(() => {
-    const ordered = Object.values(microregioes).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    const ordered = Object.values(microregioes).sort((a, b) =>
+      a.nome.localeCompare(b.nome, "pt-BR")
+    );
     const m: Record<string, number> = {};
-    ordered.forEach((r, i) => { m[String(r.id)] = i; });
+    ordered.forEach((r, i) => {
+      m[String(r.id)] = i;
+    });
     return m;
   }, [microregioes]);
 
@@ -229,7 +272,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     return Array.from(set).sort();
   }, [selectedUFList, viewUF]);
 
-  const { data: bulkEmpresas = [], isLoading: loadingEmpresas } = useQuery({
+  const { data: bulkEmpresasRemote = [], isLoading: loadingEmpresasRemote } = useQuery({
     queryKey: ["empresas-map-bulk", queryUFs.join(",")],
     queryFn: async () => {
       if (queryUFs.length === 0) return [] as Empresa[];
@@ -238,7 +281,8 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
       let from = 0;
       for (;;) {
         const { data, error } = await supabase
-          .from("empresas").select("*")
+          .from("empresas")
+          .select("*")
           .in("uf", queryUFs)
           .order("nome")
           .range(from, from + PAGE - 1);
@@ -251,11 +295,24 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
       }
       return all;
     },
-    enabled: queryUFs.length > 0,
+    enabled: !isPreset && queryUFs.length > 0,
     staleTime: 60 * 1000,
   });
 
+  // Pool efetivo: preset (in-memory, já filtrado pelo pai) ou bulk remoto.
+  // No modo preset, ainda aplicamos o filtro de UFs em jogo para que o painel
+  // lateral só mostre as empresas das UFs selecionadas.
+  const bulkEmpresas = useMemo<Empresa[]>(() => {
+    if (!isPreset) return bulkEmpresasRemote;
+    if (queryUFs.length === 0) return [];
+    const ufSet = new Set(queryUFs);
+    return presetEmpresas!.filter((e) => e.uf && ufSet.has(e.uf));
+  }, [isPreset, presetEmpresas, bulkEmpresasRemote, queryUFs]);
+
+  const loadingEmpresas = isPreset ? false : loadingEmpresasRemote;
+
   // ── Set de empresa_ids com elegibilidade (para filtro "Tem ação vinculada") ─
+  // No modo preset, o pool inteiro já é elegível à ação — não precisa consultar.
   const temAcaoAtivo = panelFilters.advanced.temAcao != null;
   const { data: withAcaoIds } = useQuery({
     queryKey: ["elegibilidade-empresa-ids"],
@@ -263,14 +320,14 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
       const { data } = await supabase.from("elegibilidade").select("empresa_id");
       return new Set((data ?? []).map((r: { empresa_id: string }) => r.empresa_id));
     },
-    enabled: temAcaoAtivo,
+    enabled: !isPreset && temAcaoAtivo,
     staleTime: 5 * 60 * 1000,
   });
 
   // Empresas que casam com a multi-seleção (UF + município)
   const empresasSelecionadas = useMemo(() => {
     if (selectedUFList.length === 0) return [] as Empresa[];
-    return bulkEmpresas.filter(e => {
+    return bulkEmpresas.filter((e) => {
       if (!e.uf) return false;
       const sel = ufSelection.get(e.uf);
       if (!sel) return false;
@@ -299,10 +356,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     list = applyEmpresaFiltersInMemory(list, panelFilters.advanced, { withAcaoIds });
     if (panelFilters.search) {
       const s = panelFilters.search.toLowerCase();
-      list = list.filter(e =>
-        e.nome?.toLowerCase().includes(s) ||
-        e.cnpj?.includes(panelFilters.search) ||
-        e.razao_social?.toLowerCase().includes(s)
+      list = list.filter(
+        (e) =>
+          e.nome?.toLowerCase().includes(s) ||
+          e.cnpj?.includes(panelFilters.search) ||
+          e.razao_social?.toLowerCase().includes(s)
       );
     }
     return list;
@@ -312,16 +370,15 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   const panelEmpresas = useMemo(() => panelEmpresasFull.slice(0, 200), [panelEmpresasFull]);
 
   // Escalas de cor
-  const maxUF  = useMemo(() => Math.max(1, ...Object.values(ufCounts)),  [ufCounts]);
+  const maxUF = useMemo(() => Math.max(1, ...Object.values(ufCounts)), [ufCounts]);
   const maxMun = useMemo(() => Math.max(1, ...Object.values(munCounts)), [munCounts]);
 
   // ── Estado da UI ───────────────────────────────────────────────────────────
-  const panelOpen     = ufSelection.size > 0;
-  const isMapLoading  = viewUF ? loadingMun : loadingStates;
-  const currentGeo    = viewUF ? munGeo : statesGeo;
-  const projection    = viewUF && STATE_MAP_PROJECTIONS[viewUF]
-    ? STATE_MAP_PROJECTIONS[viewUF]
-    : BRAZIL_PROJECTION;
+  const panelOpen = ufSelection.size > 0;
+  const isMapLoading = viewUF ? loadingMun : loadingStates;
+  const currentGeo = viewUF ? munGeo : statesGeo;
+  const projection =
+    viewUF && STATE_MAP_PROJECTIONS[viewUF] ? STATE_MAP_PROJECTIONS[viewUF] : BRAZIL_PROJECTION;
 
   // Resumo do painel
   const totalUFs = ufSelection.size;
@@ -340,7 +397,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   // ── Mutadores de seleção ──────────────────────────────────────────────────
   function toggleUF(uf: string) {
-    setUfSelection(prev => {
+    setUfSelection((prev) => {
       const next = cloneSel(prev);
       if (next.has(uf)) next.delete(uf);
       else next.set(uf, "all");
@@ -348,11 +405,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     });
     // Limpa busca ao mudar seleção; preserva filtros avançados (útil pra
     // comparar a mesma fatia entre estados)
-    setPanelFilters(p => ({ search: "", advanced: p.advanced }));
+    setPanelFilters((p) => ({ search: "", advanced: p.advanced }));
   }
 
   function setUFAll(uf: string) {
-    setUfSelection(prev => {
+    setUfSelection((prev) => {
       const next = cloneSel(prev);
       next.set(uf, "all");
       return next;
@@ -360,7 +417,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   }
 
   function removeUF(uf: string) {
-    setUfSelection(prev => {
+    setUfSelection((prev) => {
       const next = cloneSel(prev);
       next.delete(uf);
       return next;
@@ -369,7 +426,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   function toggleMunicipio(uf: string, munNome: string) {
     const munKey = normalizeMunicipio(munNome);
-    setUfSelection(prev => {
+    setUfSelection((prev) => {
       const next = cloneSel(prev);
       const cur = next.get(uf);
       if (cur === undefined) {
@@ -398,7 +455,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   }
 
   function removeMunicipio(uf: string, munKey: string) {
-    setUfSelection(prev => {
+    setUfSelection((prev) => {
       const next = cloneSel(prev);
       const cur = next.get(uf);
       if (cur === undefined) return prev;
@@ -420,7 +477,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     const region = microregioes[microId];
     if (!region) return;
     const regionKeys = region.munKeys;
-    setUfSelection(prev => {
+    setUfSelection((prev) => {
       const next = cloneSel(prev);
       const cur = next.get(uf);
 
@@ -460,7 +517,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   function clearSelection() {
     setUfSelection(new Map());
-    setPanelFilters(p => ({ search: "", advanced: p.advanced }));
+    setPanelFilters((p) => ({ search: "", advanced: p.advanced }));
   }
 
   // ── Handlers de mapa ──────────────────────────────────────────────────────
@@ -495,12 +552,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
     setHoveredCode(null);
   }
 
-  function handleMouseEnter(
-    e: React.MouseEvent,
-    code: string,
-    name: string,
-    count: number,
-  ) {
+  function handleMouseEnter(e: React.MouseEvent, code: string, name: string, count: number) {
     setHoveredCode(code);
     if (mapRef.current) {
       const rect = mapRef.current.getBoundingClientRect();
@@ -511,7 +563,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   function handleMouseMove(e: React.MouseEvent) {
     if (tooltip && mapRef.current) {
       const rect = mapRef.current.getBoundingClientRect();
-      setTooltip(t => t ? { ...t, x: e.clientX - rect.left, y: e.clientY - rect.top } : null);
+      setTooltip((t) => (t ? { ...t, x: e.clientX - rect.left, y: e.clientY - rect.top } : null));
     }
   }
 
@@ -522,11 +574,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
   function handleZoomIn() {
     const max = viewUF ? 12 : 4;
-    setMapPosition(p => ({ ...p, zoom: Math.min(p.zoom * 1.5, max) }));
+    setMapPosition((p) => ({ ...p, zoom: Math.min(p.zoom * 1.5, max) }));
   }
 
   function handleZoomOut() {
-    setMapPosition(p => ({ ...p, zoom: Math.max(p.zoom / 1.5, 1) }));
+    setMapPosition((p) => ({ ...p, zoom: Math.max(p.zoom / 1.5, 1) }));
   }
 
   function handleDrillFromChip(uf: string) {
@@ -538,29 +590,30 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
   const loadingPanel = loadingEmpresas && selectedUFList.length > 0;
 
   return (
-    <div className="flex overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+    <div
+      className="flex overflow-hidden rounded-xl border border-border bg-card shadow-sm"
       style={{ height: "calc(100vh - 220px)", minHeight: 480 }}
     >
       {/* ── Área do mapa ───────────────────────────────────────────────── */}
       <div
         ref={mapRef}
-        className={`relative transition-[flex-basis] duration-500 ease-in-out overflow-hidden
-          ${panelOpen ? "basis-[54%]" : "basis-full"}`}
+        className={`relative overflow-hidden transition-[flex-basis] duration-500 ease-in-out ${panelOpen ? "basis-[54%]" : "basis-full"}`}
         style={{ background: "hsl(215 15% 96%)" }}
       >
         {/* Breadcrumb */}
-        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 flex-wrap">
+        <div className="absolute left-3 top-3 z-10 flex flex-wrap items-center gap-2">
           {viewUF && (
-            <Button variant="secondary" size="sm" onClick={handleBack}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleBack}
               className="h-7 gap-1 text-xs shadow-sm"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
               Voltar
             </Button>
           )}
-          <nav className="flex items-center gap-1 bg-white/90 backdrop-blur-sm rounded-md
-            px-2.5 py-1.5 shadow-sm border border-border/40 text-xs"
-          >
+          <nav className="flex items-center gap-1 rounded-md border border-border/40 bg-white/90 px-2.5 py-1.5 text-xs shadow-sm backdrop-blur-sm">
             <button
               className={`transition-colors ${viewUF ? "text-muted-foreground hover:text-foreground" : "font-semibold text-foreground"}`}
               onClick={() => setViewUF(null)}
@@ -580,7 +633,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
             <Button
               variant={showRegions ? "default" : "secondary"}
               size="sm"
-              onClick={() => setShowRegions(v => !v)}
+              onClick={() => setShowRegions((v) => !v)}
               className="h-7 gap-1 text-xs shadow-sm"
               title="Visualizar microrregiões IBGE — clique numa região para selecionar todos os municípios dela"
             >
@@ -592,7 +645,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
 
         {/* Loading overlay */}
         {isMapLoading && (
-          <div className="absolute inset-0 flex items-center justify-center z-20 bg-white/60 backdrop-blur-sm">
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/60 backdrop-blur-sm">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         )}
@@ -600,12 +653,11 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
         {/* Tooltip */}
         {tooltip && (
           <div
-            className="absolute z-30 pointer-events-none bg-white rounded-lg px-3 py-2 shadow-lg
-              border border-border/60 text-sm transition-opacity duration-150"
+            className="pointer-events-none absolute z-30 rounded-lg border border-border/60 bg-white px-3 py-2 text-sm shadow-lg transition-opacity duration-150"
             style={{ left: tooltip.x + 14, top: tooltip.y - 48 }}
           >
-            <p className="font-semibold text-foreground leading-tight">{tooltip.name}</p>
-            <p className="text-muted-foreground text-xs mt-0.5">
+            <p className="font-semibold leading-tight text-foreground">{tooltip.name}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {tooltip.count} empresa{tooltip.count !== 1 ? "s" : ""}
             </p>
           </div>
@@ -630,127 +682,139 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                 setMapPosition({ center: coordinates as [number, number], zoom })
               }
             >
-            <Geographies geography={currentGeo}>
-              {({ geographies }) =>
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                geographies.map((geo: any) => {
-                  const code = geo.properties.codarea as string;
-                  const hov  = hoveredCode === code;
+              <Geographies geography={currentGeo}>
+                {({ geographies }) =>
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  geographies.map((geo: any) => {
+                    const code = geo.properties.codarea as string;
+                    const hov = hoveredCode === code;
 
-                  if (!viewUF) {
-                    // ─ Vista Brasil (estados) ─
-                    const uf    = (geo.properties.uf as string) ?? "";
-                    const ratio = uf ? (ufCounts[uf] || 0) / maxUF : 0;
-                    const status = ufSelectionStatus(ufSelection.get(uf));
-                    const fill   = getStateFill({ ratio, hovered: hov, status });
-                    return (
-                      <Geography
-                        key={geo.rsmKey}
-                        geography={geo}
-                        fill={fill}
-                        stroke="white"
-                        strokeWidth={0.6}
-                        style={{
-                          default: { outline: "none" },
-                          hover:   { outline: "none", cursor: "pointer" },
-                          pressed: { outline: "none" },
-                        }}
-                        onClick={() => handleStateClick(geo)}
-                        onDoubleClick={() => handleStateDoubleClick(geo)}
-                        onMouseEnter={(e) => handleMouseEnter(
-                          e as unknown as React.MouseEvent, code,
-                          UF_NOME[uf] ?? uf,
-                          ufCounts[uf] || 0,
-                        )}
-                        onMouseMove={handleMouseMove as unknown as (e: unknown) => void}
-                        onMouseLeave={handleMouseLeave}
-                      />
-                    );
-                  } else {
-                    // ─ Vista municípios (drill-down) ─
-                    const meta   = munMetaLookup[code];
-                    const nome   = meta?.nome ?? "";
-                    const munKey = nome ? normalizeMunicipio(nome) : "";
-                    const ratio  = munKey ? (munCounts[munKey] || 0) / maxMun : 0;
-                    const sel    = ufSelection.get(viewUF);
-                    const selected = isMunSelected(sel, munKey);
-                    const microId  = meta?.microId != null ? String(meta.microId) : "0";
-                    const regionIdx = microIdToIndex[microId] ?? 0;
-                    const fill   = getMunicipalFill({
-                      ratio, hovered: hov, selected, showRegions, regionIdx,
-                    });
-                    // Stroke mais forte no contorno entre microrregiões quando regiões ON
-                    const strokeWidth = showRegions ? 0.4 : 0.3;
-                    return (
-                      <Geography
-                        key={geo.rsmKey}
-                        geography={geo}
-                        fill={fill}
-                        stroke="white"
-                        strokeWidth={strokeWidth}
-                        style={{
-                          default: { outline: "none" },
-                          hover:   { outline: "none", cursor: "pointer" },
-                          pressed: { outline: "none" },
-                        }}
-                        onClick={() => handleMunClick(geo)}
-                        onMouseEnter={(e) => {
-                          const tooltipName = showRegions && meta?.microNome
-                            ? `${meta.microNome} (microrregião)`
-                            : (nome || code);
-                          const tooltipCount = showRegions && meta?.microId != null
-                            ? Array.from(microregioes[String(meta.microId)]?.munKeys ?? [])
-                                .reduce((sum, k) => sum + (munCounts[k] || 0), 0)
-                            : (munKey ? (munCounts[munKey] || 0) : 0);
-                          handleMouseEnter(
-                            e as unknown as React.MouseEvent, code,
-                            tooltipName, tooltipCount,
-                          );
-                        }}
-                        onMouseMove={handleMouseMove as unknown as (e: unknown) => void}
-                        onMouseLeave={handleMouseLeave}
-                      />
-                    );
-                  }
-                })
-              }
-            </Geographies>
+                    if (!viewUF) {
+                      // ─ Vista Brasil (estados) ─
+                      const uf = (geo.properties.uf as string) ?? "";
+                      const ratio = uf ? (ufCounts[uf] || 0) / maxUF : 0;
+                      const status = ufSelectionStatus(ufSelection.get(uf));
+                      const fill = getStateFill({ ratio, hovered: hov, status });
+                      return (
+                        <Geography
+                          key={geo.rsmKey}
+                          geography={geo}
+                          fill={fill}
+                          stroke="white"
+                          strokeWidth={0.6}
+                          style={{
+                            default: { outline: "none" },
+                            hover: { outline: "none", cursor: "pointer" },
+                            pressed: { outline: "none" },
+                          }}
+                          onClick={() => handleStateClick(geo)}
+                          onDoubleClick={() => handleStateDoubleClick(geo)}
+                          onMouseEnter={(e) =>
+                            handleMouseEnter(
+                              e as unknown as React.MouseEvent,
+                              code,
+                              UF_NOME[uf] ?? uf,
+                              ufCounts[uf] || 0
+                            )
+                          }
+                          onMouseMove={handleMouseMove as unknown as (e: unknown) => void}
+                          onMouseLeave={handleMouseLeave}
+                        />
+                      );
+                    } else {
+                      // ─ Vista municípios (drill-down) ─
+                      const meta = munMetaLookup[code];
+                      const nome = meta?.nome ?? "";
+                      const munKey = nome ? normalizeMunicipio(nome) : "";
+                      const ratio = munKey ? (munCounts[munKey] || 0) / maxMun : 0;
+                      const sel = ufSelection.get(viewUF);
+                      const selected = isMunSelected(sel, munKey);
+                      const microId = meta?.microId != null ? String(meta.microId) : "0";
+                      const regionIdx = microIdToIndex[microId] ?? 0;
+                      const fill = getMunicipalFill({
+                        ratio,
+                        hovered: hov,
+                        selected,
+                        showRegions,
+                        regionIdx,
+                      });
+                      // Stroke mais forte no contorno entre microrregiões quando regiões ON
+                      const strokeWidth = showRegions ? 0.4 : 0.3;
+                      return (
+                        <Geography
+                          key={geo.rsmKey}
+                          geography={geo}
+                          fill={fill}
+                          stroke="white"
+                          strokeWidth={strokeWidth}
+                          style={{
+                            default: { outline: "none" },
+                            hover: { outline: "none", cursor: "pointer" },
+                            pressed: { outline: "none" },
+                          }}
+                          onClick={() => handleMunClick(geo)}
+                          onMouseEnter={(e) => {
+                            const tooltipName =
+                              showRegions && meta?.microNome
+                                ? `${meta.microNome} (microrregião)`
+                                : nome || code;
+                            const tooltipCount =
+                              showRegions && meta?.microId != null
+                                ? Array.from(
+                                    microregioes[String(meta.microId)]?.munKeys ?? []
+                                  ).reduce((sum, k) => sum + (munCounts[k] || 0), 0)
+                                : munKey
+                                  ? munCounts[munKey] || 0
+                                  : 0;
+                            handleMouseEnter(
+                              e as unknown as React.MouseEvent,
+                              code,
+                              tooltipName,
+                              tooltipCount
+                            );
+                          }}
+                          onMouseMove={handleMouseMove as unknown as (e: unknown) => void}
+                          onMouseLeave={handleMouseLeave}
+                        />
+                      );
+                    }
+                  })
+                }
+              </Geographies>
 
-            {/* Siglas dos estados (apenas na vista Brasil) */}
-            {!viewUF &&
-              Object.entries(UF_LABEL_COORDS).map(([uf, coords]) => {
-                const count  = ufCounts[uf] || 0;
-                const ratio  = count / maxUF;
-                const status = ufSelectionStatus(ufSelection.get(uf));
-                const useWhite = status !== "none" || ratio > 0.35;
-                return (
-                  <Marker key={uf} coordinates={coords}>
-                    <text
-                      textAnchor="middle"
-                      fontSize={9}
-                      fontWeight="700"
-                      fill={useWhite ? "white" : "#555"}
-                      style={{ pointerEvents: "none", userSelect: "none" }}
-                    >
-                      {uf}
-                    </text>
-                  </Marker>
-                );
-              })}
+              {/* Siglas dos estados (apenas na vista Brasil) */}
+              {!viewUF &&
+                Object.entries(UF_LABEL_COORDS).map(([uf, coords]) => {
+                  const count = ufCounts[uf] || 0;
+                  const ratio = count / maxUF;
+                  const status = ufSelectionStatus(ufSelection.get(uf));
+                  const useWhite = status !== "none" || ratio > 0.35;
+                  return (
+                    <Marker key={uf} coordinates={coords}>
+                      <text
+                        textAnchor="middle"
+                        fontSize={9}
+                        fontWeight="700"
+                        fill={useWhite ? "white" : "#555"}
+                        style={{ pointerEvents: "none", userSelect: "none" }}
+                      >
+                        {uf}
+                      </text>
+                    </Marker>
+                  );
+                })}
             </ZoomableGroup>
           </ComposableMap>
         )}
 
         {/* Legenda */}
-        <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg
-          px-3 py-2 border border-border/40 shadow-sm max-w-[260px]"
-        >
+        <div className="absolute bottom-3 left-3 max-w-[260px] rounded-lg border border-border/40 bg-white/90 px-3 py-2 shadow-sm backdrop-blur-sm">
           {viewUF && showRegions ? (
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Microrregiões — {UF_NOME[viewUF]}
               </p>
-              <div className="grid grid-cols-1 gap-0.5 max-h-40 overflow-auto pr-1">
+              <div className="grid max-h-40 grid-cols-1 gap-0.5 overflow-auto pr-1">
                 {Object.values(microregioes)
                   .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"))
                   .map((r) => {
@@ -767,12 +831,10 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                         key={r.id}
                         type="button"
                         onClick={() => toggleRegiao(viewUF, String(r.id))}
-                        className={`flex items-center gap-1.5 text-[10px] px-1 py-0.5 rounded
-                          hover:bg-muted/60 transition-colors text-left
-                          ${allIn ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                        className={`flex items-center gap-1.5 rounded px-1 py-0.5 text-left text-[10px] transition-colors hover:bg-muted/60 ${allIn ? "font-semibold text-foreground" : "text-muted-foreground"}`}
                       >
                         <span
-                          className="inline-block w-2.5 h-2.5 rounded-sm shrink-0 border border-black/10"
+                          className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm border border-black/10"
                           style={{ background: REGION_PALETTE[idx % REGION_PALETTE.length] }}
                         />
                         <span className="truncate">{r.nome}</span>
@@ -783,25 +845,26 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
             </>
           ) : (
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {viewUF ? "Empresas / município" : "Empresas / estado"}
               </p>
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] text-muted-foreground">0</span>
-                <div className="w-20 h-2.5 rounded-sm"
-                  style={{ background: "linear-gradient(to right, hsl(215 10% 80%), hsl(215 55% 32%))" }}
+                <div
+                  className="h-2.5 w-20 rounded-sm"
+                  style={{
+                    background: "linear-gradient(to right, hsl(215 10% 80%), hsl(215 55% 32%))",
+                  }}
                 />
-                <span className="text-[10px] text-muted-foreground">
-                  {viewUF ? maxMun : maxUF}
-                </span>
+                <span className="text-[10px] text-muted-foreground">{viewUF ? maxMun : maxUF}</span>
               </div>
               {!viewUF && (
-                <p className="text-[9px] text-muted-foreground mt-1.5 leading-snug">
+                <p className="mt-1.5 text-[9px] leading-snug text-muted-foreground">
                   Clique = selecionar · duplo-clique = explorar
                 </p>
               )}
               {viewUF && (
-                <p className="text-[9px] text-muted-foreground mt-1.5 leading-snug">
+                <p className="mt-1.5 text-[9px] leading-snug text-muted-foreground">
                   Clique no município = selecionar
                 </p>
               )}
@@ -810,16 +873,20 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
         </div>
 
         {/* Controles de zoom */}
-        <div className="absolute bottom-3 right-3 flex flex-col gap-1 z-10">
+        <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1">
           <Button
-            variant="secondary" size="icon" className="h-7 w-7 shadow-sm"
+            variant="secondary"
+            size="icon"
+            className="h-7 w-7 shadow-sm"
             onClick={handleZoomIn}
             aria-label="Ampliar"
           >
             <ZoomIn className="h-3.5 w-3.5" />
           </Button>
           <Button
-            variant="secondary" size="icon" className="h-7 w-7 shadow-sm"
+            variant="secondary"
+            size="icon"
+            className="h-7 w-7 shadow-sm"
             onClick={handleZoomOut}
             disabled={mapPosition.zoom <= 1}
             aria-label="Reduzir"
@@ -828,11 +895,14 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
           </Button>
           {mapPosition.zoom > 1.05 && (
             <Button
-              variant="secondary" size="icon" className="h-7 w-7 shadow-sm"
+              variant="secondary"
+              size="icon"
+              className="h-7 w-7 shadow-sm"
               onClick={() => {
-                const c: [number, number] = (viewUF && STATE_MAP_PROJECTIONS[viewUF])
-                  ? STATE_MAP_PROJECTIONS[viewUF].center
-                  : BRAZIL_PROJECTION.center;
+                const c: [number, number] =
+                  viewUF && STATE_MAP_PROJECTIONS[viewUF]
+                    ? STATE_MAP_PROJECTIONS[viewUF].center
+                    : BRAZIL_PROJECTION.center;
                 setMapPosition({ zoom: 1, center: c });
               }}
               aria-label="Resetar zoom"
@@ -846,35 +916,38 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
         {/* Hint quando mapa vazio */}
         {!currentGeo && !isMapLoading && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-muted-foreground text-sm">Carregando mapa…</p>
+            <p className="text-sm text-muted-foreground">Carregando mapa…</p>
           </div>
         )}
       </div>
 
       {/* ── Painel lateral ─────────────────────────────────────────────── */}
       <div
-        className={`flex flex-col bg-card border-l border-border overflow-hidden
-          transition-[flex-basis,opacity] duration-500 ease-in-out
-          ${panelOpen ? "basis-[46%] opacity-100" : "basis-0 opacity-0"}`}
+        className={`flex flex-col overflow-hidden border-l border-border bg-card transition-[flex-basis,opacity] duration-500 ease-in-out ${panelOpen ? "basis-[46%] opacity-100" : "basis-0 opacity-0"}`}
       >
         {panelOpen && (
           <>
             {/* Cabeçalho */}
-            <div className="px-5 pt-4 pb-3 border-b border-border">
+            <div className="border-b border-border px-5 pb-3 pt-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <h3 className="font-semibold text-lg leading-tight truncate">
+                  <h3 className="truncate text-lg font-semibold leading-tight">
                     {totalUFs === 1
                       ? UF_NOME[selectedUFList[0]]
                       : `${totalUFs} estados selecionados`}
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {totalUFsAll === totalUFs
-                      ? totalUFs === 1 ? "Estado inteiro" : "Todos os municípios"
+                      ? totalUFs === 1
+                        ? "Estado inteiro"
+                        : "Todos os municípios"
                       : `${totalUFsAll} estado(s) inteiros · ${totalMunicipiosExplicitos} município(s) selecionado(s)`}
                   </p>
                 </div>
-                <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 mt-0.5"
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="mt-0.5 h-7 w-7 shrink-0"
                   onClick={clearSelection}
                   title="Limpar seleção"
                 >
@@ -882,29 +955,29 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                 </Button>
               </div>
 
-              <div className="flex items-center gap-2 mt-2.5">
-                <Badge variant="secondary" className="text-xs gap-1">
+              <div className="mt-2.5 flex items-center gap-2">
+                <Badge variant="secondary" className="gap-1 text-xs">
                   <Building2 className="h-3 w-3" />
                   {loadingPanel
                     ? "carregando…"
-                    : `${panelEmpresasFull.length} empresa${panelEmpresasFull.length !== 1 ? "s" : ""}`
-                  }
+                    : `${panelEmpresasFull.length} empresa${panelEmpresasFull.length !== 1 ? "s" : ""}`}
                 </Badge>
               </div>
 
               {/* Chips de seleção */}
-              <div className="mt-2.5 flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-                {selectedUFList.map(uf => {
+              <div className="mt-2.5 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                {selectedUFList.map((uf) => {
                   const sel = ufSelection.get(uf);
                   const allIn = sel === "all";
                   return (
-                    <div key={uf} className="inline-flex items-stretch rounded-md border border-border
-                      bg-muted/40 hover:bg-muted/70 transition-colors text-xs overflow-hidden"
+                    <div
+                      key={uf}
+                      className="inline-flex items-stretch overflow-hidden rounded-md border border-border bg-muted/40 text-xs transition-colors hover:bg-muted/70"
                     >
                       <button
                         type="button"
                         onClick={() => handleDrillFromChip(uf)}
-                        className="px-2 py-1 inline-flex items-center gap-1 hover:bg-muted/90"
+                        className="inline-flex items-center gap-1 px-2 py-1 hover:bg-muted/90"
                         title={`Explorar municípios de ${UF_NOME[uf]}`}
                       >
                         <MapPin className="h-3 w-3" />
@@ -917,7 +990,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                       <button
                         type="button"
                         onClick={() => removeUF(uf)}
-                        className="px-1.5 border-l border-border/60 hover:bg-destructive/10 hover:text-destructive"
+                        className="border-l border-border/60 px-1.5 hover:bg-destructive/10 hover:text-destructive"
                         title="Remover este estado da seleção"
                       >
                         <X className="h-3 w-3" />
@@ -927,57 +1000,63 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                 })}
 
                 {/* Chips de municípios explícitos da viewUF (quando drillado) */}
-                {viewUF && ufSelection.get(viewUF) instanceof Set && (() => {
-                  const set = ufSelection.get(viewUF) as Set<string>;
-                  const ordered = Array.from(set).sort();
-                  return ordered.slice(0, 12).map(munKey => {
-                    // Tenta achar o nome legível
-                    const meta = Object.values(munMetaLookup).find(m => normalizeMunicipio(m.nome) === munKey);
-                    const label = meta?.nome ?? munKey;
-                    return (
-                      <div key={`${viewUF}:${munKey}`} className="inline-flex items-stretch rounded-md
-                        border border-primary/30 bg-primary/5 text-xs overflow-hidden"
-                      >
-                        <span className="px-2 py-1 inline-flex items-center gap-1">
-                          <span className="text-muted-foreground">{viewUF}</span>
-                          <span className="font-medium">{label}</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeMunicipio(viewUF, munKey)}
-                          className="px-1.5 border-l border-primary/20 hover:bg-destructive/10 hover:text-destructive"
+                {viewUF &&
+                  ufSelection.get(viewUF) instanceof Set &&
+                  (() => {
+                    const set = ufSelection.get(viewUF) as Set<string>;
+                    const ordered = Array.from(set).sort();
+                    return ordered.slice(0, 12).map((munKey) => {
+                      // Tenta achar o nome legível
+                      const meta = Object.values(munMetaLookup).find(
+                        (m) => normalizeMunicipio(m.nome) === munKey
+                      );
+                      const label = meta?.nome ?? munKey;
+                      return (
+                        <div
+                          key={`${viewUF}:${munKey}`}
+                          className="inline-flex items-stretch overflow-hidden rounded-md border border-primary/30 bg-primary/5 text-xs"
                         >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </div>
-                    );
-                  });
-                })()}
+                          <span className="inline-flex items-center gap-1 px-2 py-1">
+                            <span className="text-muted-foreground">{viewUF}</span>
+                            <span className="font-medium">{label}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeMunicipio(viewUF, munKey)}
+                            className="border-l border-primary/20 px-1.5 hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    });
+                  })()}
 
-                {viewUF && ufSelection.get(viewUF) instanceof Set
-                  && (ufSelection.get(viewUF) as Set<string>).size > 12 && (
-                  <span className="text-[10px] text-muted-foreground self-center">
-                    +{(ufSelection.get(viewUF) as Set<string>).size - 12} mun.
-                  </span>
-                )}
+                {viewUF &&
+                  ufSelection.get(viewUF) instanceof Set &&
+                  (ufSelection.get(viewUF) as Set<string>).size > 12 && (
+                    <span className="self-center text-[10px] text-muted-foreground">
+                      +{(ufSelection.get(viewUF) as Set<string>).size - 12} mun.
+                    </span>
+                  )}
               </div>
             </div>
 
             {/* Filtros */}
-            <div className="px-4 py-3 border-b border-border space-y-2 bg-muted/30">
+            <div className="space-y-2 border-b border-border bg-muted/30 px-4 py-3">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Buscar empresa…"
                     value={panelFilters.search}
-                    onChange={(e) => setPanelFilters(f => ({ ...f, search: e.target.value }))}
-                    className="pl-8 h-8 text-sm bg-background"
+                    onChange={(e) => setPanelFilters((f) => ({ ...f, search: e.target.value }))}
+                    className="h-8 bg-background pl-8 text-sm"
                   />
                   {panelFilters.search && (
                     <button
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      onClick={() => setPanelFilters(f => ({ ...f, search: "" }))}
+                      onClick={() => setPanelFilters((f) => ({ ...f, search: "" }))}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -986,26 +1065,26 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                 <EmpresaFilterPopover
                   excludeLocation
                   filters={panelFilters.advanced}
-                  onChange={(f) => setPanelFilters(p => ({ ...p, advanced: f }))}
+                  onChange={(f) => setPanelFilters((p) => ({ ...p, advanced: f }))}
                 />
               </div>
               <EmpresaFilterChips
                 excludeLocation
                 filters={panelFilters.advanced}
-                onChange={(f) => setPanelFilters(p => ({ ...p, advanced: f }))}
+                onChange={(f) => setPanelFilters((p) => ({ ...p, advanced: f }))}
               />
             </div>
 
             {/* Lista de empresas */}
             <ScrollArea className="flex-1">
               {loadingPanel ? (
-                <div className="p-4 space-y-2">
+                <div className="space-y-2 p-4">
                   {Array.from({ length: 7 }).map((_, i) => (
                     <Skeleton key={i} className="h-[68px] w-full rounded-lg" />
                   ))}
                 </div>
               ) : panelEmpresas.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-52 text-muted-foreground gap-2">
+                <div className="flex h-52 flex-col items-center justify-center gap-2 text-muted-foreground">
                   <Building2 className="h-10 w-10 opacity-20" />
                   <p className="text-sm font-medium">Nenhuma empresa encontrada</p>
                   <p className="text-xs">Ajuste os filtros ou a seleção no mapa</p>
@@ -1016,41 +1095,43 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                     <button
                       key={emp.id}
                       type="button"
-                      className="w-full text-left px-4 py-3 hover:bg-muted/60 active:bg-muted
-                        transition-colors border-b border-border/60 last:border-0
-                        focus-visible:outline-none focus-visible:bg-muted/60"
+                      className="w-full border-b border-border/60 px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none active:bg-muted"
                       onClick={() => onOpenDetail(emp)}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-sm leading-tight truncate">{emp.nome}</p>
+                          <p className="truncate text-sm font-medium leading-tight">{emp.nome}</p>
                           {emp.cnpj && (
-                            <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">
+                            <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                               {formatCNPJ(emp.cnpj)}
                             </p>
                           )}
                           {emp.municipio && (
-                            <p className="text-[11px] text-muted-foreground flex items-center gap-0.5 mt-0.5">
+                            <p className="mt-0.5 flex items-center gap-0.5 text-[11px] text-muted-foreground">
                               <MapPin className="h-2.5 w-2.5 shrink-0" />
-                              {emp.municipio}{emp.uf ? ` / ${emp.uf}` : ""}
+                              {emp.municipio}
+                              {emp.uf ? ` / ${emp.uf}` : ""}
                             </p>
                           )}
                         </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0 pt-0.5">
+                        <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
                           {emp.situacao_cadastral && (
                             <Badge
                               variant="outline"
-                              className={`text-[10px] px-1.5 py-0 h-4 leading-none ${
+                              className={`h-4 px-1.5 py-0 text-[10px] leading-none ${
                                 emp.situacao_cadastral === "ATIVA"
-                                  ? "border-green-500/40 text-green-700 bg-green-50"
-                                  : "border-destructive/40 text-destructive bg-destructive/5"
+                                  ? "border-green-500/40 bg-green-50 text-green-700"
+                                  : "border-destructive/40 bg-destructive/5 text-destructive"
                               }`}
                             >
                               {emp.situacao_cadastral}
                             </Badge>
                           )}
                           {emp.porte && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 leading-none">
+                            <Badge
+                              variant="secondary"
+                              className="h-4 px-1.5 py-0 text-[10px] leading-none"
+                            >
                               {emp.porte}
                             </Badge>
                           )}
@@ -1059,7 +1140,7 @@ export function EmpresasMapView({ onOpenDetail }: EmpresasMapViewProps) {
                     </button>
                   ))}
                   {panelEmpresasFull.length > 200 && (
-                    <p className="text-center text-xs text-muted-foreground py-4 px-4">
+                    <p className="px-4 py-4 text-center text-xs text-muted-foreground">
                       Mostrando 200 de {panelEmpresasFull.length}. Use os filtros para refinar.
                     </p>
                   )}
