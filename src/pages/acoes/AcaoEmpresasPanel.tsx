@@ -257,6 +257,13 @@ export function AcaoEmpresasPanel({
     [items]
   );
 
+  // IDs das empresas com elegibilidade marcada como destaque (estrela). O mapa
+  // pinta a estrela amarela no card e destaca o fundo.
+  const destaqueIds = useMemo(
+    () => new Set(items.filter((i) => i.el.destaque).map((i) => i.el.empresa_id)),
+    [items]
+  );
+
   // Fetch lazy de empresas full (todos os campos) para alimentar o mapa.
   // Só dispara quando view === "mapa" e há elegíveis. Cacheado por (acaoId, set de IDs).
   const idsKey = useMemo(() => [...elegiveisIds].sort().join(","), [elegiveisIds]);
@@ -492,6 +499,7 @@ export function AcaoEmpresasPanel({
             >
               <EmpresasMapView
                 presetEmpresas={mapaEmpresas}
+                destaqueIds={destaqueIds}
                 onOpenDetail={(emp) => onViewEmpresaId?.(emp.id)}
               />
             </Suspense>

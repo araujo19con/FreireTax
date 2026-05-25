@@ -29,8 +29,11 @@ import {
   ZoomOut,
   Layers,
   ArrowUpRight,
+  Star,
+  Users,
+  DollarSign,
 } from "lucide-react";
-import { formatCNPJ } from "@/lib/format";
+import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
 import type { Empresa, EmpresaFilters } from "@/hooks/useEmpresas";
 import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
 import { applyEmpresaFiltersInMemory } from "@/lib/empresaFiltersInMemory";
@@ -41,6 +44,9 @@ interface EmpresasMapViewProps {
    *  ao invés de buscar do Supabase. Usado pelo painel de ação tributária
    *  para mostrar só o pool elegível daquela ação. */
   presetEmpresas?: Empresa[];
+  /** IDs de empresas marcadas como destaque (estrela). Vem da elegibilidade
+   *  no contexto da Ação Tributária. */
+  destaqueIds?: Set<string>;
 }
 
 interface PanelState {
@@ -105,7 +111,11 @@ function getMunicipalFill(opts: {
   return `hsl(215 55% ${l}%)`;
 }
 
-export function EmpresasMapView({ onOpenDetail, presetEmpresas }: EmpresasMapViewProps) {
+export function EmpresasMapView({
+  onOpenDetail,
+  presetEmpresas,
+  destaqueIds,
+}: EmpresasMapViewProps) {
   const isPreset = presetEmpresas != null;
   // Multi-seleção: UF → "all" ou Set de chaves de município normalizadas
   const [ufSelection, setUfSelection] = useState<Map<string, UFSel>>(new Map());
@@ -1089,52 +1099,84 @@ export function EmpresasMapView({ onOpenDetail, presetEmpresas }: EmpresasMapVie
                 </div>
               ) : (
                 <div>
-                  {panelEmpresas.map((emp) => (
-                    <button
-                      key={emp.id}
-                      type="button"
-                      className="w-full border-b border-border/60 py-3 pl-4 pr-5 text-left transition-colors last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none active:bg-muted"
-                      onClick={() => onOpenDetail(emp)}
-                    >
-                      <div className="flex min-w-0 flex-col gap-1.5">
-                        <p className="truncate text-sm font-medium leading-tight">{emp.nome}</p>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                          {emp.cnpj && <span className="font-mono">{formatCNPJ(emp.cnpj)}</span>}
-                          {emp.municipio && (
-                            <span className="flex items-center gap-0.5">
-                              <MapPin className="h-2.5 w-2.5 shrink-0" />
-                              {emp.municipio}
-                              {emp.uf ? ` / ${emp.uf}` : ""}
-                            </span>
-                          )}
-                        </div>
-                        {(emp.situacao_cadastral || emp.porte) && (
-                          <div className="flex flex-wrap items-center gap-1">
-                            {emp.situacao_cadastral && (
-                              <Badge
-                                variant="outline"
-                                className={`h-4 px-1.5 py-0 text-[10px] leading-none ${
-                                  emp.situacao_cadastral === "ATIVA"
-                                    ? "border-green-500/40 bg-green-50 text-green-700"
-                                    : "border-destructive/40 bg-destructive/5 text-destructive"
-                                }`}
-                              >
-                                {emp.situacao_cadastral}
-                              </Badge>
+                  {panelEmpresas.map((emp) => {
+                    const isDestaque = destaqueIds?.has(emp.id) ?? false;
+                    const hasFunc =
+                      emp.quantidade_funcionarios != null && emp.quantidade_funcionarios > 0;
+                    const hasFat = emp.faturamento_anual != null && emp.faturamento_anual > 0;
+                    return (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        className={`w-full border-b border-border/60 py-3 pl-4 pr-5 text-left transition-colors last:border-0 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none active:bg-muted ${
+                          isDestaque ? "bg-amber-50/40 dark:bg-amber-950/10" : ""
+                        }`}
+                        onClick={() => onOpenDetail(emp)}
+                      >
+                        <div className="flex min-w-0 flex-col gap-1.5">
+                          <div className="flex items-start gap-1.5">
+                            {isDestaque && (
+                              <Star
+                                className="mt-0.5 h-3 w-3 shrink-0 fill-amber-400 text-amber-400"
+                                aria-label="Destaque"
+                              />
                             )}
-                            {emp.porte && (
-                              <Badge
-                                variant="secondary"
-                                className="h-4 px-1.5 py-0 text-[10px] leading-none"
-                              >
-                                {emp.porte}
-                              </Badge>
+                            <p className="truncate text-sm font-medium leading-tight">{emp.nome}</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                            {emp.cnpj && <span className="font-mono">{formatCNPJ(emp.cnpj)}</span>}
+                            {emp.municipio && (
+                              <span className="flex items-center gap-0.5">
+                                <MapPin className="h-2.5 w-2.5 shrink-0" />
+                                {emp.municipio}
+                                {emp.uf ? ` / ${emp.uf}` : ""}
+                              </span>
                             )}
                           </div>
-                        )}
-                      </div>
-                    </button>
-                  ))}
+                          {(hasFunc || hasFat) && (
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                              {hasFunc && (
+                                <span className="flex items-center gap-0.5">
+                                  <Users className="h-2.5 w-2.5 shrink-0" />
+                                  {emp.quantidade_funcionarios} func.
+                                </span>
+                              )}
+                              {hasFat && (
+                                <span className="flex items-center gap-0.5">
+                                  <DollarSign className="h-2.5 w-2.5 shrink-0" />
+                                  {formatCompactCurrency(emp.faturamento_anual)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {(emp.situacao_cadastral || emp.porte) && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              {emp.situacao_cadastral && (
+                                <Badge
+                                  variant="outline"
+                                  className={`h-4 px-1.5 py-0 text-[10px] leading-none ${
+                                    emp.situacao_cadastral === "ATIVA"
+                                      ? "border-green-500/40 bg-green-50 text-green-700"
+                                      : "border-destructive/40 bg-destructive/5 text-destructive"
+                                  }`}
+                                >
+                                  {emp.situacao_cadastral}
+                                </Badge>
+                              )}
+                              {emp.porte && (
+                                <Badge
+                                  variant="secondary"
+                                  className="h-4 px-1.5 py-0 text-[10px] leading-none"
+                                >
+                                  {emp.porte}
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
                   {panelEmpresasFull.length > 200 && (
                     <p className="px-4 py-4 text-center text-xs text-muted-foreground">
                       Mostrando 200 de {panelEmpresasFull.length}. Use os filtros para refinar.
