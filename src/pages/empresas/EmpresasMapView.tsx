@@ -60,12 +60,6 @@ function cloneSel(map: Map<string, UFSel>): Map<string, UFSel> {
   return next;
 }
 
-function isMunSelected(sel: UFSel | undefined, munKey: string): boolean {
-  if (!sel) return false;
-  if (sel === "all") return true;
-  return sel.has(munKey);
-}
-
 function ufSelectionStatus(sel: UFSel | undefined): "none" | "all" | "partial" {
   if (!sel) return "none";
   return sel === "all" ? "all" : "partial";
@@ -728,7 +722,11 @@ export function EmpresasMapView({ onOpenDetail, presetEmpresas }: EmpresasMapVie
                       const munKey = nome ? normalizeMunicipio(nome) : "";
                       const ratio = munKey ? (munCounts[munKey] || 0) / maxMun : 0;
                       const sel = ufSelection.get(viewUF);
-                      const selected = isMunSelected(sel, munKey);
+                      // Só pinta como "selected" se foi escolhido individualmente
+                      // (membro de Set). Em modo "all" (estado inteiro), mantém o
+                      // heatmap / paleta de regiões visíveis — o chip "UF todos"
+                      // no painel já indica a seleção total.
+                      const selected = sel instanceof Set && sel.has(munKey);
                       const microId = meta?.microId != null ? String(meta.microId) : "0";
                       const regionIdx = microIdToIndex[microId] ?? 0;
                       const fill = getMunicipalFill({
