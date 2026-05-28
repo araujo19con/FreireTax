@@ -17,6 +17,7 @@ import {
   FileText,
   BookOpen,
   BarChart2,
+  Landmark,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -58,6 +59,7 @@ const mainItems: ItemDef[] = [
   { title: "Prospecção", url: "/prospeccao", icon: Handshake, badgeKey: "prosp_parados" },
   { title: "Análise RFB", url: "/analise-rfb", icon: Filter },
   { title: "Relatórios", url: "/relatorios", icon: BarChart2 },
+  { title: "Financeiro", url: "/financeiro", icon: Landmark },
   { title: "Importação", url: "/importacao", icon: Upload },
 ];
 

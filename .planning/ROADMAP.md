@@ -266,19 +266,19 @@ P0 (imediato, < 1h cada):
 P1 (próximo sprint, segurança):
   ✅ audit_log SECURITY DEFINER (2026-05-28)
   ✅ validateFormula → expr-eval (2026-05-28)
-  ⬜ criar-usuario atomicidade
+  ✅ criar-usuario atomicidade (2026-05-28)
 
 P2 (qualidade, faz a base ficar sólida):
   ⬜ regenerar types.ts + CI check
-  ⬜ CLAUDE.md / large-files.md atualizado
+  ✅ CLAUDE.md / large-files.md atualizado (2026-05-28)
 
 P3 (UX visível):
-  ⬜ Drag-and-drop kanban
+  ✅ Drag-and-drop kanban @hello-pangea/dnd (2026-05-28)
   ✅ Relatório horas trabalhadas — aba Horas em EquipeView (2026-05-28)
-  ⬜ Timeline por empresa
+  ✅ Timeline cronológica por empresa (aba em EmpresaDetailSheet) (2026-05-28)
 
 P4 (features estratégicas):
-  ⬜ Tela /relatorios básica
+  ✅ Tela /relatorios básica (funil + contratos ganhos + XLSX) (2026-05-28)
   ⬜ Módulo financeiro / honorários
   ⬜ Prazos processuais + alertas
 ```
