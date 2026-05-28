@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from "react-simple-maps";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/supabaseFetchAll";
 import {
   UF_IBGE_CODE,
   UF_NOME,
@@ -156,23 +157,12 @@ export function EmpresasMapView({
   const { data: ufCountsRemote = {} } = useQuery({
     queryKey: ["empresas-uf-counts"],
     queryFn: async () => {
-      const PAGE = 1000;
       const counts: Record<string, number> = {};
-      let from = 0;
-      for (;;) {
-        const { data, error } = await supabase
-          .from("empresas")
-          .select("uf")
-          .not("uf", "is", null)
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        const batch = data ?? [];
-        for (const { uf } of batch) {
-          if (uf) counts[uf] = (counts[uf] || 0) + 1;
-        }
-        if (batch.length < PAGE) break;
-        from += PAGE;
-        if (from > 50_000) break;
+      const rows = await fetchAllRows<{ uf: string | null }>((from, to) =>
+        supabase.from("empresas").select("uf").not("uf", "is", null).range(from, to)
+      );
+      for (const { uf } of rows) {
+        if (uf) counts[uf] = (counts[uf] || 0) + 1;
       }
       return counts;
     },
@@ -183,7 +173,7 @@ export function EmpresasMapView({
   const ufCounts = useMemo<Record<string, number>>(() => {
     if (!isPreset) return ufCountsRemote;
     const c: Record<string, number> = {};
-    for (const e of presetEmpresas!) {
+    for (const e of presetEmpresas) {
       if (e.uf) c[e.uf] = (c[e.uf] || 0) + 1;
     }
     return c;
@@ -201,7 +191,7 @@ export function EmpresasMapView({
   const viewUFCode = viewUF ? UF_IBGE_CODE[viewUF] : null;
   const { data: munGeo, isLoading: loadingMun } = useQuery({
     queryKey: ["ibge-mun-geo-v3", viewUF],
-    queryFn: () => fetchStateMunicipiosGeoJSON(viewUF!, viewUFCode!),
+    queryFn: () => fetchStateMunicipiosGeoJSON(viewUF, viewUFCode),
     enabled: !!viewUF && !!viewUFCode,
     staleTime: 24 * 60 * 60 * 1000,
     retry: 1,
@@ -280,24 +270,9 @@ export function EmpresasMapView({
     queryKey: ["empresas-map-bulk", queryUFs.join(",")],
     queryFn: async () => {
       if (queryUFs.length === 0) return [] as Empresa[];
-      const PAGE = 1000;
-      const all: Empresa[] = [];
-      let from = 0;
-      for (;;) {
-        const { data, error } = await supabase
-          .from("empresas")
-          .select("*")
-          .in("uf", queryUFs)
-          .order("nome")
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        const batch = (data ?? []) as Empresa[];
-        all.push(...batch);
-        if (batch.length < PAGE) break;
-        from += PAGE;
-        if (from > 50_000) break;
-      }
-      return all;
+      return fetchAllRows<Empresa>((from, to) =>
+        supabase.from("empresas").select("*").in("uf", queryUFs).order("nome").range(from, to)
+      );
     },
     enabled: !isPreset && queryUFs.length > 0,
     staleTime: 60 * 1000,
@@ -310,7 +285,7 @@ export function EmpresasMapView({
     if (!isPreset) return bulkEmpresasRemote;
     if (queryUFs.length === 0) return [];
     const ufSet = new Set(queryUFs);
-    return presetEmpresas!.filter((e) => e.uf && ufSet.has(e.uf));
+    return presetEmpresas.filter((e) => e.uf && ufSet.has(e.uf));
   }, [isPreset, presetEmpresas, bulkEmpresasRemote, queryUFs]);
 
   const loadingEmpresas = isPreset ? false : loadingEmpresasRemote;
@@ -682,9 +657,7 @@ export function EmpresasMapView({
               center={mapPosition.center}
               minZoom={1}
               maxZoom={viewUF ? 12 : 4}
-              onMoveEnd={({ coordinates, zoom }) =>
-                setMapPosition({ center: coordinates as [number, number], zoom })
-              }
+              onMoveEnd={({ coordinates, zoom }) => setMapPosition({ center: coordinates, zoom })}
             >
               <Geographies geography={currentGeo}>
                 {({ geographies }) =>
@@ -991,7 +964,7 @@ export function EmpresasMapView({
                         <MapPin className="h-3 w-3" />
                         <span className="font-semibold">{uf}</span>
                         <span className="text-muted-foreground">
-                          {allIn ? "todos" : `${(sel as Set<string>).size} mun.`}
+                          {allIn ? "todos" : `${sel.size} mun.`}
                         </span>
                         <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
                       </button>
@@ -1101,9 +1074,15 @@ export function EmpresasMapView({
                 <div>
                   {panelEmpresas.map((emp) => {
                     const isDestaque = destaqueIds?.has(emp.id) ?? false;
+                    // Func/faturamento: usa o numero (RFB/manual) se houver, senao a faixa-texto
+                    // da planilha (DRIVA → metadados). Mesmo pattern do EmpresaDetailSheet.
+                    const funcTxt = emp.metadados?.["Faixa de Funcionários"] ?? null;
+                    const fatTxt = emp.metadados?.["Faixa de Faturamento"] ?? null;
                     const hasFunc =
-                      emp.quantidade_funcionarios != null && emp.quantidade_funcionarios > 0;
-                    const hasFat = emp.faturamento_anual != null && emp.faturamento_anual > 0;
+                      (emp.quantidade_funcionarios != null && emp.quantidade_funcionarios > 0) ||
+                      !!funcTxt;
+                    const hasFat =
+                      (emp.faturamento_anual != null && emp.faturamento_anual > 0) || !!fatTxt;
                     return (
                       <button
                         key={emp.id}
@@ -1138,13 +1117,18 @@ export function EmpresasMapView({
                               {hasFunc && (
                                 <span className="flex items-center gap-0.5">
                                   <Users className="h-2.5 w-2.5 shrink-0" />
-                                  {emp.quantidade_funcionarios} func.
+                                  {emp.quantidade_funcionarios != null &&
+                                  emp.quantidade_funcionarios > 0
+                                    ? `${emp.quantidade_funcionarios} func.`
+                                    : funcTxt}
                                 </span>
                               )}
                               {hasFat && (
                                 <span className="flex items-center gap-0.5">
                                   <DollarSign className="h-2.5 w-2.5 shrink-0" />
-                                  {formatCompactCurrency(emp.faturamento_anual)}
+                                  {emp.faturamento_anual != null && emp.faturamento_anual > 0
+                                    ? formatCompactCurrency(emp.faturamento_anual)
+                                    : fatTxt}
                                 </span>
                               )}
                             </div>
