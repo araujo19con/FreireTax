@@ -32,6 +32,7 @@ const Usuarios = lazy(() => import("./pages/Usuarios"));
 const AnaliseRFB = lazy(() => import("./pages/AnaliseRFB"));
 const Relatorios = lazy(() => import("./pages/Relatorios"));
 const Financeiro = lazy(() => import("./pages/Financeiro"));
+const Prazos = lazy(() => import("./pages/Prazos"));
 const Tutorial = lazy(() => import("./pages/Tutorial"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 
@@ -141,6 +142,7 @@ function AppRoutes() {
           <Route path="/analise-rfb" element={<AnaliseRFB />} />
           <Route path="/relatorios" element={<Relatorios />} />
           <Route path="/financeiro" element={<Financeiro />} />
+          <Route path="/prazos" element={<Prazos />} />
           <Route path="/tutorial" element={<Tutorial />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/reset-password" element={<ResetPassword />} />

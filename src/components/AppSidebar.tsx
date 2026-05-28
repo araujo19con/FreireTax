@@ -18,6 +18,7 @@ import {
   BookOpen,
   BarChart2,
   Landmark,
+  CalendarClock,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -60,6 +61,7 @@ const mainItems: ItemDef[] = [
   { title: "Análise RFB", url: "/analise-rfb", icon: Filter },
   { title: "Relatórios", url: "/relatorios", icon: BarChart2 },
   { title: "Financeiro", url: "/financeiro", icon: Landmark },
+  { title: "Prazos", url: "/prazos", icon: CalendarClock },
   { title: "Importação", url: "/importacao", icon: Upload },
 ];
 
