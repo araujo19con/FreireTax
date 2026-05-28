@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { logAudit } from "@/lib/audit";
 import type { Criterio, TipoResposta } from "./useCriterios";
 import { humanizeRegra, respostaDisparaExclusao } from "@/lib/criterios";
+import { Parser } from "expr-eval";
 
 export interface RespostaValor {
   bool?: boolean;
@@ -55,7 +56,10 @@ export function useRespostas(elegibilidadeId: string | undefined) {
  * - Valor potencial: tenta avaliar fórmula safe (primeiro critério com formula_valor que retorne numérico).
  * - Elegibilidade default: true se score >= 0.5 e nenhum excludente falhou.
  */
-export function evaluateAnswers(criterios: Criterio[], answers: AnswersMap): {
+export function evaluateAnswers(
+  criterios: Criterio[],
+  answers: AnswersMap
+): {
   elegivel: boolean;
   score: number;
   justificativa: string;
@@ -89,9 +93,7 @@ export function evaluateAnswers(criterios: Criterio[], answers: AnswersMap): {
         : !isPositive; // legacy: qualquer resposta "negativa" exclui
       if (falhou) {
         excludenteFalhou = true;
-        const motivo = c.regra_excludente
-          ? humanizeRegra(c.regra_excludente)
-          : "resposta negativa";
+        const motivo = c.regra_excludente ? humanizeRegra(c.regra_excludente) : "resposta negativa";
         justificativas.push(`Excludente: "${c.pergunta}" — ${motivo}.`);
       }
     }
@@ -131,11 +133,16 @@ export function isExcludenteFalhouAgora(c: Criterio, resp: RespostaValor | undef
 
 function answerIsPositive(tipo: TipoResposta, resp: RespostaValor): boolean {
   switch (tipo) {
-    case "boolean": return resp.bool === true;
-    case "number":  return (resp.number ?? 0) > 0;
-    case "text":    return !!(resp.text && resp.text.trim());
-    case "date":    return !!resp.date;
-    case "select":  return !!resp.select && resp.select !== "nao" && resp.select !== "none";
+    case "boolean":
+      return resp.bool === true;
+    case "number":
+      return (resp.number ?? 0) > 0;
+    case "text":
+      return !!(resp.text && resp.text.trim());
+    case "date":
+      return !!resp.date;
+    case "select":
+      return !!resp.select && resp.select !== "nao" && resp.select !== "none";
   }
 }
 
@@ -151,9 +158,8 @@ function tryComputeValor(criterios: Criterio[], answers: AnswersMap): number | n
       for (const k of Object.keys(answers)) {
         answersByKey[k] = answers[k]?.number ?? 0;
       }
-      // Cria função "answers.XXX * 0.08" -> avalia
-      const fn = new Function("answers", `"use strict"; return (${c.formula_valor});`);
-      const v = fn(answersByKey);
+      // "answers.XXX * 0.08" — expr-eval avalia sem new Function (sandbox seguro)
+      const v = Parser.evaluate(c.formula_valor, { answers: answersByKey });
       if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
     } catch {
       // ignora fórmulas inválidas e continua
@@ -193,11 +199,11 @@ export function useSalvarQualificacao() {
         elegivel: evaluated.elegivel,
         justificativa: evaluated.justificativa,
         valor_potencial_estimado: evaluated.valor,
-        user_id: user!.id,
+        user_id: user.id,
         score_elegibilidade: evaluated.score,
         valor_calculado: evaluated.valor,
         qualificada_em: new Date().toISOString(),
-        qualificada_por: user!.id,
+        qualificada_por: user.id,
         status_qualificacao: evaluated.completo ? "qualificada" : "incompleta",
       } as Record<string, unknown>;
 
@@ -225,7 +231,7 @@ export function useSalvarQualificacao() {
       const respostasPayload = Object.entries(answers).map(([criterio_id, valor]) => ({
         elegibilidade_id: elegibilidadeId,
         criterio_id,
-        user_id: user!.id,
+        user_id: user.id,
         resposta_bool: valor.bool ?? null,
         resposta_date: valor.date ?? null,
         resposta_number: valor.number ?? null,
@@ -243,7 +249,8 @@ export function useSalvarQualificacao() {
         acao: existing?.id ? "Requalificou" : "Qualificou",
         registro_id: elegibilidadeId,
         detalhes: {
-          empresa_id, acao_id,
+          empresa_id,
+          acao_id,
           elegivel: evaluated.elegivel,
           score: evaluated.score,
           valor: evaluated.valor,
@@ -270,7 +277,7 @@ export function useCriarProspeccaoFromEleg() {
       const { data, error } = await (supabase.from("prospeccoes") as any)
         .insert({
           elegibilidade_id: elegibilidadeId,
-          user_id: user!.id,
+          user_id: user.id,
           status_prospeccao: "Contato feito",
         })
         .select()

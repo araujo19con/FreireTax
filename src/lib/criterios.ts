@@ -2,6 +2,7 @@
 // Centraliza shape do JSON, defaults sensatos por tipo, avaliação e humanização.
 
 import type { TipoResposta } from "@/hooks/useCriterios";
+import { Parser } from "expr-eval";
 
 // ============================================================
 // Tipos
@@ -33,11 +34,16 @@ export interface RespostaValor {
 /** Regra default para um tipo, equivalente ao comportamento legacy de answerIsPositive(). */
 export function defaultRegraFor(tipo: TipoResposta): RegraExcludente {
   switch (tipo) {
-    case "boolean": return { tipo: "boolean", excludeWhen: false };
-    case "number":  return { tipo: "number", operator: "lte", value: 0 };
-    case "date":    return { tipo: "date", operator: "empty" };
-    case "text":    return { tipo: "text", operator: "empty" };
-    case "select":  return { tipo: "select", excludeOptions: [] };
+    case "boolean":
+      return { tipo: "boolean", excludeWhen: false };
+    case "number":
+      return { tipo: "number", operator: "lte", value: 0 };
+    case "date":
+      return { tipo: "date", operator: "empty" };
+    case "text":
+      return { tipo: "text", operator: "empty" };
+    case "select":
+      return { tipo: "select", excludeOptions: [] };
   }
 }
 
@@ -55,11 +61,16 @@ export function respostaDisparaExclusao(regra: RegraExcludente, resp: RespostaVa
       const v = resp.number;
       if (v == null || !Number.isFinite(v)) return false;
       switch (regra.operator) {
-        case "lt":  return v < regra.value;
-        case "lte": return v <= regra.value;
-        case "eq":  return v === regra.value;
-        case "gte": return v >= regra.value;
-        case "gt":  return v > regra.value;
+        case "lt":
+          return v < regra.value;
+        case "lte":
+          return v <= regra.value;
+        case "eq":
+          return v === regra.value;
+        case "gte":
+          return v >= regra.value;
+        case "gt":
+          return v > regra.value;
         case "between":
           return regra.value2 != null && v >= regra.value && v <= regra.value2;
         case "outside":
@@ -71,10 +82,14 @@ export function respostaDisparaExclusao(regra: RegraExcludente, resp: RespostaVa
     case "date": {
       const d = resp.date;
       switch (regra.operator) {
-        case "empty":     return !d;
-        case "non_empty": return !!d;
-        case "before":    return !!d && !!regra.value && d < regra.value;
-        case "after":     return !!d && !!regra.value && d > regra.value;
+        case "empty":
+          return !d;
+        case "non_empty":
+          return !!d;
+        case "before":
+          return !!d && !!regra.value && d < regra.value;
+        case "after":
+          return !!d && !!regra.value && d > regra.value;
         case "between":
           return !!d && !!regra.value && !!regra.value2 && d >= regra.value && d <= regra.value2;
         case "outside":
@@ -90,10 +105,14 @@ export function respostaDisparaExclusao(regra: RegraExcludente, resp: RespostaVa
       const t = (resp.text ?? "").trim();
       const term = (regra.value ?? "").trim().toLowerCase();
       switch (regra.operator) {
-        case "empty":         return t.length === 0;
-        case "non_empty":     return t.length > 0;
-        case "contains":      return !!term && t.toLowerCase().includes(term);
-        case "not_contains":  return !!term && !t.toLowerCase().includes(term);
+        case "empty":
+          return t.length === 0;
+        case "non_empty":
+          return t.length > 0;
+        case "contains":
+          return !!term && t.toLowerCase().includes(term);
+        case "not_contains":
+          return !!term && !t.toLowerCase().includes(term);
       }
       return false;
     }
@@ -170,11 +189,16 @@ export function validateRegra(regra: RegraExcludente): string | null {
   switch (regra.tipo) {
     case "number":
       if (!Number.isFinite(regra.value)) return "Informe o valor de referência";
-      if ((regra.operator === "between" || regra.operator === "outside") &&
-          (regra.value2 == null || !Number.isFinite(regra.value2)))
+      if (
+        (regra.operator === "between" || regra.operator === "outside") &&
+        (regra.value2 == null || !Number.isFinite(regra.value2))
+      )
         return "Informe o segundo valor para o intervalo";
-      if ((regra.operator === "between" || regra.operator === "outside") &&
-          regra.value2 != null && regra.value > regra.value2)
+      if (
+        (regra.operator === "between" || regra.operator === "outside") &&
+        regra.value2 != null &&
+        regra.value > regra.value2
+      )
         return "O primeiro valor deve ser menor que o segundo";
       return null;
     case "date":
@@ -188,7 +212,10 @@ export function validateRegra(regra: RegraExcludente): string | null {
         return "Selecione ao menos uma opção que dispara exclusão";
       return null;
     case "text":
-      if ((regra.operator === "contains" || regra.operator === "not_contains") && !regra.value?.trim())
+      if (
+        (regra.operator === "contains" || regra.operator === "not_contains") &&
+        !regra.value?.trim()
+      )
         return "Informe o termo a buscar";
       return null;
     case "boolean":
@@ -196,16 +223,11 @@ export function validateRegra(regra: RegraExcludente): string | null {
   }
 }
 
-/** Valida sintaxe de fórmula JS executando com answers={}. Retorna erro ou null. */
+/** Valida sintaxe de fórmula. Retorna mensagem de erro ou null se válida. */
 export function validateFormula(formula: string): string | null {
   if (!formula.trim()) return null;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const fn = new Function("answers", `"use strict"; return (${formula});`);
-    const v = fn({});
-    if (typeof v !== "number" || !Number.isFinite(v)) {
-      return "Fórmula precisa retornar um número (testado com answers={})";
-    }
+    new Parser().parse(formula);
     return null;
   } catch (e) {
     return "Sintaxe inválida: " + (e instanceof Error ? e.message : "erro");
