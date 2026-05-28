@@ -76,18 +76,27 @@ Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
 
 1. **NUNCA leia `src/integrations/supabase/types.ts` inteiro** — tem 1.624 linhas autogeradas. Use `Grep` para encontrar o tipo específico (`Database["public"]["Tables"]["tarefas"]["Row"]` etc.).
 
-2. **Arquivos grandes (>500 linhas) — sempre leia com `offset` + `limit`** antes de `Read` completo:
-   - `src/pages/Prospeccao.tsx` (1247)
-   - `src/pages/Acoes.tsx` (923)
-   - `src/pages/Empresas.tsx` (832)
-   - `src/components/PropostaDialog.tsx` (800)
-   - `src/pages/AnaliseRFB.tsx` (772)
-   - `src/pages/Dashboard.tsx` (757)
-   - `src/pages/Importacao.tsx` (670)
-   - `src/components/EmpresaDialog.tsx` (647)
-   - `src/components/EmpresaFilterPopover.tsx` (626 — fonte ÚNICA dos filtros)
-   - `src/pages/empresas/EmpresaDetailSheet.tsx` (576)
+2. **Arquivos grandes (>500 linhas) — sempre leia com `offset` + `limit`** antes de `Read` completo. Contagens atualizadas em 2026-05-28 (líderes do ranking, podem aumentar):
+   - `src/pages/Prospeccao.tsx` (~1686)
+   - `src/pages/Importacao.tsx` (~1594)
+   - `src/pages/empresas/EmpresasMapView.tsx` (~1166)
+   - `src/pages/Acoes.tsx` (~1167)
+   - `src/pages/Empresas.tsx` (~1054)
+   - `src/components/EmpresaDialog.tsx` (~953)
+   - `src/pages/acoes/ImportacaoProspeccaoDialog.tsx` (~869)
+   - `src/pages/empresas/EmpresaDetailSheet.tsx` (~874)
+   - `src/pages/acoes/AcaoEmpresasPanel.tsx` (~858)
+   - `src/components/PropostaDialog.tsx` (~860)
+   - `src/pages/elegibilidade/CriteriosAdmin.tsx` (~843)
+   - `src/components/EmpresaFilterPopover.tsx` (~828 — fonte ÚNICA dos filtros)
+   - `src/pages/AnaliseRFB.tsx` (~785)
+   - `src/pages/Dashboard.tsx` (~773)
+   - `src/pages/acoes/AcaoEmpresasFilterPopover.tsx` (~729)
+   - `src/components/TarefaDialog.tsx` (~717)
+   - `src/pages/tarefas/EquipeView.tsx` (~519)
    - `src/components/ui/sidebar.tsx` (637 — shadcn, raramente precisa ler)
+
+   Para refresh rápido: `wc -l $(git ls-files 'src/**/*.tsx' 'src/**/*.ts' | xargs) | sort -rn | head -20`.
 
 3. **Migrations em `supabase/migrations/`** — só leia a específica que interessa. Nome do arquivo já revela escopo (`20260421_elegibilidade_workflow.sql` etc.).
 
