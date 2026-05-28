@@ -9,14 +9,11 @@ import {
   Settings,
   Shield,
   LogOut,
-  ClipboardList,
-  Calendar,
   CalendarDays,
   Users,
   UsersRound,
   Scale3d,
   Filter,
-  FileStack,
   FileText,
   BookOpen,
 } from "lucide-react";
@@ -41,23 +38,25 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
+type BadgeKey = "tarefas_atrasadas" | "agenda_hoje" | "prosp_parados";
+
 type ItemDef = {
   title: string;
   url: string;
   icon: typeof LayoutDashboard;
   adminOnly?: boolean;
-  gestorOrAdmin?: boolean;                         // visível só pra gestor ou admin
-  badgeKey?: "tarefas_atrasadas" | "agenda_hoje" | "prosp_parados";
+  gestorOrAdmin?: boolean; // visível só pra gestor ou admin
+  badgeKey?: BadgeKey | BadgeKey[];
 };
 
 const mainItems: ItemDef[] = [
-  { title: "Dashboard",         url: "/",              icon: LayoutDashboard },
-  { title: "Empresas",          url: "/empresas",      icon: Building2 },
-  { title: "Ações Tributárias", url: "/acoes",         icon: Scale },
-  { title: "Elegibilidade",     url: "/elegibilidade", icon: FileCheck },
-  { title: "Prospecção",        url: "/prospeccao",    icon: Handshake, badgeKey: "prosp_parados" },
-  { title: "Análise RFB",       url: "/analise-rfb",   icon: Filter },
-  { title: "Importação",        url: "/importacao",    icon: Upload },
+  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Empresas", url: "/empresas", icon: Building2 },
+  { title: "Ações Tributárias", url: "/acoes", icon: Scale },
+  { title: "Elegibilidade", url: "/elegibilidade", icon: FileCheck },
+  { title: "Prospecção", url: "/prospeccao", icon: Handshake, badgeKey: "prosp_parados" },
+  { title: "Análise RFB", url: "/analise-rfb", icon: Filter },
+  { title: "Importação", url: "/importacao", icon: Upload },
 ];
 
 // Hub unificado: Semana + Tarefas + Agenda dentro de uma única tela com abas.
@@ -67,8 +66,8 @@ const workspaceItems: ItemDef[] = [
     title: "Meu Espaço",
     url: "/meu-espaco",
     icon: CalendarDays,
-    // bucketzão de notificações: tarefas atrasadas tem prioridade visual
-    badgeKey: "tarefas_atrasadas",
+    // combina tarefas atrasadas (alerta) + reuniões de hoje (info)
+    badgeKey: ["tarefas_atrasadas", "agenda_hoje"],
   },
   {
     title: "Equipe (Tarefas)",
@@ -80,10 +79,15 @@ const workspaceItems: ItemDef[] = [
 ];
 
 const adminItems: ItemDef[] = [
-  { title: "Administração",          url: "/admin",                  icon: Settings },
-  { title: "Templates de Proposta",  url: "/propostas/templates",    icon: FileText, gestorOrAdmin: true },
-  { title: "Usuários",               url: "/usuarios",               icon: Users, adminOnly: true },
-  { title: "Auditoria",              url: "/auditoria",              icon: Shield, gestorOrAdmin: true },
+  { title: "Administração", url: "/admin", icon: Settings },
+  {
+    title: "Templates de Proposta",
+    url: "/propostas/templates",
+    icon: FileText,
+    gestorOrAdmin: true,
+  },
+  { title: "Usuários", url: "/usuarios", icon: Users, adminOnly: true },
+  { title: "Auditoria", url: "/auditoria", icon: Shield, gestorOrAdmin: true },
 ];
 
 type CountState = {
@@ -147,10 +151,15 @@ export function AppSidebar() {
       });
     };
 
-    loadCounts();
+    void loadCounts();
     // Refresh a cada 2 min — não é realtime, mas suficiente pra CRM.
-    const id = setInterval(loadCounts, 120_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const id = setInterval(() => {
+      void loadCounts();
+    }, 120_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [user]);
 
   // Aplica visibilidade condicional por role
@@ -161,9 +170,14 @@ export function AppSidebar() {
   const visibleAdminItems = adminItems.filter(applyVisibility);
 
   const renderItem = (item: ItemDef) => {
-    const count = item.badgeKey ? counts[item.badgeKey] : 0;
+    const keys = item.badgeKey
+      ? Array.isArray(item.badgeKey)
+        ? item.badgeKey
+        : [item.badgeKey]
+      : [];
+    const count = keys.reduce((sum, k) => sum + counts[k], 0);
     const showBadge = count > 0 && !collapsed;
-    const isAlert = item.badgeKey === "tarefas_atrasadas" || item.badgeKey === "prosp_parados";
+    const isAlert = keys.some((k) => k === "tarefas_atrasadas" || k === "prosp_parados");
 
     return (
       <SidebarMenuItem key={item.title}>
@@ -185,8 +199,8 @@ export function AppSidebar() {
                 variant="secondary"
                 className={`ml-auto h-5 min-w-[20px] px-1.5 text-[10px] font-semibold ${
                   isAlert
-                    ? "bg-destructive/20 text-destructive border-destructive/30"
-                    : "bg-sidebar-primary/20 text-sidebar-primary border-sidebar-primary/30"
+                    ? "border-destructive/30 bg-destructive/20 text-destructive"
+                    : "border-sidebar-primary/30 bg-sidebar-primary/20 text-sidebar-primary"
                 }`}
                 aria-label={`${count} ${isAlert ? "pendentes" : "itens"}`}
               >
@@ -205,23 +219,23 @@ export function AppSidebar() {
         {!collapsed ? (
           <div className="flex items-center gap-2.5">
             <div
-              className="h-9 w-9 rounded-md bg-sidebar-primary/15 border border-sidebar-primary/30 flex items-center justify-center shrink-0"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-sidebar-primary/30 bg-sidebar-primary/15"
               aria-hidden="true"
             >
               <Scale3d className="h-4 w-4 text-sidebar-primary" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-heading text-[17px] font-bold tracking-tight text-sidebar-foreground leading-none">
+              <h1 className="font-heading text-[17px] font-bold leading-none tracking-tight text-sidebar-foreground">
                 Tax Trakker
               </h1>
-              <p className="text-[10px] text-sidebar-foreground/55 mt-1 uppercase tracking-widest">
+              <p className="mt-1 text-[10px] uppercase tracking-widest text-sidebar-foreground/55">
                 Freire Pignataro
               </p>
             </div>
           </div>
         ) : (
           <div
-            className="h-8 w-8 mx-auto rounded-md bg-sidebar-primary/15 border border-sidebar-primary/30 flex items-center justify-center"
+            className="mx-auto flex h-8 w-8 items-center justify-center rounded-md border border-sidebar-primary/30 bg-sidebar-primary/15"
             aria-label="Tax Trakker"
           >
             <Scale3d className="h-4 w-4 text-sidebar-primary" />
@@ -231,7 +245,7 @@ export function AppSidebar() {
 
       <SidebarContent className="scrollbar-thin">
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/40 text-[10px] uppercase tracking-widest">
+          <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/40">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -240,7 +254,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/40 text-[10px] uppercase tracking-widest">
+          <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/40">
             Meu Espaço
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -249,7 +263,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/40 text-[10px] uppercase tracking-widest">
+          <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-sidebar-foreground/40">
             Sistema
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -261,22 +275,26 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border px-4 py-3">
         {!collapsed && profile && (
           <div className="mb-2 px-1">
-            <p className="text-xs font-medium text-sidebar-foreground truncate">{profile.nome || profile.email}</p>
-            <p className="text-[10px] text-sidebar-foreground/50 truncate">{profile.email}</p>
+            <p className="truncate text-xs font-medium text-sidebar-foreground">
+              {profile.nome || profile.email}
+            </p>
+            <p className="truncate text-[10px] text-sidebar-foreground/50">{profile.email}</p>
           </div>
         )}
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/60"
-          onClick={signOut}
+          className="w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          onClick={() => {
+            void signOut();
+          }}
           aria-label="Sair da conta"
         >
           <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
           {!collapsed && <span>Sair</span>}
         </Button>
         {!collapsed && (
-          <p className="text-[10px] text-sidebar-foreground/30 mt-2 text-center">
+          <p className="mt-2 text-center text-[10px] text-sidebar-foreground/30">
             © 2026 Freire Pignataro
           </p>
         )}
