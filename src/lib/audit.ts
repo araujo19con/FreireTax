@@ -6,14 +6,16 @@ export async function logAudit(params: {
   registro_id?: string;
   detalhes?: Record<string, unknown>;
 }) {
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return;
 
-  await supabase.from("audit_logs").insert({
-    user_id: user.id,
-    tabela: params.tabela,
-    acao: params.acao,
-    registro_id: params.registro_id ?? null,
-    detalhes: params.detalhes ?? {},
-  } as any);
+  // RPC com SECURITY DEFINER — user_id injetado pelo servidor; clientes não forjam.
+  await supabase.rpc("log_audit_secure" as any, {
+    p_tabela: params.tabela,
+    p_acao: params.acao,
+    p_registro_id: params.registro_id ?? null,
+    p_detalhes: params.detalhes ?? {},
+  });
 }
