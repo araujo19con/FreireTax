@@ -22,8 +22,6 @@ import {
   Gavel,
   Calendar,
   MapPin,
-  Phone,
-  Mail,
   Users,
   Folder,
   History,
@@ -95,6 +93,7 @@ interface TarefaRow {
   status: string | null;
   prazo: string | null;
   prioridade: string | null;
+  created_at: string;
 }
 interface ReuniaoRow {
   id: string;
@@ -108,6 +107,12 @@ interface AuditRow {
   created_at: string;
   detalhes: unknown;
 }
+interface ProspeccaoTimelineRow {
+  id: string;
+  status_prospeccao: string | null;
+  created_at: string;
+  acoes_tributarias: { nome: string } | null;
+}
 interface PastaLinkRow {
   pasta_id: string;
   pastas_empresas: { nome: string } | null;
@@ -119,14 +124,22 @@ function useEmpresaRelations(empresaId: string | undefined) {
     enabled: !!empresaId,
     queryFn: async () => {
       if (!empresaId)
-        return { eleg: [], tarefas: [], reunioes: [], pastas: [], audit: [] } as {
+        return {
+          eleg: [],
+          tarefas: [],
+          reunioes: [],
+          pastas: [],
+          audit: [],
+          prospeccoes: [],
+        } as {
           eleg: ElegRow[];
           tarefas: TarefaRow[];
           reunioes: ReuniaoRow[];
           pastas: string[];
           audit: AuditRow[];
+          prospeccoes: ProspeccaoTimelineRow[];
         };
-      const [elegRes, tarRes, reunRes, pastasRes, auditRes] = await Promise.all([
+      const [elegRes, tarRes, reunRes, pastasRes, auditRes, prospRes] = await Promise.all([
         supabase
           .from("elegibilidade")
           .select(
@@ -135,7 +148,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
           .eq("empresa_id", empresaId),
         supabase
           .from("tarefas")
-          .select("id, titulo, status, prazo, prioridade")
+          .select("id, titulo, status, prazo, prioridade, created_at")
           .eq("empresa_id", empresaId)
           .order("created_at", { ascending: false })
           .limit(20),
@@ -156,6 +169,12 @@ function useEmpresaRelations(empresaId: string | undefined) {
           .eq("registro_id", empresaId)
           .order("created_at", { ascending: false })
           .limit(30),
+        supabase
+          .from("prospeccoes")
+          .select("id, status_prospeccao, created_at, acoes_tributarias(nome)")
+          .eq("empresa_id", empresaId)
+          .order("created_at", { ascending: false })
+          .limit(20),
       ]);
       const pastaLinks = (pastasRes.data || []) as unknown as PastaLinkRow[];
       return {
@@ -164,6 +183,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
         reunioes: (reunRes.data || []) as unknown as ReuniaoRow[],
         pastas: pastaLinks.map((r) => r.pastas_empresas?.nome).filter((v): v is string => !!v),
         audit: (auditRes.data || []) as unknown as AuditRow[],
+        prospeccoes: (prospRes.data || []) as unknown as ProspeccaoTimelineRow[],
       };
     },
   });
@@ -236,8 +256,8 @@ export function EmpresaDetailSheet({
       }
 
       // Invalida queries pra refletir
-      qc.invalidateQueries({ queryKey: ["empresas"] });
-      qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+      void qc.invalidateQueries({ queryKey: ["empresas"] });
+      void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
     } catch (e) {
       toast.error("Erro ao vincular CNPJ: " + ((e as Error).message ?? "falha"));
     }
@@ -252,7 +272,7 @@ export function EmpresaDetailSheet({
   };
 
   // Reseta aba para "overview" quando a empresa muda
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (empresa) setTab("overview");
   }, [empresa?.id]);
@@ -372,7 +392,7 @@ export function EmpresaDetailSheet({
         </SheetHeader>
 
         <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="mx-6 mt-3 grid h-9 grid-cols-7">
+          <TabsList className="mx-6 mt-3 grid h-9 grid-cols-8">
             <TabsTrigger value="overview" className="text-xs">
               Overview
             </TabsTrigger>
@@ -393,6 +413,9 @@ export function EmpresaDetailSheet({
             </TabsTrigger>
             <TabsTrigger value="audit" className="text-xs">
               Histórico
+            </TabsTrigger>
+            <TabsTrigger value="timeline" className="text-xs">
+              Timeline
             </TabsTrigger>
           </TabsList>
 
@@ -858,6 +881,134 @@ export function EmpresaDetailSheet({
                   </div>
                 )}
               </TabsContent>
+
+              {/* TIMELINE */}
+              <TabsContent value="timeline" className="mt-0 space-y-3">
+                {loadingRel ? (
+                  <Skeleton className="h-20 w-full" />
+                ) : (
+                  (() => {
+                    type TLKind = "tarefa" | "reuniao" | "audit" | "prospeccao";
+                    interface TLEvent {
+                      id: string;
+                      kind: TLKind;
+                      date: string;
+                      titulo: string;
+                      subtitulo?: string;
+                      meta?: string;
+                    }
+                    const events: TLEvent[] = [
+                      ...(relations?.tarefas ?? []).map((t) => ({
+                        id: `t-${t.id}`,
+                        kind: "tarefa" as TLKind,
+                        date: t.created_at,
+                        titulo: t.titulo,
+                        subtitulo: t.prazo ? `Prazo: ${formatDate(t.prazo)}` : undefined,
+                        meta: t.status ?? undefined,
+                      })),
+                      ...(relations?.reunioes ?? []).map((r) => ({
+                        id: `r-${r.id}`,
+                        kind: "reuniao" as TLKind,
+                        date: r.data_inicio,
+                        titulo: r.titulo ?? "Reunião",
+                        meta: r.status ?? undefined,
+                      })),
+                      ...(relations?.prospeccoes ?? []).map((p) => ({
+                        id: `p-${p.id}`,
+                        kind: "prospeccao" as TLKind,
+                        date: p.created_at,
+                        titulo: `Prospecção: ${p.acoes_tributarias?.nome ?? "Ação"}`,
+                        meta: p.status_prospeccao ?? undefined,
+                      })),
+                      ...(relations?.audit ?? []).map((a) => ({
+                        id: `a-${a.id}`,
+                        kind: "audit" as TLKind,
+                        date: a.created_at,
+                        titulo: a.acao,
+                        subtitulo:
+                          a.detalhes &&
+                          typeof a.detalhes === "object" &&
+                          Object.keys(a.detalhes).length > 0
+                            ? JSON.stringify(a.detalhes)
+                            : undefined,
+                      })),
+                    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                    const KIND_ICON: Record<TLKind, React.ReactNode> = {
+                      tarefa: <ListTodo className="h-3.5 w-3.5" />,
+                      reuniao: <Calendar className="h-3.5 w-3.5" />,
+                      prospeccao: <Gavel className="h-3.5 w-3.5" />,
+                      audit: <History className="h-3.5 w-3.5" />,
+                    };
+                    const KIND_COLOR: Record<TLKind, string> = {
+                      tarefa: "bg-blue-500",
+                      reuniao: "bg-green-500",
+                      prospeccao: "bg-purple-500",
+                      audit: "bg-muted-foreground",
+                    };
+                    const KIND_LABEL: Record<TLKind, string> = {
+                      tarefa: "Tarefa",
+                      reuniao: "Reunião",
+                      prospeccao: "Prospecção",
+                      audit: "Histórico",
+                    };
+
+                    if (!events.length) {
+                      return (
+                        <Card className="p-8 text-center text-sm text-muted-foreground">
+                          <History className="mx-auto mb-2 h-6 w-6 opacity-50" />
+                          Nenhum evento registrado para esta empresa.
+                        </Card>
+                      );
+                    }
+
+                    return (
+                      <div className="relative pl-5">
+                        <div
+                          className="absolute bottom-1 left-1.5 top-1 w-px bg-border"
+                          aria-hidden
+                        />
+                        <ul className="space-y-3">
+                          {events.map((ev) => (
+                            <li key={ev.id} className="relative">
+                              <div
+                                className={`absolute -left-[17px] top-1 flex h-6 w-6 items-center justify-center rounded-full text-white ring-2 ring-background ${KIND_COLOR[ev.kind]}`}
+                              >
+                                {KIND_ICON[ev.kind]}
+                              </div>
+                              <Card className="p-2.5 text-xs">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                                        {KIND_LABEL[ev.kind]}
+                                      </span>
+                                      {ev.meta && (
+                                        <Badge variant="outline" className="text-[9px] capitalize">
+                                          {ev.meta.replace("_", " ")}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="mt-0.5 font-medium leading-tight">{ev.titulo}</p>
+                                    {ev.subtitulo && (
+                                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                                        {ev.subtitulo}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                                    {formatRelativeDate(ev.date)}
+                                  </span>
+                                </div>
+                              </Card>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })()
+                )}
+              </TabsContent>
             </div>
           </ScrollArea>
         </Tabs>
@@ -867,7 +1018,9 @@ export function EmpresaDetailSheet({
         onOpenChange={setBuscarNomeOpen}
         termoInicial={empresa.razao_social || empresa.nome || ""}
         ufInicial={empresa.uf || ""}
-        onSelect={onSelectCandidatoNome}
+        onSelect={(c) => {
+          void onSelectCandidatoNome(c);
+        }}
       />
     </Sheet>
   );
