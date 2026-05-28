@@ -45,28 +45,14 @@ await supabase
 
 `PropostaDialog.tsx:649` já usa `sanitizeProposalHTML(renderVariaveis(...))` com DOMPurify. `src/lib/proposta.ts` também exporta `sanitizeProposalHtml`. Strings interpoladas são HTML-escaped antes de render. **Não requer ação.**
 
-### 1.2 Audit log via SECURITY DEFINER function
+### 1.2 ~~Audit log via SECURITY DEFINER~~ — ✅ Feito (2026-05-28)
 
-**Risco:** qualquer usuário autenticado pode escrever entradas forjadas diretamente em `audit_logs`.
-**Fix:**
+Migration `20260528000000_audit_log_secure_definer.sql` cria `log_audit_secure()` SECURITY DEFINER, revoga INSERT direto. `src/lib/audit.ts` usa `supabase.rpc("log_audit_secure", ...)`.
+⚠️ Aplicar migration no Supabase antes do próximo deploy: `supabase db push` ou SQL Editor.
 
-1. Criar função Postgres `log_audit_secure(tabela, acao, registro_id, detalhes)` com `SECURITY DEFINER` que injeta `auth.uid()` no servidor.
-2. Revogar INSERT direto em `audit_logs` para `authenticated`.
-3. Substituir `supabase.from("audit_logs").insert(...)` por `supabase.rpc("log_audit_secure", ...)` em `src/lib/audit.ts`.
+### 1.3 ~~`validateFormula` — eliminar `new Function()`~~ — ✅ Feito (2026-05-28)
 
-Complexidade: **média** — requer migration + refatoração do helper `audit.ts`. ~2h.
-
-### 1.3 `validateFormula` — eliminar `new Function()`
-
-**Risco:** fórmulas salvas por admin comprometido executam JS arbitrário em todos os qualificadores.
-**Fix:** substituir por `expr-eval` (parser de expressões seguro, ~5kb):
-
-```ts
-import { Parser } from "expr-eval";
-const result = Parser.evaluate(formula, answers);
-```
-
-Complexidade: **baixa** — `bun add expr-eval`. ~1h.
+`src/lib/criterios.ts` e `src/hooks/useQualificacao.ts` agora usam `expr-eval` Parser.
 
 ### 1.4 ~~Null-check da anon key~~ — ✅ Feito (2026-05-28)
 
@@ -278,8 +264,8 @@ P0 (imediato, < 1h cada):
   ⬜ extractErrorMessage → lib/errors.ts
 
 P1 (próximo sprint, segurança):
-  ⬜ audit_log SECURITY DEFINER
-  ⬜ validateFormula → expr-eval
+  ✅ audit_log SECURITY DEFINER (2026-05-28)
+  ✅ validateFormula → expr-eval (2026-05-28)
   ⬜ criar-usuario atomicidade
 
 P2 (qualidade, faz a base ficar sólida):
