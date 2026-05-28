@@ -279,8 +279,8 @@ P3 (UX visível):
 
 P4 (features estratégicas):
   ✅ Tela /relatorios básica (funil + contratos ganhos + XLSX) (2026-05-28)
-  ⬜ Módulo financeiro / honorários
-  ⬜ Prazos processuais + alertas
+  ✅ Módulo financeiro / honorários (tabela + CRUD + KPIs + XLSX) (2026-05-28)
+  ✅ Prazos processuais + alertas (edge function verificar-prazos + UI) (2026-05-28)
 ```
 
 ---
