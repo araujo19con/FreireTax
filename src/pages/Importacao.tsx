@@ -50,8 +50,16 @@ interface RfbFields {
   data_abertura: string | null; // ISO yyyy-mm-dd
   email_receita: string | null;
   telefone_receita: string | null;
-  endereco_texto: string | null; // composto, vai pra metadados (endereco_* tem ~7 colunas separadas)
+  endereco_texto: string | null; // composto (vai pra metadados quando não houver granulares)
   receita_atualizada_em: string | null; // ISO timestamp
+  // Endereço granular (DRIVA fornece estruturado; export do sistema não)
+  logradouro: string | null;
+  numero_endereco: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cep: string | null;
+  // Extras DRIVA — vão para metadados (não há coluna específica no DB)
+  extras: Record<string, string>;
 }
 
 /** Dados por-ação (elegibilidade) — só aplicados quando há acao_id selecionado. */
@@ -258,6 +266,61 @@ function parsePorte(raw: unknown): PorteRfb | null {
   return null;
 }
 
+/** UF nome completo → sigla. DRIVA exporta "PARAIBA"; sistema usa sigla. */
+const UF_NOME_TO_SIGLA: Record<string, string> = {
+  ACRE: "AC",
+  ALAGOAS: "AL",
+  AMAPA: "AP",
+  AMAZONAS: "AM",
+  BAHIA: "BA",
+  CEARA: "CE",
+  "DISTRITO FEDERAL": "DF",
+  "ESPIRITO SANTO": "ES",
+  GOIAS: "GO",
+  MARANHAO: "MA",
+  "MATO GROSSO": "MT",
+  "MATO GROSSO DO SUL": "MS",
+  "MINAS GERAIS": "MG",
+  PARA: "PA",
+  PARAIBA: "PB",
+  PARANA: "PR",
+  PERNAMBUCO: "PE",
+  PIAUI: "PI",
+  "RIO DE JANEIRO": "RJ",
+  "RIO GRANDE DO NORTE": "RN",
+  "RIO GRANDE DO SUL": "RS",
+  RONDONIA: "RO",
+  RORAIMA: "RR",
+  "SANTA CATARINA": "SC",
+  "SAO PAULO": "SP",
+  SERGIPE: "SE",
+  TOCANTINS: "TO",
+};
+
+/** Normaliza UF: aceita sigla "PB" OU nome completo "PARAIBA". Retorna sigla. */
+function parseUF(raw: unknown): string | null {
+  const s = cellStr(raw).trim().toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!s) return null;
+  if (s.length === 2) return s; // já é sigla
+  return UF_NOME_TO_SIGLA[s] ?? null;
+}
+
+/** "83 34344000, 83 32064000" → "83 34344000". Lista vazia → null. */
+function firstItem(raw: unknown, separator: RegExp = /[,;|]/): string | null {
+  const s = cellStr(raw).trim();
+  if (!s) return null;
+  const first = s.split(separator)[0].trim();
+  return first || null;
+}
+
+/** "155501 - CRIACAO DE FRANGOS" → "CRIACAO DE FRANGOS". Sem código → retorna original. */
+function stripCnaeCode(raw: unknown): string | null {
+  const s = cellStr(raw).trim();
+  if (!s) return null;
+  const m = s.match(/^\d[\d.\-/]*\s*[-–—]\s*(.+)$/);
+  return m ? m[1].trim() : s;
+}
+
 /** Slugify igual ao do export (mantém roundtrip filename → acao). */
 function slugify(s: string): string {
   return s
@@ -370,17 +433,40 @@ export default function Importacao() {
         const emailCol = findColumnExact(headers, ["e-mail", "email"]);
         const telCol = findColumnExact(headers, ["telefone", "fone", "celular", "contato"]);
 
-        // === Novas colunas (formato export "Empresas por Ação") ===
+        // === Novas colunas (formato export "Empresas por Ação" + DRIVA) ===
         const razaoCol = findColumn(headers, ["razao social", "razao_social"]);
         const fantasiaCol = findColumn(headers, ["nome fantasia", "fantasia"]);
         const situacaoCol = findColumn(headers, ["situacao cadastral", "situacao"]);
         const porteCol = findColumnExact(headers, ["porte"]);
-        const simplesCol = findColumn(headers, ["optante simples", "simples"]);
-        const meiCol = findColumnExact(headers, ["mei"]);
+        const simplesCol = findColumn(headers, [
+          "optante simples",
+          "opcao pelo simples",
+          "simples",
+        ]);
+        // "MEI" exato OU "Opção pelo MEI" / "opcao mei" — DRIVA usa o formato longo
+        const meiCol = (() => {
+          const exact = findColumnExact(headers, ["mei"]);
+          if (exact !== -1) return exact;
+          return findColumn(headers, ["pelo mei", "opcao mei"]);
+        })();
         const ufCol = findColumnExact(headers, ["uf"]);
         const municipioCol = findColumn(headers, ["municipio", "cidade"]);
-        const cnaeCol = findColumn(headers, ["cnae principal", "cnae_principal"]);
-        const cnaeDescCol = findColumn(headers, ["cnae descricao", "cnae_desc"]);
+        const cnaeCol = findColumn(headers, [
+          "cnae principal subclasse",
+          "cnae principal",
+          "cnae_principal",
+        ]);
+        // CNAE descrição: DRIVA tem múltiplas — prefere "subclasse" (mais granular).
+        // Export do sistema usa "cnae descricao".
+        const cnaeDescCol = (() => {
+          const subcl = findColumn(headers, [
+            "desc. subclasse",
+            "desc subclasse",
+            "descricao subclasse",
+          ]);
+          if (subcl !== -1) return subcl;
+          return findColumn(headers, ["cnae descricao", "cnae_desc", "cnae desc"]);
+        })();
         const naturezaCol = findColumn(headers, ["natureza juridica", "natureza_juridica"]);
         const capitalCol = findColumn(headers, ["capital social", "capital_social"]);
         const aberturaCol = findColumn(headers, ["data de abertura", "data_abertura", "abertura"]);
@@ -389,10 +475,46 @@ export default function Importacao() {
           "email (rfb)",
           "email_rfb",
           "e-mail rfb",
+          "emails concatenados", // DRIVA
         ]);
-        const telRfbCol = findColumn(headers, ["telefone (rfb)", "telefone_rfb", "telefone rfb"]);
+        const telRfbCol = findColumn(headers, [
+          "telefone (rfb)",
+          "telefone_rfb",
+          "telefone rfb",
+          "telefones concatenados", // DRIVA
+        ]);
         const enderecoCol = findColumnExact(headers, ["endereco"]);
         const receitaAtCol = findColumn(headers, ["receita atualizada", "receita_atualizada"]);
+
+        // === Endereço granular (DRIVA fornece estruturado) ===
+        const logradouroCol = findColumnExact(headers, ["logradouro"]);
+        const numeroCol = findColumnExact(headers, ["numero", "número"]);
+        const complementoCol = findColumnExact(headers, ["complemento"]);
+        const bairroCol = findColumnExact(headers, ["bairro"]);
+        const cepCol = findColumnExact(headers, ["cep"]);
+
+        // === Extras DRIVA → metadados ===
+        const extrasMap: Array<[string, number]> = [
+          ["Segmento", findColumnExact(headers, ["segmento"])],
+          ["Ramo de Atividade", findColumn(headers, ["ramo de atividade", "ramo"])],
+          ["Sócios", findColumnExact(headers, ["socios"])],
+          ["Matriz", findColumnExact(headers, ["matriz"])],
+          ["Quantidade de Filiais", findColumn(headers, ["quantidade de filiais", "qtd filiais"])],
+          ["Raiz CNPJ", findColumn(headers, ["raiz cnpj"])],
+          ["Público ou Privada", findColumn(headers, ["publico ou privada", "publico"])],
+          ["Macrorregião", findColumn(headers, ["macrorregiao"])],
+          ["Mesorregião", findColumn(headers, ["mesorregiao"])],
+          ["Microrregião", findColumn(headers, ["microrregiao"])],
+          ["Latitude", findColumnExact(headers, ["latitude"])],
+          ["Longitude", findColumnExact(headers, ["longitude"])],
+          ["Sites", findColumn(headers, ["sites concatenados", "sites"])],
+          ["LinkedIn", findColumn(headers, ["linkedin"])],
+          ["Facebook", findColumn(headers, ["facebook"])],
+          ["Instagram", findColumn(headers, ["instagram"])],
+          ["Frota Caminhão", findColumn(headers, ["frota de caminhao", "frota caminhao"])],
+          ["Frota Ônibus", findColumn(headers, ["frota de onibus", "frota onibus"])],
+          ["Qualificação Responsável", findColumn(headers, ["qualificacao responsavel"])],
+        ];
 
         // Per-ação
         const statusAcaoCol = findColumn(headers, ["status na acao", "status_na_acao"]);
@@ -464,6 +586,14 @@ export default function Importacao() {
           const email = emailCol !== -1 ? cellStr(row[emailCol]).trim() || null : null;
           const telefone = telCol !== -1 ? cellStr(row[telCol]).trim() || null : null;
 
+          // Coleta extras DRIVA pra metadados
+          const extras: Record<string, string> = {};
+          for (const [label, idx] of extrasMap) {
+            if (idx === -1) continue;
+            const v = cellStr(row[idx]).trim();
+            if (v) extras[label] = v;
+          }
+
           const rfb: RfbFields = {
             razao_social: razaoCol !== -1 ? cellStr(row[razaoCol]).trim() || null : null,
             nome_fantasia: fantasiaCol !== -1 ? cellStr(row[fantasiaCol]).trim() || null : null,
@@ -471,19 +601,37 @@ export default function Importacao() {
             porte: porteCol !== -1 ? parsePorte(row[porteCol]) : null,
             opcao_simples: simplesCol !== -1 ? parseBool(row[simplesCol]) : null,
             opcao_mei: meiCol !== -1 ? parseBool(row[meiCol]) : null,
-            uf: ufCol !== -1 ? cellStr(row[ufCol]).trim().toUpperCase() || null : null,
+            // UF aceita sigla OU nome completo (DRIVA usa "PARAIBA")
+            uf: ufCol !== -1 ? parseUF(row[ufCol]) : null,
             municipio: municipioCol !== -1 ? cellStr(row[municipioCol]).trim() || null : null,
             cnae_principal: cnaeCol !== -1 ? cellStr(row[cnaeCol]).trim() || null : null,
-            cnae_principal_desc:
-              cnaeDescCol !== -1 ? cellStr(row[cnaeDescCol]).trim() || null : null,
+            // DRIVA inclui código no texto ("155501 - DESCRIÇÃO") — striparmos
+            cnae_principal_desc: cnaeDescCol !== -1 ? stripCnaeCode(row[cnaeDescCol]) : null,
             natureza_juridica: naturezaCol !== -1 ? cellStr(row[naturezaCol]).trim() || null : null,
             capital_social: capitalCol !== -1 ? parseNumber(row[capitalCol]) : null,
             data_abertura: aberturaCol !== -1 ? parseDateBR(row[aberturaCol]) : null,
-            email_receita: emailRfbCol !== -1 ? cellStr(row[emailRfbCol]).trim() || null : null,
-            telefone_receita: telRfbCol !== -1 ? cellStr(row[telRfbCol]).trim() || null : null,
+            // DRIVA: Telefones/Emails Concatenados vem "x, y, z" → pega primeiro
+            email_receita: emailRfbCol !== -1 ? firstItem(row[emailRfbCol]) : null,
+            telefone_receita: telRfbCol !== -1 ? firstItem(row[telRfbCol]) : null,
             endereco_texto: enderecoCol !== -1 ? cellStr(row[enderecoCol]).trim() || null : null,
             receita_atualizada_em: receitaAtCol !== -1 ? parseTimestamp(row[receitaAtCol]) : null,
+            // Endereço granular (DRIVA fornece estruturado)
+            logradouro: logradouroCol !== -1 ? cellStr(row[logradouroCol]).trim() || null : null,
+            numero_endereco: numeroCol !== -1 ? cellStr(row[numeroCol]).trim() || null : null,
+            complemento: complementoCol !== -1 ? cellStr(row[complementoCol]).trim() || null : null,
+            bairro: bairroCol !== -1 ? cellStr(row[bairroCol]).trim() || null : null,
+            cep: cepCol !== -1 ? cellStr(row[cepCol]).trim().replace(/\D/g, "") || null : null,
+            extras,
           };
+          // Quando há múltiplos contatos no DRIVA, preserva a lista completa em extras
+          if (telRfbCol !== -1) {
+            const fullTel = cellStr(row[telRfbCol]).trim();
+            if (fullTel && fullTel !== rfb.telefone_receita) extras["Telefones (todos)"] = fullTel;
+          }
+          if (emailRfbCol !== -1) {
+            const fullMail = cellStr(row[emailRfbCol]).trim();
+            if (fullMail && fullMail !== rfb.email_receita) extras["Emails (todos)"] = fullMail;
+          }
 
           const statusAcaoTxt =
             statusAcaoCol !== -1 ? cellStr(row[statusAcaoCol]).trim() || null : null;
@@ -617,7 +765,26 @@ export default function Importacao() {
     if (rfb.email_receita) patch.email_receita = rfb.email_receita;
     if (rfb.telefone_receita) patch.telefone_receita = rfb.telefone_receita;
     if (rfb.receita_atualizada_em) patch.receita_atualizada_em = rfb.receita_atualizada_em;
+    // Endereço granular (DRIVA fornece estruturado, BrasilAPI também)
+    if (rfb.logradouro) patch.logradouro = rfb.logradouro;
+    if (rfb.numero_endereco) patch.numero_endereco = rfb.numero_endereco;
+    if (rfb.complemento) patch.complemento = rfb.complemento;
+    if (rfb.bairro) patch.bairro = rfb.bairro;
+    if (rfb.cep) patch.cep = rfb.cep;
     return patch;
+  };
+
+  /** Monta a chave metadados combinando faixas + endereço composto + extras DRIVA. */
+  const buildMetaPatch = (r: ImportRow): Record<string, string> => {
+    const meta: Record<string, string> = {};
+    if (r.faixa_funcionarios_texto) meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
+    if (r.faixa_faturamento_texto) meta["Faixa de Faturamento"] = r.faixa_faturamento_texto;
+    // Endereço composto vai pra metadados só se não houver granular (DRIVA tem ambos)
+    if (r.rfb.endereco_texto && !r.rfb.logradouro) {
+      meta["Endereço (planilha)"] = r.rfb.endereco_texto;
+    }
+    Object.assign(meta, r.rfb.extras);
+    return meta;
   };
 
   const handleImport = async () => {
@@ -669,15 +836,9 @@ export default function Importacao() {
               base.telefone_receita = r.telefone;
               base.telefone_manual = true;
             }
-            // Campos RFB da planilha (formato export "Empresas por Ação")
+            // Campos RFB da planilha (formato export "Empresas por Ação" + DRIVA)
             Object.assign(base, buildRfbPatch(r.rfb));
-            const meta: Record<string, string> = {};
-            if (r.faixa_funcionarios_texto)
-              meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
-            if (r.faixa_faturamento_texto) meta["Faixa de Faturamento"] = r.faixa_faturamento_texto;
-            // Endereço completo da planilha vai pra metadados (estrutura granular do
-            // endereço só vem da BrasilAPI, e re-parsear é frágil)
-            if (r.rfb.endereco_texto) meta["Endereço (planilha)"] = r.rfb.endereco_texto;
+            const meta = buildMetaPatch(r);
             if (Object.keys(meta).length > 0) base.metadados = meta;
           }
           return base;
@@ -775,13 +936,8 @@ export default function Importacao() {
                 if (planilhaMaisFresca) {
                   Object.assign(patchFull, buildRfbPatch(r.rfb));
                 }
-                // Faixas como metadados (preserva formatação original)
-                const meta: Record<string, string> = {};
-                if (r.faixa_funcionarios_texto)
-                  meta["Faixa de Funcionários"] = r.faixa_funcionarios_texto;
-                if (r.faixa_faturamento_texto)
-                  meta["Faixa de Faturamento"] = r.faixa_faturamento_texto;
-                if (r.rfb.endereco_texto) meta["Endereço (planilha)"] = r.rfb.endereco_texto;
+                // Faixas + endereço composto + extras DRIVA como metadados
+                const meta = buildMetaPatch(r);
                 if (Object.keys(meta).length > 0) patchFull.metadados = meta;
               }
               if (Object.keys(patchFull).length === 0) return;
@@ -1371,6 +1527,14 @@ export default function Importacao() {
             <li>
               • <strong>Formato &ldquo;Empresas por Ação&rdquo; (export do sistema)</strong> é
               reconhecido por completo — as 26 colunas são lidas e aplicadas como enriquecimento.
+            </li>
+            <li>
+              • <strong>Formato DRIVA</strong> (51 colunas) também é reconhecido: campos RFB comuns
+              são mapeados direto; endereço estruturado (Logradouro / Número / Bairro / CEP) popula
+              os campos granulares; UF aceita nome completo ou sigla (&ldquo;PARAIBA&rdquo; → PB);
+              telefones/emails concatenados pegam o primeiro item (lista completa fica em
+              metadados); extras (Segmento, Ramo, Sócios, Sites, regiões, Lat/Lng, redes sociais,
+              frotas) viram <strong>campos personalizados</strong>.
             </li>
             <li>
               • Colunas comerciais opcionais: <strong>Nome</strong>, <strong>Status</strong> (CRM),{" "}
