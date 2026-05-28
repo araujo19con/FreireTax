@@ -10,8 +10,15 @@ import { useAuth } from "@/hooks/useAuth";
 // import { validateCNPJ } from "@/lib/cnpj"; // mod 11 muito estrito pro import — dados legados frequentemente falham
 import { toast } from "sonner";
 import {
-  Upload, FileSpreadsheet, CheckCircle2, XCircle, AlertTriangle,
-  Loader2, ArrowRight, RotateCcw, HelpCircle,
+  Upload,
+  FileSpreadsheet,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Loader2,
+  ArrowRight,
+  RotateCcw,
+  HelpCircle,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -32,10 +39,15 @@ interface ProspRow {
   simRaw: string;
   // processed
   cnpj: string | null;
-  cnpjErro: string | null;   // motivo se CNPJ inválido
-  statusProspeccao: string | null;  // null = sem status -> não cria prospecção, fica como "Aguardando"
+  cnpjErro: string | null; // motivo se CNPJ inválido
+  statusProspeccao: string | null; // null = sem status -> não cria prospecção, fica como "Aguardando"
   numeroProcesso: string | null;
   valorCausa: number | null;
+  // enriquecimento empresa (func/fat da planilha)
+  quantidadeFuncionarios: number | null;
+  faturamentoAnual: number | null;
+  faixaFuncRaw: string;
+  faixaFatRaw: string;
   // resolution
   empresaId: string | null;
   empresaNome: string;
@@ -49,7 +61,18 @@ interface ProspRow {
 // ---------------------------------------------------------------------------
 
 function normalizeStr(s: string) {
-  return String(s || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+function cellStr(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return "";
 }
 
 /**
@@ -65,8 +88,8 @@ function normalizeNameKey(s: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // remove diacríticos
     .toLowerCase()
-    .replace(/&/g, " e ")             // "&" vira " e "
-    .replace(/[^a-z0-9]+/g, " ")      // qualquer não-alfanum vira espaço
+    .replace(/&/g, " e ") // "&" vira " e "
+    .replace(/[^a-z0-9]+/g, " ") // qualquer não-alfanum vira espaço
     .trim()
     .replace(/\s+(ltda|s\/?a|s\.?a\.?|eireli|me|epp|mei)\s*$/i, "") // sufixo final
     .replace(/\s+/g, " ")
@@ -79,11 +102,11 @@ function normalizeNameKey(s: string): string {
  * - Retorna { cnpj, erro } onde cnpj é null se inválido
  */
 function resolveCNPJ(raw: unknown): { cnpj: string | null; erro: string | null } {
-  if (raw === null || raw === undefined || String(raw).trim() === "") {
+  if (raw === null || raw === undefined || cellStr(raw).trim() === "") {
     return { cnpj: null, erro: null };
   }
 
-  let digits = String(raw).replace(/\D/g, "");
+  let digits = cellStr(raw).replace(/\D/g, "");
 
   // Excel armazena CNPJ como número → perde zeros à esquerda
   if (digits.length === 13) digits = "0" + digits;
@@ -110,7 +133,11 @@ function formatCNPJ(digits: string) {
 
 function parseValor(raw: unknown): number | null {
   if (!raw) return null;
-  const n = parseFloat(String(raw).replace(/[^\d,.-]/g, "").replace(",", "."));
+  const n = parseFloat(
+    cellStr(raw)
+      .replace(/[^\d,.-]/g, "")
+      .replace(",", ".")
+  );
   return isNaN(n) ? null : n;
 }
 
@@ -124,23 +151,25 @@ function parseProcesso(raw: string): string | null {
 // "CONTATO RD" / "CONTATO" = só indica facilidade de acesso ao contato, não que houve contato
 // (mapeiam pra null → fica como "Aguardando", sem prospecção criada)
 const SITUACAO_MAP: Record<string, string | null> = {
-  "CONTATO RD":        null,
-  "CONTATO":           null,
-  "PROTOCOLADO":       "Contato feito",
-  "CONTRATO ENVIADO":  "Proposta enviada",
-  "PROPOSTA ENVIADA":  "Proposta enviada",
-  "NEGOCIACAO":        "Em negociação",
-  "NEGOCIAÇÃO":        "Em negociação",
+  "CONTATO RD": null,
+  CONTATO: null,
+  PROTOCOLADO: "Contato feito",
+  "CONTRATO ENVIADO": "Proposta enviada",
+  "PROPOSTA ENVIADA": "Proposta enviada",
+  NEGOCIACAO: "Em negociação",
+  NEGOCIAÇÃO: "Em negociação",
   "CONTRATO ASSINADO": "Contrato assinado",
-  "SERVICO INICIADO":  "Serviço iniciado",
-  "SERVIÇO INICIADO":  "Serviço iniciado",
-  "PERDIDO":           "Perdido",
+  "SERVICO INICIADO": "Serviço iniciado",
+  "SERVIÇO INICIADO": "Serviço iniciado",
+  PERDIDO: "Perdido",
 };
 
 // Retorna null se não existe status válido — nesse caso a prospecção NÃO é criada
 // e a empresa fica como "Aguardando" no painel.
 function mapSituacao(raw: string): string | null {
-  const s = String(raw || "").trim().toUpperCase();
+  const s = String(raw || "")
+    .trim()
+    .toUpperCase();
   if (!s) return null;
   if (s in SITUACAO_MAP) return SITUACAO_MAP[s];
   for (const [key, val] of Object.entries(SITUACAO_MAP)) {
@@ -176,7 +205,13 @@ interface Props {
 // ---------------------------------------------------------------------------
 
 export function ImportacaoProspeccaoDialog({
-  acaoId, acaoNome, open, onClose, onImported, empresasMap, elegibilidades,
+  acaoId,
+  acaoNome,
+  open,
+  onClose,
+  onImported,
+  empresasMap,
+  elegibilidades,
 }: Props) {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -197,7 +232,7 @@ export function ImportacaoProspeccaoDialog({
 
   // Set of empresa_ids already linked to this ação
   const jaImportadas = new Set(
-    elegibilidades.filter((e) => e.acao_id === acaoId).map((e) => e.empresa_id),
+    elegibilidades.filter((e) => e.acao_id === acaoId).map((e) => e.empresa_id)
   );
 
   // -------------------------------------------------------------------------
@@ -208,11 +243,14 @@ export function ImportacaoProspeccaoDialog({
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
-      const data = new Uint8Array(e.target!.result as ArrayBuffer);
+      const data = new Uint8Array(e.target.result as ArrayBuffer);
       const wb = XLSX.read(data, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
-      if (raw.length < 1) { toast.error("Planilha vazia"); return; }
+      const raw: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (raw.length < 1) {
+        toast.error("Planilha vazia");
+        return;
+      }
 
       // Detecta formato:
       // Formato A (com cabeçalho): primeira linha tem labels como "EMPRESA", "CNPJ", "SITUAÇÃO"
@@ -225,29 +263,34 @@ export function ImportacaoProspeccaoDialog({
       let startRow: number;
       let iSituacao: number, iNome: number, iCnpj: number, iProcesso: number;
       let iValor: number, iUF: number, iObs: number, iSim: number;
+      let iFuncCol: number, iFatCol: number;
 
       if (hasHeaderRow) {
         // Formato A
-        startRow  = 1;
+        startRow = 1;
         iSituacao = findColIdx(headers, ["situacao", "situação", "status"]);
-        iNome     = iNomeLabel;
-        iCnpj     = iCnpjLabel;
+        iNome = iNomeLabel;
+        iCnpj = iCnpjLabel;
         iProcesso = findColIdx(headers, ["numero processo", "número processo", "processo"]);
-        iValor    = findColIdx(headers, ["valor causa", "valor"]);
-        iUF       = findColIdx(headers, ["estado", "uf"]);
-        iObs      = findColIdx(headers, ["observ"]);
-        iSim      = findColIdx(headers, ["sim"]);
+        iValor = findColIdx(headers, ["valor causa", "valor"]);
+        iUF = findColIdx(headers, ["estado", "uf"]);
+        iObs = findColIdx(headers, ["observ"]);
+        iSim = findColIdx(headers, ["sim"]);
+        iFuncCol = findColIdx(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
+        iFatCol = findColIdx(headers, ["faturamento", "receita", "revenue", "billing"]);
       } else {
         // Formato B: [processo_originario, empresa, cnpj, obs?] — sem linha de cabeçalho
-        startRow  = 0;
+        startRow = 0;
         iSituacao = -1;
-        iNome     = 1;
-        iCnpj     = 2;
+        iNome = 1;
+        iCnpj = 2;
         iProcesso = 0;
-        iValor    = -1;
-        iUF       = -1;
-        iObs      = 3;
-        iSim      = -1;
+        iValor = -1;
+        iUF = -1;
+        iObs = 3;
+        iSim = -1;
+        iFuncCol = -1;
+        iFatCol = -1;
       }
 
       const parsed: ProspRow[] = [];
@@ -271,6 +314,16 @@ export function ImportacaoProspeccaoDialog({
         const statusProspeccao = mapSituacao(situacaoRaw);
         const numeroProcesso = parseProcesso(processoRaw);
         const valorCausa = parseValor(valorCausaRaw);
+
+        const funcRawStr = iFuncCol !== -1 ? String(r[iFuncCol] ?? "").trim() : "";
+        const fatRawStr = iFatCol !== -1 ? String(r[iFatCol] ?? "").trim() : "";
+        const quantidadeFuncionarios = iFuncCol !== -1 ? parseValor(r[iFuncCol]) : null;
+        const faturamentoAnual = iFatCol !== -1 ? parseValor(r[iFatCol]) : null;
+        // Texto só quando não parseável como número (faixa como "100 A 499")
+        const faixaFuncRaw =
+          iFuncCol !== -1 && funcRawStr && quantidadeFuncionarios === null ? funcRawStr : "";
+        const faixaFatRaw =
+          iFatCol !== -1 && fatRawStr && faturamentoAnual === null ? fatRawStr : "";
 
         // Resolve empresa: 1º por CNPJ, 2º por nome (fallback)
         let empresaId: string | null = null;
@@ -310,9 +363,23 @@ export function ImportacaoProspeccaoDialog({
         parsed.push({
           nomeRaw,
           cnpjRaw: String(cnpjRaw ?? "").trim(),
-          processoRaw, situacaoRaw, valorCausaRaw, ufRaw, obsRaw, simRaw,
-          cnpj, cnpjErro, statusProspeccao, numeroProcesso, valorCausa,
-          empresaId, empresaNome,
+          processoRaw,
+          situacaoRaw,
+          valorCausaRaw,
+          ufRaw,
+          obsRaw,
+          simRaw,
+          cnpj,
+          cnpjErro,
+          statusProspeccao,
+          numeroProcesso,
+          valorCausa,
+          quantidadeFuncionarios,
+          faturamentoAnual,
+          faixaFuncRaw,
+          faixaFatRaw,
+          empresaId,
+          empresaNome,
           rowStatus,
           // Todas as rows selecionadas por padrão — incluindo ja_importada
           // (re-import atualiza status das prospecções existentes)
@@ -327,10 +394,9 @@ export function ImportacaoProspeccaoDialog({
   };
 
   const toggleRow = (i: number) =>
-    setRows((prev) => prev.map((r, j) => j === i ? { ...r, selected: !r.selected } : r));
+    setRows((prev) => prev.map((r, j) => (j === i ? { ...r, selected: !r.selected } : r)));
 
-  const toggleAll = (v: boolean) =>
-    setRows((prev) => prev.map((r) => ({ ...r, selected: v })));
+  const toggleAll = (v: boolean) => setRows((prev) => prev.map((r) => ({ ...r, selected: v })));
 
   // -------------------------------------------------------------------------
   // Import
@@ -339,7 +405,10 @@ export function ImportacaoProspeccaoDialog({
   const handleImport = async () => {
     // Processa todas as selecionadas — incluindo ja_importada (atualiza status)
     const selected = rows.filter((r) => r.selected);
-    if (selected.length === 0) { toast.error("Selecione ao menos uma empresa"); return; }
+    if (selected.length === 0) {
+      toast.error("Selecione ao menos uma empresa");
+      return;
+    }
 
     setImporting(true);
     let importadas = 0;
@@ -371,15 +440,29 @@ export function ImportacaoProspeccaoDialog({
           empresaId = (byName as Array<{ id: string }> | null)?.[0]?.id ?? null;
         }
 
+        // Helper: monta patch de func/fat pra qualquer empresa
+        const buildFuncFatPatch = (): Record<string, unknown> => {
+          const patch: Record<string, unknown> = {};
+          const meta: Record<string, string> = {};
+          if (row.faixaFuncRaw) meta["Faixa de Funcionários"] = row.faixaFuncRaw;
+          if (row.faixaFatRaw) meta["Faixa de Faturamento"] = row.faixaFatRaw;
+          if (Object.keys(meta).length > 0) patch.metadados = meta;
+          if (row.quantidadeFuncionarios != null)
+            patch.quantidade_funcionarios = row.quantidadeFuncionarios;
+          if (row.faturamentoAnual != null) patch.faturamento_anual = row.faturamentoAnual;
+          return patch;
+        };
+
         // Criar empresa se não encontrou pelo CNPJ (nova ou sem CNPJ)
         if (!empresaId) {
           const insertEmp: Record<string, unknown> = {
             nome: row.nomeRaw,
             status: "prospect",
-            user_id: user!.id,
+            user_id: user.id,
           };
           if (row.cnpj) insertEmp.cnpj = row.cnpj;
           if (row.ufRaw) insertEmp.uf = row.ufRaw.toUpperCase().slice(0, 2);
+          Object.assign(insertEmp, buildFuncFatPatch());
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: empData, error: empErr } = await (supabase.from("empresas") as any)
@@ -391,9 +474,20 @@ export function ImportacaoProspeccaoDialog({
 
           // Enriquecimento assíncrono se tiver CNPJ
           if (row.cnpj) {
-            supabase.functions.invoke("enriquecer-cnpj", {
-              body: { cnpj: row.cnpj, empresa_id: empresaId },
-            }).catch(() => {/* silently */});
+            supabase.functions
+              .invoke("enriquecer-cnpj", {
+                body: { cnpj: row.cnpj, empresa_id: empresaId },
+              })
+              .catch(() => {
+                /* silently */
+              });
+          }
+        } else {
+          // Empresa já existia: atualiza func/fat se a planilha trouxe esses dados
+          const funcFatPatch = buildFuncFatPatch();
+          if (Object.keys(funcFatPatch).length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase.from("empresas") as any).update(funcFatPatch).eq("id", empresaId);
           }
         }
 
@@ -403,7 +497,7 @@ export function ImportacaoProspeccaoDialog({
         const { data: existingEleg } = await (supabase as any)
           .from("elegibilidade")
           .select("id")
-          .eq("empresa_id", empresaId!)
+          .eq("empresa_id", empresaId)
           .eq("acao_id", acaoId)
           .maybeSingle();
 
@@ -413,7 +507,7 @@ export function ImportacaoProspeccaoDialog({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const { data: newEleg, error: elegErr } = await (supabase as any)
             .from("elegibilidade")
-            .insert({ empresa_id: empresaId, acao_id: acaoId, elegivel: true, user_id: user!.id })
+            .insert({ empresa_id: empresaId, acao_id: acaoId, elegivel: true, user_id: user.id })
             .select("id")
             .single();
           if (elegErr) throw elegErr;
@@ -427,7 +521,7 @@ export function ImportacaoProspeccaoDialog({
           const { data: existingProsp } = await (supabase as any)
             .from("prospeccoes")
             .select("id")
-            .eq("elegibilidade_id", elegId!)
+            .eq("elegibilidade_id", elegId)
             .maybeSingle();
 
           if (!existingProsp) {
@@ -435,7 +529,7 @@ export function ImportacaoProspeccaoDialog({
             const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
               elegibilidade_id: elegId,
               status_prospeccao: row.statusProspeccao,
-              user_id: user!.id,
+              user_id: user.id,
               notas_prospeccao: row.obsRaw || null,
               valor_contrato: row.valorCausa,
             });
@@ -452,9 +546,7 @@ export function ImportacaoProspeccaoDialog({
         } else {
           // Sem status válido: se já existia prospecção, deleta (volta pra Aguardando)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from("prospeccoes") as any)
-            .delete()
-            .eq("elegibilidade_id", elegId!);
+          await (supabase.from("prospeccoes") as any).delete().eq("elegibilidade_id", elegId);
         }
 
         // 4) Processo (se tiver número)
@@ -468,7 +560,7 @@ export function ImportacaoProspeccaoDialog({
           if (!existingProc) {
             await supabase.from("processos").insert({
               elegibilidade_id: elegId,
-              user_id: user!.id,
+              user_id: user.id,
               numero_processo: row.numeroProcesso,
               fase: "Inicial",
               valor_estimado: row.valorCausa ?? 0,
@@ -489,7 +581,7 @@ export function ImportacaoProspeccaoDialog({
 
     // Diagnóstico detalhado
     const total = rows.length;
-    const naoSelecionadas = rows.filter(r => !r.selected).length;
+    const naoSelecionadas = rows.filter((r) => !r.selected).length;
 
     const partes: string[] = [`${importadas} processadas`];
     if (erros > 0) partes.push(`${erros} com erro`);
@@ -541,7 +633,7 @@ export function ImportacaoProspeccaoDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+      <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-sm">
             <FileSpreadsheet className="h-4 w-4 text-primary" />
@@ -551,9 +643,9 @@ export function ImportacaoProspeccaoDialog({
 
         {/* -------- STEP 1: Upload -------- */}
         {step === 1 && (
-          <div className="flex-1 flex items-center justify-center p-8">
+          <div className="flex flex-1 items-center justify-center p-8">
             <div
-              className="w-full max-w-md border-2 border-dashed border-border rounded-xl p-10 text-center hover:border-primary/40 transition-colors cursor-pointer"
+              className="w-full max-w-md cursor-pointer rounded-xl border-2 border-dashed border-border p-10 text-center transition-colors hover:border-primary/40"
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
@@ -562,10 +654,10 @@ export function ImportacaoProspeccaoDialog({
                 if (f) handleFile(f);
               }}
             >
-              <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-              <p className="font-medium text-sm">Arraste a planilha ou clique para selecionar</p>
-              <p className="text-xs text-muted-foreground mt-1">Aceita .xlsx e .xls</p>
-              <p className="text-[11px] text-muted-foreground mt-3 leading-relaxed">
+              <Upload className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+              <p className="text-sm font-medium">Arraste a planilha ou clique para selecionar</p>
+              <p className="mt-1 text-xs text-muted-foreground">Aceita .xlsx e .xls</p>
+              <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
                 Colunas esperadas: SITUAÇÃO · EMPRESAS EM PROSPEÇÃO · CNPJ · NÚMERO PROCESSO
               </p>
               <input
@@ -573,7 +665,10 @@ export function ImportacaoProspeccaoDialog({
                 type="file"
                 accept=".xlsx,.xls"
                 className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                }}
               />
             </div>
           </div>
@@ -583,42 +678,65 @@ export function ImportacaoProspeccaoDialog({
         {step === 2 && (
           <>
             {/* Summary bar */}
-            <div className="flex items-center gap-2 flex-wrap px-1 py-2 border-b border-border">
-              <span className="text-xs text-muted-foreground mr-1">{fileName}</span>
+            <div className="flex flex-wrap items-center gap-2 border-b border-border px-1 py-2">
+              <span className="mr-1 text-xs text-muted-foreground">{fileName}</span>
               {existentesCount > 0 && (
                 <Badge variant="outline" className={STATUS_COLORS.ok_existente}>
-                  <CheckCircle2 className="h-2.5 w-2.5 mr-1" />{existentesCount} cadastradas
+                  <CheckCircle2 className="mr-1 h-2.5 w-2.5" />
+                  {existentesCount} cadastradas
                 </Badge>
               )}
               {novasCount > 0 && (
                 <Badge variant="outline" className={STATUS_COLORS.ok_nova}>
-                  <Upload className="h-2.5 w-2.5 mr-1" />{novasCount} novas
+                  <Upload className="mr-1 h-2.5 w-2.5" />
+                  {novasCount} novas
                 </Badge>
               )}
               {semCnpjCount > 0 && (
                 <Badge variant="outline" className={STATUS_COLORS.sem_cnpj}>
-                  <AlertTriangle className="h-2.5 w-2.5 mr-1" />{semCnpjCount} sem CNPJ
+                  <AlertTriangle className="mr-1 h-2.5 w-2.5" />
+                  {semCnpjCount} sem CNPJ
                 </Badge>
               )}
               {cnpjInvalidoCount > 0 && (
                 <Badge variant="outline" className={STATUS_COLORS.cnpj_invalido}>
-                  <XCircle className="h-2.5 w-2.5 mr-1" />{cnpjInvalidoCount} CNPJ inválido
+                  <XCircle className="mr-1 h-2.5 w-2.5" />
+                  {cnpjInvalidoCount} CNPJ inválido
                 </Badge>
               )}
               {jaCount > 0 && (
                 <Badge variant="outline" className={STATUS_COLORS.ja_importada}>
-                  <XCircle className="h-2.5 w-2.5 mr-1" />{jaCount} já importadas
+                  <XCircle className="mr-1 h-2.5 w-2.5" />
+                  {jaCount} já importadas
                 </Badge>
               )}
               <div className="ml-auto flex items-center gap-2">
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1"
-                  onClick={() => { setStep(1); setRows([]); }}>
-                  <RotateCcw className="h-3 w-3" />Trocar arquivo
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => {
+                    setStep(1);
+                    setRows([]);
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Trocar arquivo
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => toggleAll(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => toggleAll(true)}
+                >
                   Selecionar todos
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => toggleAll(false)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => toggleAll(false)}
+                >
                   Desmarcar todos
                 </Button>
               </div>
@@ -627,14 +745,24 @@ export function ImportacaoProspeccaoDialog({
             {/* Table */}
             <div className="flex-1 overflow-auto">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-background border-b border-border">
+                <thead className="sticky top-0 border-b border-border bg-background">
                   <tr>
-                    <th className="py-2 px-2 text-left font-medium text-muted-foreground w-8"></th>
-                    <th className="py-2 px-2 text-left font-medium text-muted-foreground">Empresa</th>
-                    <th className="py-2 px-2 text-left font-medium text-muted-foreground w-36">CNPJ</th>
-                    <th className="py-2 px-2 text-left font-medium text-muted-foreground">Processo</th>
-                    <th className="py-2 px-2 text-left font-medium text-muted-foreground">Status prospecção</th>
-                    <th className="py-2 px-2 text-left font-medium text-muted-foreground w-28">Situação</th>
+                    <th className="w-8 px-2 py-2 text-left font-medium text-muted-foreground"></th>
+                    <th className="px-2 py-2 text-left font-medium text-muted-foreground">
+                      Empresa
+                    </th>
+                    <th className="w-36 px-2 py-2 text-left font-medium text-muted-foreground">
+                      CNPJ
+                    </th>
+                    <th className="px-2 py-2 text-left font-medium text-muted-foreground">
+                      Processo
+                    </th>
+                    <th className="px-2 py-2 text-left font-medium text-muted-foreground">
+                      Status prospecção
+                    </th>
+                    <th className="w-28 px-2 py-2 text-left font-medium text-muted-foreground">
+                      Situação
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -643,50 +771,56 @@ export function ImportacaoProspeccaoDialog({
                       key={i}
                       className={`border-t border-border/50 hover:bg-muted/30 ${r.rowStatus === "ja_importada" ? "opacity-70" : ""}`}
                     >
-                      <td className="py-1.5 px-2">
-                        <Checkbox
-                          checked={r.selected}
-                          onCheckedChange={() => toggleRow(i)}
-                        />
+                      <td className="px-2 py-1.5">
+                        <Checkbox checked={r.selected} onCheckedChange={() => toggleRow(i)} />
                       </td>
-                      <td className="py-1.5 px-2 max-w-[200px]">
+                      <td className="max-w-[200px] px-2 py-1.5">
                         <p className="truncate font-medium">{r.empresaNome}</p>
                         {r.empresaId && r.empresaNome !== r.nomeRaw && (
-                          <p className="text-[10px] text-muted-foreground truncate">{r.nomeRaw}</p>
+                          <p className="truncate text-[10px] text-muted-foreground">{r.nomeRaw}</p>
                         )}
                       </td>
-                      <td className="py-1.5 px-2 font-mono">
+                      <td className="px-2 py-1.5 font-mono">
                         {r.cnpj ? (
                           formatCNPJ(r.cnpj)
                         ) : r.cnpjErro ? (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="flex items-center gap-1 text-destructive text-[10px] cursor-help">
+                              <span className="flex cursor-help items-center gap-1 text-[10px] text-destructive">
                                 <HelpCircle className="h-3 w-3 shrink-0" />
                                 {r.cnpjRaw ? r.cnpjRaw.slice(0, 18) : "inválido"}
                               </span>
                             </TooltipTrigger>
                             <TooltipContent side="right" className="max-w-[220px] text-xs">
-                              <p className="font-medium mb-0.5">CNPJ inválido</p>
+                              <p className="mb-0.5 font-medium">CNPJ inválido</p>
                               <p className="text-muted-foreground">{r.cnpjErro}</p>
-                              {r.cnpjRaw && <p className="mt-1 font-mono opacity-70">Original: {r.cnpjRaw}</p>}
+                              {r.cnpjRaw && (
+                                <p className="mt-1 font-mono opacity-70">Original: {r.cnpjRaw}</p>
+                              )}
                             </TooltipContent>
                           </Tooltip>
                         ) : (
-                          <span className="text-warning text-[10px]">ausente</span>
+                          <span className="text-[10px] text-warning">ausente</span>
                         )}
                       </td>
-                      <td className="py-1.5 px-2 max-w-[180px]">
-                        <span className="truncate block text-[10px]">{r.numeroProcesso ?? "—"}</span>
+                      <td className="max-w-[180px] px-2 py-1.5">
+                        <span className="block truncate text-[10px]">
+                          {r.numeroProcesso ?? "—"}
+                        </span>
                       </td>
-                      <td className="py-1.5 px-2">
-                        <span className="text-foreground/80">{r.statusProspeccao ?? "Aguardando"}</span>
+                      <td className="px-2 py-1.5">
+                        <span className="text-foreground/80">
+                          {r.statusProspeccao ?? "Aguardando"}
+                        </span>
                         {r.situacaoRaw && r.situacaoRaw !== r.statusProspeccao && (
-                          <span className="text-muted-foreground ml-1">({r.situacaoRaw})</span>
+                          <span className="ml-1 text-muted-foreground">({r.situacaoRaw})</span>
                         )}
                       </td>
-                      <td className="py-1.5 px-2">
-                        <Badge variant="outline" className={`text-[10px] ${STATUS_COLORS[r.rowStatus]}`}>
+                      <td className="px-2 py-1.5">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] ${STATUS_COLORS[r.rowStatus]}`}
+                        >
                           {STATUS_LABELS[r.rowStatus]}
                         </Badge>
                       </td>
@@ -697,22 +831,32 @@ export function ImportacaoProspeccaoDialog({
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between pt-3 border-t border-border">
+            <div className="flex items-center justify-between border-t border-border pt-3">
               <p className="text-xs text-muted-foreground">
                 {selectedCount} empresa(s) selecionada(s) para importar
               </p>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleClose}>Cancelar</Button>
+                <Button variant="outline" size="sm" onClick={handleClose}>
+                  Cancelar
+                </Button>
                 <Button
                   size="sm"
                   disabled={selectedCount === 0 || importing}
-                  onClick={handleImport}
+                  onClick={() => {
+                    void handleImport();
+                  }}
                   className="gap-1.5"
                 >
                   {importing ? (
-                    <><Loader2 className="h-3 w-3 animate-spin" />Importando...</>
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Importando...
+                    </>
                   ) : (
-                    <><ArrowRight className="h-3 w-3" />Importar {selectedCount} empresa(s)</>
+                    <>
+                      <ArrowRight className="h-3 w-3" />
+                      Importar {selectedCount} empresa(s)
+                    </>
                   )}
                 </Button>
               </div>
