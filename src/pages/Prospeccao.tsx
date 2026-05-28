@@ -31,6 +31,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
+import { fetchAllRows } from "@/lib/supabaseFetchAll";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,7 @@ import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import type { Database } from "@/integrations/supabase/types";
 import { differenceInDays, parseISO } from "date-fns";
 import { PROSPECCAO_STATUSES as statusColumns } from "@/lib/prospeccaoStatus";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 
 type MotivoPerdido = Database["public"]["Enums"]["motivo_perdido"];
 type CargoCategoria = Database["public"]["Enums"]["cargo_categoria"];
@@ -134,32 +136,8 @@ interface Acao {
   tipo_prazo: string | null;
 }
 
-/**
- * Busca todas as linhas de uma tabela paginando de 1000 em 1000.
- * O PostgREST corta cada resposta no limite `max-rows` (~1000), então um
- * `.range(0, 49999)` não traz a tabela inteira — só os primeiros 1000.
- */
-async function fetchAllRows<T>(table: string, select: string): Promise<T[]> {
-  const PAGE = 1000;
-  const out: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await (
-      supabase.from(table) as never as {
-        select: (s: string) => {
-          range: (a: number, b: number) => Promise<{ data: T[] | null; error: unknown }>;
-        };
-      }
-    )
-      .select(select)
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    const batch = data ?? [];
-    out.push(...batch);
-    if (batch.length < PAGE) break;
-    if (from > 200_000) break; // trava de segurança
-  }
-  return out;
-}
+// fetchAllRows movido para src/lib/supabaseFetchAll.ts (compartilhado com
+// Dashboard, Acoes, AnaliseRFB, EmpresasMapView). Importado abaixo.
 
 const MOTIVOS_PERDIDO: { value: MotivoPerdido; label: string }[] = [
   { value: "preco", label: "Preço / success fee alto" },
@@ -547,6 +525,15 @@ export default function Prospeccao() {
     fetchAll();
   };
 
+  const handleDragEnd = async (result: DropResult) => {
+    const { destination, source, draggableId } = result;
+    if (!destination) return;
+    if (destination.droppableId === source.droppableId) return;
+    const prosp = prospeccoes.find((p) => p.id === draggableId);
+    if (!prosp) return;
+    await handleQuickStatusChange(prosp, destination.droppableId);
+  };
+
   // Create handlers
   const openCreateDialog = () => {
     setCreateAcaoId("");
@@ -575,7 +562,7 @@ export default function Prospeccao() {
     }
     const payload = {
       elegibilidade_id: createElegId,
-      user_id: user!.id,
+      user_id: user.id,
       status_prospeccao: "Contato feito",
       contato_nome: createContatoNome,
       contato_telefone: createContatoTel,
@@ -775,281 +762,316 @@ export default function Prospeccao() {
           statusColumns={visibleColumns}
           getCount={(key) => filteredProspeccoes.filter((p) => p.status_prospeccao === key).length}
         >
-          <div
-            className="snap-kanban scrollbar-thin flex gap-4 overflow-x-auto pb-4"
-            role="list"
-            aria-label="Pipeline de prospecção por etapa"
-            id="prospeccao-kanban-scroll"
+          <DragDropContext
+            onDragEnd={(r) => {
+              void handleDragEnd(r);
+            }}
           >
-            {visibleColumns.map((col) => {
-              const items = filteredProspeccoes.filter((p) => p.status_prospeccao === col.key);
-              return (
-                <div
-                  key={col.key}
-                  id={`kanban-col-${col.key.replace(/\s+/g, "-")}`}
-                  className={`flex-shrink-0 scroll-mt-4 ${compact ? "w-[220px]" : "w-[300px]"}`}
-                  role="listitem"
-                  aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}
-                >
-                  <div className="mb-3 flex items-center gap-2 px-1">
-                    <div
-                      className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`}
-                      aria-hidden="true"
-                    />
-                    <h3 className="text-sm font-semibold">{col.label}</h3>
-                    <Badge variant="outline" className="ml-auto text-[10px] tabular-nums">
-                      {items.length}
-                    </Badge>
-                  </div>
+            <div
+              className="snap-kanban scrollbar-thin flex gap-4 overflow-x-auto pb-4"
+              role="list"
+              aria-label="Pipeline de prospecção por etapa"
+              id="prospeccao-kanban-scroll"
+            >
+              {visibleColumns.map((col) => {
+                const items = filteredProspeccoes.filter((p) => p.status_prospeccao === col.key);
+                return (
+                  <div
+                    key={col.key}
+                    id={`kanban-col-${col.key.replace(/\s+/g, "-")}`}
+                    className={`flex-shrink-0 scroll-mt-4 ${compact ? "w-[220px]" : "w-[300px]"}`}
+                    role="listitem"
+                    aria-label={`Etapa ${col.label}, ${items.length} ${items.length === 1 ? "prospecção" : "prospecções"}`}
+                  >
+                    <div className="mb-3 flex items-center gap-2 px-1">
+                      <div
+                        className={`h-2.5 w-2.5 rounded-full ${col.dotColor}`}
+                        aria-hidden="true"
+                      />
+                      <h3 className="text-sm font-semibold">{col.label}</h3>
+                      <Badge variant="outline" className="ml-auto text-[10px] tabular-nums">
+                        {items.length}
+                      </Badge>
+                    </div>
 
-                  <div className="min-h-[120px] space-y-3">
-                    {items.length === 0 && (
-                      <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-4 text-center text-xs text-muted-foreground">
-                        Nenhuma prospecção
-                      </div>
-                    )}
-                    {items.map((p) => {
-                      const emp = getEmpresa(p);
-                      const acao = getAcao(p);
-                      const valorPot = getValorPotencial(p.elegibilidade_id);
-                      const prescricao = prescricaoInfo(acao?.data_limite_prescricao ?? null);
-                      const cadencia = cadenciaStatus(p.numero_contatos);
-                      const colIdx = statusColumns.findIndex((c) => c.key === p.status_prospeccao);
-                      const nextCol =
-                        colIdx < statusColumns.length - 2 ? statusColumns[colIdx + 1] : null;
-                      const diasSemContato = p.ultimo_contato_em
-                        ? differenceInDays(new Date(), parseISO(p.ultimo_contato_em))
-                        : null;
-                      // Sinaliza quando a elegibilidade foi marcada como inelegível
-                      // mas a prospecção ainda está ativa — estado misto que existe
-                      // porque "Desqualificar" não cascateia pra prospeccoes.
-                      const elegInativa = getElegibilidade(p.elegibilidade_id)?.elegivel === false;
-
-                      return (
-                        <Card
-                          key={p.id}
-                          className="group cursor-pointer shadow-card transition-all hover:shadow-elevated"
-                          onClick={() => openEdit(p)}
+                    <Droppable droppableId={col.key}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                          className={`min-h-[120px] space-y-3 rounded-lg transition-colors ${snapshot.isDraggingOver ? "bg-muted/30 ring-1 ring-primary/20" : ""}`}
                         >
-                          <div className="space-y-2.5 p-3">
-                            {/* QW4: banner de prescrição no topo se urgente */}
-                            {prescricao && (
-                              <div
-                                className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium ${prescricao.cor}`}
-                              >
-                                <AlertTriangle className="h-3 w-3" />
-                                <span>
-                                  {prescricao.emoji} {prescricao.texto}
-                                </span>
-                              </div>
-                            )}
+                          {items.length === 0 && !snapshot.isDraggingOver && (
+                            <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-4 text-center text-xs text-muted-foreground">
+                              Nenhuma prospecção
+                            </div>
+                          )}
+                          {items.map((p, index) => {
+                            const emp = getEmpresa(p);
+                            const acao = getAcao(p);
+                            const valorPot = getValorPotencial(p.elegibilidade_id);
+                            const prescricao = prescricaoInfo(acao?.data_limite_prescricao ?? null);
+                            const cadencia = cadenciaStatus(p.numero_contatos);
+                            const colIdx = statusColumns.findIndex(
+                              (c) => c.key === p.status_prospeccao
+                            );
+                            const nextCol =
+                              colIdx < statusColumns.length - 2 ? statusColumns[colIdx + 1] : null;
+                            const diasSemContato = p.ultimo_contato_em
+                              ? differenceInDays(new Date(), parseISO(p.ultimo_contato_em))
+                              : null;
+                            // Sinaliza quando a elegibilidade foi marcada como inelegível
+                            // mas a prospecção ainda está ativa — estado misto que existe
+                            // porque "Desqualificar" não cascateia pra prospeccoes.
+                            const elegInativa =
+                              getElegibilidade(p.elegibilidade_id)?.elegivel === false;
 
-                            {/* Empresa desqualificada com prospecção ainda ativa */}
-                            {elegInativa && p.status_prospeccao !== "Perdido" && (
-                              <div className="flex items-center gap-1 rounded bg-destructive/10 px-2 py-1 text-[10px] font-medium text-destructive">
-                                <AlertTriangle className="h-3 w-3" />
-                                <span>Empresa inelegível — prospecção ainda aberta</span>
-                              </div>
-                            )}
-
-                            {/* Company + value */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-medium">
-                                <Building2
-                                  className="h-4 w-4 shrink-0 text-muted-foreground"
-                                  aria-hidden
-                                />
-                                <button
-                                  type="button"
-                                  className="truncate text-left hover:underline focus-visible:underline"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (emp?.id) setDetailEmpresaId(emp.id);
-                                  }}
-                                >
-                                  {emp?.nome || "—"}
-                                </button>
-                              </div>
-                              <div
-                                className="flex shrink-0 items-center gap-1"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {valorPot > 0 && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="bg-primary/10 text-[10px] text-primary"
-                                    title="Valor potencial estimado"
+                            return (
+                              <Draggable key={p.id} draggableId={p.id} index={index}>
+                                {(dragProvided) => (
+                                  <Card
+                                    ref={dragProvided.innerRef}
+                                    {...dragProvided.draggableProps}
+                                    {...dragProvided.dragHandleProps}
+                                    className="group cursor-pointer shadow-card transition-all hover:shadow-elevated"
+                                    onClick={() => openEdit(p)}
                                   >
-                                    {formatCompactCurrency(valorPot)}
-                                  </Badge>
+                                    <div className="space-y-2.5 p-3">
+                                      {/* QW4: banner de prescrição no topo se urgente */}
+                                      {prescricao && (
+                                        <div
+                                          className={`flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium ${prescricao.cor}`}
+                                        >
+                                          <AlertTriangle className="h-3 w-3" />
+                                          <span>
+                                            {prescricao.emoji} {prescricao.texto}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Empresa desqualificada com prospecção ainda ativa */}
+                                      {elegInativa && p.status_prospeccao !== "Perdido" && (
+                                        <div className="flex items-center gap-1 rounded bg-destructive/10 px-2 py-1 text-[10px] font-medium text-destructive">
+                                          <AlertTriangle className="h-3 w-3" />
+                                          <span>Empresa inelegível — prospecção ainda aberta</span>
+                                        </div>
+                                      )}
+
+                                      {/* Company + value */}
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm font-medium">
+                                          <Building2
+                                            className="h-4 w-4 shrink-0 text-muted-foreground"
+                                            aria-hidden
+                                          />
+                                          <button
+                                            type="button"
+                                            className="truncate text-left hover:underline focus-visible:underline"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (emp?.id) setDetailEmpresaId(emp.id);
+                                            }}
+                                          >
+                                            {emp?.nome || "—"}
+                                          </button>
+                                        </div>
+                                        <div
+                                          className="flex shrink-0 items-center gap-1"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          {valorPot > 0 && (
+                                            <Badge
+                                              variant="secondary"
+                                              className="bg-primary/10 text-[10px] text-primary"
+                                              title="Valor potencial estimado"
+                                            >
+                                              {formatCompactCurrency(valorPot)}
+                                            </Badge>
+                                          )}
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+                                            onClick={() => openEdit(p)}
+                                            aria-label={`Editar prospecção ${emp?.nome ?? ""}`}
+                                            title="Editar"
+                                          >
+                                            <Pencil className="h-3 w-3" aria-hidden="true" />
+                                          </Button>
+                                        </div>
+                                      </div>
+
+                                      {/* Ação */}
+                                      {!compact && acao && (
+                                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                          <Scale className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                          <span className="truncate">{acao.nome}</span>
+                                        </div>
+                                      )}
+
+                                      {/* Contact */}
+                                      {p.contato_nome && (
+                                        <div className="text-xs">
+                                          <span className="font-medium">{p.contato_nome}</span>
+                                          {!compact && p.contato_cargo && (
+                                            <span className="text-muted-foreground">
+                                              {" "}
+                                              · {p.contato_cargo}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Contact info — oculto no modo compacto */}
+                                      {!compact && (
+                                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                                          {p.contato_telefone && (
+                                            <span className="flex items-center gap-1.5">
+                                              <Phone className="h-3 w-3 shrink-0" aria-hidden />
+                                              {p.contato_telefone}
+                                            </span>
+                                          )}
+                                          {p.contato_email && (
+                                            <span className="flex items-center gap-1.5 truncate">
+                                              <Mail className="h-3 w-3 shrink-0" aria-hidden />
+                                              {p.contato_email}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Responsável (avatar com iniciais) */}
+                                      {(() => {
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                        const respId = (p as any).responsavel_id as
+                                          | string
+                                          | null
+                                          | undefined;
+                                        if (!respId) return null;
+                                        const resp = profiles.find((x) => x.id === respId);
+                                        if (!resp) return null;
+                                        const ini =
+                                          resp.nome
+                                            .split(" ")
+                                            .slice(0, 2)
+                                            .map((n) => n[0] ?? "")
+                                            .join("")
+                                            .toUpperCase() || "?";
+                                        return (
+                                          <div
+                                            className="flex items-center gap-1.5 text-[11px]"
+                                            title={resp.nome}
+                                          >
+                                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary">
+                                              {ini}
+                                            </div>
+                                            <span className="truncate text-muted-foreground">
+                                              {resp.nome.split(" ")[0]}
+                                            </span>
+                                          </div>
+                                        );
+                                      })()}
+
+                                      {/* QW3: badge cadência + último contato */}
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge
+                                          variant="secondary"
+                                          className={`flex items-center gap-1.5 px-2 py-0.5 text-[10px] ${cadencia.color}`}
+                                        >
+                                          <Zap className="h-3 w-3 shrink-0" aria-hidden />
+                                          Toque {cadencia.label}
+                                        </Badge>
+                                        {diasSemContato !== null &&
+                                          diasSemContato >= 7 &&
+                                          p.status_prospeccao !== "Contrato assinado" &&
+                                          p.status_prospeccao !== "Perdido" && (
+                                            <span className="flex items-center gap-1.5 text-[10px] text-destructive">
+                                              <Clock className="h-3 w-3 shrink-0" aria-hidden />
+                                              parado {diasSemContato}d
+                                            </span>
+                                          )}
+                                      </div>
+
+                                      {/* Motivo perda se Perdido */}
+                                      {p.status_prospeccao === "Perdido" && p.motivo_perdido && (
+                                        <div className="text-[10px] text-destructive">
+                                          Motivo:{" "}
+                                          {MOTIVOS_PERDIDO.find((m) => m.value === p.motivo_perdido)
+                                            ?.label ?? p.motivo_perdido}
+                                        </div>
+                                      )}
+
+                                      {/* Valor contrato (só depois de fechar) */}
+                                      {Number(p.valor_contrato) > 0 && (
+                                        <div className="flex items-center gap-1.5 text-xs">
+                                          <DollarSign className="h-3 w-3 text-success" />
+                                          <span className="font-medium">
+                                            {formatCurrency(Number(p.valor_contrato))}
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Action row */}
+                                      <div
+                                        className="flex gap-1 pt-1 opacity-0 transition-opacity group-hover:opacity-100"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
+                                          onClick={() => openContatos(p)}
+                                          title="Registrar toque de contato"
+                                        >
+                                          <MessageSquare
+                                            className="h-3.5 w-3.5 shrink-0"
+                                            aria-hidden
+                                          />
+                                          <span className="truncate">Contato</span>
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
+                                          onClick={() => openProposta(p)}
+                                          title="Criar / editar proposta comercial"
+                                        >
+                                          <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                          <span className="truncate">Proposta</span>
+                                        </Button>
+                                        {nextCol && (
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
+                                            onClick={() => {
+                                              void handleQuickStatusChange(p, nextCol.key);
+                                            }}
+                                            title={`Avançar pra: ${nextCol.label}`}
+                                          >
+                                            <ArrowRight
+                                              className="h-3.5 w-3.5 shrink-0"
+                                              aria-hidden
+                                            />
+                                            <span className="truncate">Avançar</span>
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </Card>
                                 )}
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-                                  onClick={() => openEdit(p)}
-                                  aria-label={`Editar prospecção ${emp?.nome ?? ""}`}
-                                  title="Editar"
-                                >
-                                  <Pencil className="h-3 w-3" aria-hidden="true" />
-                                </Button>
-                              </div>
-                            </div>
-
-                            {/* Ação */}
-                            {!compact && acao && (
-                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                                <Scale className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                <span className="truncate">{acao.nome}</span>
-                              </div>
-                            )}
-
-                            {/* Contact */}
-                            {p.contato_nome && (
-                              <div className="text-xs">
-                                <span className="font-medium">{p.contato_nome}</span>
-                                {!compact && p.contato_cargo && (
-                                  <span className="text-muted-foreground">
-                                    {" "}
-                                    · {p.contato_cargo}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Contact info — oculto no modo compacto */}
-                            {!compact && (
-                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-                                {p.contato_telefone && (
-                                  <span className="flex items-center gap-1.5">
-                                    <Phone className="h-3 w-3 shrink-0" aria-hidden />
-                                    {p.contato_telefone}
-                                  </span>
-                                )}
-                                {p.contato_email && (
-                                  <span className="flex items-center gap-1.5 truncate">
-                                    <Mail className="h-3 w-3 shrink-0" aria-hidden />
-                                    {p.contato_email}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Responsável (avatar com iniciais) */}
-                            {(() => {
-                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                              const respId = (p as any).responsavel_id as string | null | undefined;
-                              if (!respId) return null;
-                              const resp = profiles.find((x) => x.id === respId);
-                              if (!resp) return null;
-                              const ini =
-                                resp.nome
-                                  .split(" ")
-                                  .slice(0, 2)
-                                  .map((n) => n[0] ?? "")
-                                  .join("")
-                                  .toUpperCase() || "?";
-                              return (
-                                <div
-                                  className="flex items-center gap-1.5 text-[11px]"
-                                  title={resp.nome}
-                                >
-                                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary">
-                                    {ini}
-                                  </div>
-                                  <span className="truncate text-muted-foreground">
-                                    {resp.nome.split(" ")[0]}
-                                  </span>
-                                </div>
-                              );
-                            })()}
-
-                            {/* QW3: badge cadência + último contato */}
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge
-                                variant="secondary"
-                                className={`flex items-center gap-1.5 px-2 py-0.5 text-[10px] ${cadencia.color}`}
-                              >
-                                <Zap className="h-3 w-3 shrink-0" aria-hidden />
-                                Toque {cadencia.label}
-                              </Badge>
-                              {diasSemContato !== null &&
-                                diasSemContato >= 7 &&
-                                p.status_prospeccao !== "Contrato assinado" &&
-                                p.status_prospeccao !== "Perdido" && (
-                                  <span className="flex items-center gap-1.5 text-[10px] text-destructive">
-                                    <Clock className="h-3 w-3 shrink-0" aria-hidden />
-                                    parado {diasSemContato}d
-                                  </span>
-                                )}
-                            </div>
-
-                            {/* Motivo perda se Perdido */}
-                            {p.status_prospeccao === "Perdido" && p.motivo_perdido && (
-                              <div className="text-[10px] text-destructive">
-                                Motivo:{" "}
-                                {MOTIVOS_PERDIDO.find((m) => m.value === p.motivo_perdido)?.label ??
-                                  p.motivo_perdido}
-                              </div>
-                            )}
-
-                            {/* Valor contrato (só depois de fechar) */}
-                            {Number(p.valor_contrato) > 0 && (
-                              <div className="flex items-center gap-1.5 text-xs">
-                                <DollarSign className="h-3 w-3 text-success" />
-                                <span className="font-medium">
-                                  {formatCurrency(Number(p.valor_contrato))}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Action row */}
-                            <div
-                              className="flex gap-1 pt-1 opacity-0 transition-opacity group-hover:opacity-100"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
-                                onClick={() => openContatos(p)}
-                                title="Registrar toque de contato"
-                              >
-                                <MessageSquare className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                <span className="truncate">Contato</span>
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
-                                onClick={() => openProposta(p)}
-                                title="Criar / editar proposta comercial"
-                              >
-                                <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                <span className="truncate">Proposta</span>
-                              </Button>
-                              {nextCol && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
-                                  onClick={() => handleQuickStatusChange(p, nextCol.key)}
-                                  title={`Avançar pra: ${nextCol.label}`}
-                                >
-                                  <ArrowRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                  <span className="truncate">Avançar</span>
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </Card>
-                      );
-                    })}
+                              </Draggable>
+                            );
+                          })}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          </DragDropContext>
         </KanbanWithNav>
       )}
 
@@ -1452,7 +1474,13 @@ export default function Prospeccao() {
             <Button variant="outline" onClick={() => setEditOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSave}>Salvar</Button>
+            <Button
+              onClick={() => {
+                void handleSave();
+              }}
+            >
+              Salvar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1562,7 +1590,12 @@ export default function Prospeccao() {
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleCreate} disabled={!createElegId}>
+            <Button
+              onClick={() => {
+                void handleCreate();
+              }}
+              disabled={!createElegId}
+            >
               Criar Prospecção
             </Button>
           </DialogFooter>
@@ -1575,7 +1608,9 @@ export default function Prospeccao() {
         onOpenChange={setContatosOpen}
         prospeccaoId={contatosProspId}
         prospeccaoLabel={contatosLabel}
-        onSaved={fetchAll}
+        onSaved={() => {
+          void fetchAll();
+        }}
       />
 
       {/* Sprint 2: Templates de mensagem */}
@@ -1688,6 +1723,7 @@ function KanbanWithNav({
             <Button
               key={col.key}
               type="button"
+              role="tab"
               variant="ghost"
               size="sm"
               onClick={() => scrollTo(col.key)}
