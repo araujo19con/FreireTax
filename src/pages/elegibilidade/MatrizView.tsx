@@ -7,12 +7,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  Pagination, PaginationContent, PaginationItem, PaginationLink,
-  PaginationNext, PaginationPrevious,
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
 } from "@/components/ui/pagination";
 import {
-  Search, CheckCircle2, XCircle, Circle, AlertCircle, Gavel, Building2,
-  X, Play, BookOpen, Upload,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Circle,
+  AlertCircle,
+  Gavel,
+  Building2,
+  X,
+  Play,
+  BookOpen,
+  Upload,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useQuery } from "@tanstack/react-query";
@@ -20,12 +33,17 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Acao } from "@/hooks/useAcoes";
 import { useEmpresas, type EmpresaFilters } from "@/hooks/useEmpresas";
 import { formatCompactCurrency, formatCNPJ } from "@/lib/format";
+import { funcionariosDisplay, faturamentoDisplay } from "@/lib/empresaDisplay";
 import { cn } from "@/lib/utils";
 import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
 import { BulkQualificationDialog } from "./BulkQualificationDialog";
 import { EmpresaQuickSheet } from "@/pages/empresas/EmpresaQuickSheet";
 
-interface EmpresaRow { id: string; nome: string; cnpj: string }
+interface EmpresaRow {
+  id: string;
+  nome: string;
+  cnpj: string;
+}
 interface ElegRow {
   id: string;
   empresa_id: string;
@@ -37,7 +55,12 @@ interface ElegRow {
 }
 
 type CellState = "eleg" | "not_eleg" | "incomplete" | "none";
-interface Cell { state: CellState; elegibilidade_id?: string; valor?: number | null; justificativa?: string | null }
+interface Cell {
+  state: CellState;
+  elegibilidade_id?: string;
+  valor?: number | null;
+  justificativa?: string | null;
+}
 
 interface MatrizViewProps {
   acoes: Acao[];
@@ -68,7 +91,9 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
       if (empresaIds.length === 0) return [] as ElegRow[];
       const { data, error } = await supabase
         .from("elegibilidade")
-        .select("id, empresa_id, acao_id, elegivel, valor_potencial_estimado, status_qualificacao, justificativa")
+        .select(
+          "id, empresa_id, acao_id, elegivel, valor_potencial_estimado, status_qualificacao, justificativa"
+        )
         .in("empresa_id", empresaIds);
       if (error) throw error;
       return (data || []) as ElegRow[];
@@ -108,7 +133,8 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
   const toggleOne = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -119,45 +145,76 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
     <TooltipProvider delayDuration={200}>
       <div className="space-y-3">
         {/* Toolbar */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[240px] max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[240px] max-w-md flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar nome, CNPJ, razão social..."
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="pl-9"
             />
           </div>
 
           <EmpresaFilterPopover
             filters={filters}
-            onChange={(f) => { setFilters(f); setPage(1); }}
+            onChange={(f) => {
+              setFilters(f);
+              setPage(1);
+            }}
           />
 
-          <div className="flex items-center gap-3 text-[11px] text-muted-foreground ml-auto">
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-success/20 border border-success/40" />Elegível</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-destructive/20 border border-destructive/40" />Não</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-warning/20 border border-warning/40" />Incompleta</span>
-            <span className="flex items-center gap-1"><span className="h-3 w-3 rounded-sm bg-muted border border-border" />Sem qualificação</span>
+          <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded-sm border border-success/40 bg-success/20" />
+              Elegível
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded-sm border border-destructive/40 bg-destructive/20" />
+              Não
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded-sm border border-warning/40 bg-warning/20" />
+              Incompleta
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded-sm border border-border bg-muted" />
+              Sem qualificação
+            </span>
           </div>
         </div>
 
-        <EmpresaFilterChips filters={filters} onChange={(f) => { setFilters(f); setPage(1); }} />
+        <EmpresaFilterChips
+          filters={filters}
+          onChange={(f) => {
+            setFilters(f);
+            setPage(1);
+          }}
+        />
 
         {/* Bulk action bar */}
         {selected.size > 0 && (
-          <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 flex-wrap">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
             <Badge variant="secondary" className="shrink-0">
               {selected.size} selecionada{selected.size > 1 ? "s" : ""}
             </Badge>
             <div className="h-4 w-px bg-border" />
-            <Button size="sm" onClick={() => setBulkOpen(true)} className="h-8" disabled={acoes.length === 0}>
-              <Play className="mr-1.5 h-3.5 w-3.5" />Qualificar em lote
+            <Button
+              size="sm"
+              onClick={() => setBulkOpen(true)}
+              className="h-8"
+              disabled={acoes.length === 0}
+            >
+              <Play className="mr-1.5 h-3.5 w-3.5" />
+              Qualificar em lote
             </Button>
             <div className="flex-1" />
             <Button variant="ghost" size="sm" onClick={clearSelection} className="h-8">
-              <X className="mr-1.5 h-3.5 w-3.5" />Limpar seleção
+              <X className="mr-1.5 h-3.5 w-3.5" />
+              Limpar seleção
             </Button>
           </div>
         )}
@@ -179,32 +236,32 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
             secondaryAction={{ label: "Importar planilha", to: "/importacao", icon: Upload }}
           />
         ) : (
-          <Card className="shadow-card overflow-hidden">
+          <Card className="overflow-hidden shadow-card">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
+              <table className="w-full border-collapse text-sm">
                 <thead className="bg-muted/30">
                   <tr>
-                    <th className="sticky left-0 z-10 bg-muted/30 w-8 px-2">
+                    <th className="sticky left-0 z-10 w-8 bg-muted/30 px-2">
                       <Checkbox
                         checked={allChecked ? true : someChecked ? "indeterminate" : false}
                         onCheckedChange={toggleAll}
                         aria-label="Selecionar todas as empresas da página"
                       />
                     </th>
-                    <th className="sticky left-8 z-10 bg-muted/30 text-left py-2 px-3 font-medium text-xs uppercase tracking-wider text-muted-foreground min-w-[280px] max-w-[320px]">
+                    <th className="sticky left-8 z-10 min-w-[280px] max-w-[320px] bg-muted/30 px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Empresa
                     </th>
                     {acoes.map((a) => (
                       <th
                         key={a.id}
-                        className="py-2 px-2 font-medium text-center align-bottom min-w-[120px] max-w-[160px]"
+                        className="min-w-[120px] max-w-[160px] px-2 py-2 text-center align-bottom font-medium"
                         title={a.nome}
                       >
-                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider leading-tight line-clamp-3 break-words">
+                        <div className="line-clamp-3 break-words text-[10px] uppercase leading-tight tracking-wider text-muted-foreground">
                           {a.nome}
                         </div>
                         {a.tipo && (
-                          <div className="text-[9px] text-muted-foreground/70 font-normal normal-case mt-0.5">
+                          <div className="mt-0.5 text-[9px] font-normal normal-case text-muted-foreground/70">
                             {a.tipo}
                           </div>
                         )}
@@ -213,7 +270,8 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {empresasQ.isLoading && rows.length === 0 &&
+                  {empresasQ.isLoading &&
+                    rows.length === 0 &&
                     Array.from({ length: 8 }).map((_, i) => (
                       <tr key={`sk-${i}`} className="border-t border-border">
                         <td colSpan={acoes.length + 2} className="p-2">
@@ -225,33 +283,48 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                   {rows.map((emp) => {
                     const isSel = selected.has(emp.id);
                     return (
-                      <tr key={emp.id} className={cn(
-                        "border-t border-border hover:bg-muted/20 transition-colors",
-                        isSel && "bg-primary/5"
-                      )}>
-                        <td className="sticky left-0 z-10 bg-background w-8 px-2 align-middle">
+                      <tr
+                        key={emp.id}
+                        className={cn(
+                          "border-t border-border transition-colors hover:bg-muted/20",
+                          isSel && "bg-primary/5"
+                        )}
+                      >
+                        <td className="sticky left-0 z-10 w-8 bg-background px-2 align-middle">
                           <Checkbox
                             checked={isSel}
                             onCheckedChange={() => toggleOne(emp.id)}
                             aria-label={`Selecionar ${emp.nome}`}
                           />
                         </td>
-                        <td className="sticky left-8 z-10 bg-background py-2 px-3 max-w-[320px]">
-                          <div className="flex flex-col min-w-0" title={emp.nome}>
+                        <td className="sticky left-8 z-10 max-w-[320px] bg-background px-3 py-2">
+                          <div className="flex min-w-0 flex-col" title={emp.nome}>
                             <button
                               type="button"
-                              className="text-sm font-medium leading-tight break-words text-left hover:underline focus-visible:underline"
+                              className="break-words text-left text-sm font-medium leading-tight hover:underline focus-visible:underline"
                               onClick={() => setDetailEmpresaId(emp.id)}
                             >
                               {emp.nome}
                             </button>
-                            <span className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                            <span className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                               {formatCNPJ(emp.cnpj)}
                             </span>
+                            {(() => {
+                              const fat = faturamentoDisplay(emp);
+                              const func = funcionariosDisplay(emp);
+                              if (!fat && !func) return null;
+                              return (
+                                <span className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
+                                  {[fat, func].filter(Boolean).join(" · ")}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         {acoes.map((a) => {
-                          const cell = cellMap.get(`${emp.id}|${a.id}`) ?? { state: "none" as CellState };
+                          const cell = cellMap.get(`${emp.id}|${a.id}`) ?? {
+                            state: "none" as CellState,
+                          };
                           return (
                             <td key={a.id} className="p-1 text-center">
                               <CellButton
@@ -268,11 +341,17 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
               </table>
             </div>
 
-            <div className="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-t border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
               <span className="text-xs text-muted-foreground">
-                <strong className="text-foreground tabular-nums">{total}</strong> empresa{total === 1 ? "" : "s"} × <strong className="text-foreground tabular-nums">{acoes.length}</strong> aç{acoes.length === 1 ? "ão" : "ões"}
+                <strong className="tabular-nums text-foreground">{total}</strong> empresa
+                {total === 1 ? "" : "s"} ×{" "}
+                <strong className="tabular-nums text-foreground">{acoes.length}</strong> aç
+                {acoes.length === 1 ? "ão" : "ões"}
                 {selected.size > 0 && (
-                  <span className="ml-2">· <strong className="text-primary">{selected.size}</strong> selecionada{selected.size > 1 ? "s" : ""}</span>
+                  <span className="ml-2">
+                    · <strong className="text-primary">{selected.size}</strong> selecionada
+                    {selected.size > 1 ? "s" : ""}
+                  </span>
                 )}
               </span>
               {totalPages > 1 && (
@@ -280,16 +359,28 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious
-                        onClick={(e) => { e.preventDefault(); if (page > 1) setPage(page - 1); }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (page > 1) setPage(page - 1);
+                        }}
                         className={page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                       />
                     </PaginationItem>
-                    <PaginationItem><PaginationLink isActive>{page}</PaginationLink></PaginationItem>
-                    <PaginationItem className="text-xs text-muted-foreground px-2">de {totalPages}</PaginationItem>
+                    <PaginationItem>
+                      <PaginationLink isActive>{page}</PaginationLink>
+                    </PaginationItem>
+                    <PaginationItem className="px-2 text-xs text-muted-foreground">
+                      de {totalPages}
+                    </PaginationItem>
                     <PaginationItem>
                       <PaginationNext
-                        onClick={(e) => { e.preventDefault(); if (page < totalPages) setPage(page + 1); }}
-                        className={page >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (page < totalPages) setPage(page + 1);
+                        }}
+                        className={
+                          page >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"
+                        }
                       />
                     </PaginationItem>
                   </PaginationContent>
@@ -302,12 +393,15 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
         {bulkOpen && (
           <BulkQualificationDialog
             open={bulkOpen}
-            onClose={() => { setBulkOpen(false); clearSelection(); }}
+            onClose={() => {
+              setBulkOpen(false);
+              clearSelection();
+            }}
             empresaIds={Array.from(selected)}
           />
         )}
 
-      <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
+        <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
       </div>
     </TooltipProvider>
   );
@@ -315,21 +409,39 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
 
 function CellButton({ cell, onClick }: { cell: Cell; onClick: () => void }) {
   const configs: Record<CellState, { bg: string; icon: React.ReactNode; label: string }> = {
-    eleg:       { bg: "bg-success/20 hover:bg-success/30 border-success/40",    icon: <CheckCircle2 className="h-3.5 w-3.5 text-success" />, label: "Elegível" },
-    not_eleg:   { bg: "bg-destructive/20 hover:bg-destructive/30 border-destructive/40", icon: <XCircle className="h-3.5 w-3.5 text-destructive" />, label: "Não elegível" },
-    incomplete: { bg: "bg-warning/20 hover:bg-warning/30 border-warning/40",    icon: <AlertCircle className="h-3.5 w-3.5 text-warning" />,    label: "Qualificação incompleta" },
-    none:       { bg: "bg-muted/50 hover:bg-muted border-border",                icon: <Circle className="h-3.5 w-3.5 text-muted-foreground/50" />, label: "Clique para qualificar" },
+    eleg: {
+      bg: "bg-success/20 hover:bg-success/30 border-success/40",
+      icon: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
+      label: "Elegível",
+    },
+    not_eleg: {
+      bg: "bg-destructive/20 hover:bg-destructive/30 border-destructive/40",
+      icon: <XCircle className="h-3.5 w-3.5 text-destructive" />,
+      label: "Não elegível",
+    },
+    incomplete: {
+      bg: "bg-warning/20 hover:bg-warning/30 border-warning/40",
+      icon: <AlertCircle className="h-3.5 w-3.5 text-warning" />,
+      label: "Qualificação incompleta",
+    },
+    none: {
+      bg: "bg-muted/50 hover:bg-muted border-border",
+      icon: <Circle className="h-3.5 w-3.5 text-muted-foreground/50" />,
+      label: "Clique para qualificar",
+    },
   };
   const cfg = configs[cell.state];
 
   const tooltipContent = (
-    <div className="text-xs space-y-0.5">
+    <div className="space-y-0.5 text-xs">
       <div className="font-medium">{cfg.label}</div>
       {cell.valor && <div>Valor estimado: {formatCompactCurrency(cell.valor)}</div>}
       {cell.justificativa && (
-        <div className="text-muted-foreground line-clamp-3 max-w-xs mt-1">{cell.justificativa}</div>
+        <div className="mt-1 line-clamp-3 max-w-xs text-muted-foreground">{cell.justificativa}</div>
       )}
-      {cell.state === "none" && <div className="text-muted-foreground">Clique pra abrir wizard</div>}
+      {cell.state === "none" && (
+        <div className="text-muted-foreground">Clique pra abrir wizard</div>
+      )}
     </div>
   );
 
@@ -340,8 +452,8 @@ function CellButton({ cell, onClick }: { cell: Cell; onClick: () => void }) {
           type="button"
           onClick={onClick}
           className={cn(
-            "w-full h-10 rounded border flex items-center justify-center gap-1 transition-colors",
-            cfg.bg,
+            "flex h-10 w-full items-center justify-center gap-1 rounded border transition-colors",
+            cfg.bg
           )}
           aria-label={cfg.label}
         >

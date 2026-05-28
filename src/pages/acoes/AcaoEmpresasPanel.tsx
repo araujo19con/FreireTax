@@ -31,7 +31,7 @@ import {
 import { toast } from "sonner";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
 import { prospStatusColor } from "@/lib/prospeccaoStatus";
-import { formatCompactCurrency } from "@/lib/format";
+import { faturamentoDisplay, funcionariosDisplay } from "@/lib/empresaDisplay";
 import type { StatusEmpresaAcao } from "@/lib/exportEmpresasAcao";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { AcaoEmpresasFilterPopover, AcaoEmpresasFilterChips } from "./AcaoEmpresasFilterPopover";
@@ -147,26 +147,8 @@ const PRESETS: Record<PresetKey, StatusCombinadoKey[] | undefined> = {
   ],
 };
 
-// Faturamento e funcionários podem vir do campo numérico (RFB/manual) OU da
-// faixa-texto importada da planilha (metadados). Espelha EmpresaDetailSheet:
-// prefere a faixa-texto quando existe, senão formata o número.
-function faturamentoDisplay(empresa: EmpresaAcao | undefined): string | null {
-  if (!empresa) return null;
-  const txt = empresa.metadados?.["Faixa de Faturamento"];
-  if (txt) return txt;
-  if (empresa.faturamento_anual != null) return formatCompactCurrency(empresa.faturamento_anual);
-  return null;
-}
-
-function funcionariosDisplay(empresa: EmpresaAcao | undefined): string | null {
-  if (!empresa) return null;
-  const txt = empresa.metadados?.["Faixa de Funcionários"];
-  if (txt) return txt;
-  if (empresa.quantidade_funcionarios != null) {
-    return `${empresa.quantidade_funcionarios} func.`;
-  }
-  return null;
-}
+// faturamentoDisplay / funcionariosDisplay agora vem de @/lib/empresaDisplay
+// (compartilhado com EmpresaDetailSheet, EmpresasMapView, EmpresasCardView etc.)
 
 function arraysEqUnordered<T>(a: T[] | undefined, b: T[] | undefined): boolean {
   if (a === b) return true;

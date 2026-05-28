@@ -34,7 +34,8 @@ import {
   Users,
   DollarSign,
 } from "lucide-react";
-import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
+import { formatCNPJ } from "@/lib/format";
+import { funcFatDisplay } from "@/lib/empresaDisplay";
 import type { Empresa, EmpresaFilters } from "@/hooks/useEmpresas";
 import { EmpresaFilterPopover, EmpresaFilterChips } from "@/components/EmpresaFilterPopover";
 import { applyEmpresaFiltersInMemory } from "@/lib/empresaFiltersInMemory";
@@ -1074,15 +1075,8 @@ export function EmpresasMapView({
                 <div>
                   {panelEmpresas.map((emp) => {
                     const isDestaque = destaqueIds?.has(emp.id) ?? false;
-                    // Func/faturamento: usa o numero (RFB/manual) se houver, senao a faixa-texto
-                    // da planilha (DRIVA → metadados). Mesmo pattern do EmpresaDetailSheet.
-                    const funcTxt = emp.metadados?.["Faixa de Funcionários"] ?? null;
-                    const fatTxt = emp.metadados?.["Faixa de Faturamento"] ?? null;
-                    const hasFunc =
-                      (emp.quantidade_funcionarios != null && emp.quantidade_funcionarios > 0) ||
-                      !!funcTxt;
-                    const hasFat =
-                      (emp.faturamento_anual != null && emp.faturamento_anual > 0) || !!fatTxt;
+                    // Func/faturamento via helper compartilhado (@/lib/empresaDisplay)
+                    const ff = funcFatDisplay(emp);
                     return (
                       <button
                         key={emp.id}
@@ -1112,23 +1106,18 @@ export function EmpresasMapView({
                               </span>
                             )}
                           </div>
-                          {(hasFunc || hasFat) && (
+                          {ff.hasAny && (
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                              {hasFunc && (
+                              {ff.funcionarios && (
                                 <span className="flex items-center gap-0.5">
                                   <Users className="h-2.5 w-2.5 shrink-0" />
-                                  {emp.quantidade_funcionarios != null &&
-                                  emp.quantidade_funcionarios > 0
-                                    ? `${emp.quantidade_funcionarios} func.`
-                                    : funcTxt}
+                                  {ff.funcionarios}
                                 </span>
                               )}
-                              {hasFat && (
+                              {ff.faturamento && (
                                 <span className="flex items-center gap-0.5">
                                   <DollarSign className="h-2.5 w-2.5 shrink-0" />
-                                  {emp.faturamento_anual != null && emp.faturamento_anual > 0
-                                    ? formatCompactCurrency(emp.faturamento_anual)
-                                    : fatTxt}
+                                  {ff.faturamento}
                                 </span>
                               )}
                             </div>

@@ -4,18 +4,39 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Pagination, PaginationContent, PaginationItem, PaginationLink,
-  PaginationNext, PaginationPrevious,
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
 } from "@/components/ui/pagination";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  Eye, Pencil, RefreshCw, Phone, Mail, MapPin, Building2, Folder, Search, Upload, X,
+  Eye,
+  Pencil,
+  RefreshCw,
+  Phone,
+  Mail,
+  MapPin,
+  Building2,
+  Folder,
+  Search,
+  Upload,
+  X,
+  Users,
+  DollarSign,
 } from "lucide-react";
 import type { DragEvent } from "react";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
+import { funcFatDisplay } from "@/lib/empresaDisplay";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
 
@@ -47,11 +68,24 @@ interface EmpresasCardViewProps {
 }
 
 export function EmpresasCardView({
-  rows, loading, total, page, pageSize, selectedIds, pastaNamesByEmpresa,
-  hasActiveFilters, onClearFilters,
-  onPageChange, onPageSizeChange,
-  onToggleSelect, onOpenDetail, onEnrichir, onEdit,
-  onDragStart, onDragEnd, draggingId,
+  rows,
+  loading,
+  total,
+  page,
+  pageSize,
+  selectedIds,
+  pastaNamesByEmpresa,
+  hasActiveFilters,
+  onClearFilters,
+  onPageChange,
+  onPageSizeChange,
+  onToggleSelect,
+  onOpenDetail,
+  onEnrichir,
+  onEdit,
+  onDragStart,
+  onDragEnd,
+  draggingId,
 }: EmpresasCardViewProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -75,13 +109,14 @@ export function EmpresasCardView({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {loading && rows.length === 0 &&
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {loading &&
+          rows.length === 0 &&
           Array.from({ length: 8 }).map((_, i) => (
             <Card key={`skel-${i}`} className="p-4 shadow-card">
-              <Skeleton className="h-5 w-32 mb-2" />
-              <Skeleton className="h-3.5 w-28 mb-3" />
-              <Skeleton className="h-3.5 w-20 mb-1" />
+              <Skeleton className="mb-2 h-5 w-32" />
+              <Skeleton className="mb-3 h-3.5 w-28" />
+              <Skeleton className="mb-1 h-3.5 w-20" />
               <Skeleton className="h-3.5 w-24" />
             </Card>
           ))}
@@ -94,9 +129,9 @@ export function EmpresasCardView({
             <Card
               key={e.id}
               className={cn(
-                "p-4 shadow-card hover:shadow-elevated transition-all cursor-pointer group relative",
+                "group relative cursor-pointer p-4 shadow-card transition-all hover:shadow-elevated",
                 isSelected ? "ring-2 ring-primary" : "",
-                draggingId === e.id ? "opacity-50" : "",
+                draggingId === e.id ? "opacity-50" : ""
               )}
               draggable
               onDragStart={(ev) => onDragStart(ev, e.id)}
@@ -108,7 +143,10 @@ export function EmpresasCardView({
                 onOpenDetail(e);
               }}
             >
-              <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity" data-card-action>
+              <div
+                className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100"
+                data-card-action
+              >
                 <Checkbox
                   checked={isSelected}
                   onCheckedChange={(checked) => {
@@ -121,46 +159,84 @@ export function EmpresasCardView({
               </div>
 
               <div className="flex items-start gap-3 pr-6">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                   <Building2 className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-medium text-sm truncate">{e.nome}</h3>
+                  <h3 className="truncate text-sm font-medium">{e.nome}</h3>
                   {e.razao_social && e.razao_social !== e.nome && (
-                    <p className="text-[11px] text-muted-foreground line-clamp-1">{e.razao_social}</p>
+                    <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                      {e.razao_social}
+                    </p>
                   )}
-                  <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{formatCNPJ(e.cnpj)}</p>
+                  <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                    {formatCNPJ(e.cnpj)}
+                  </p>
                 </div>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                <Badge variant="outline" className={`text-[10px] capitalize ${statusColors[e.status] || ""}`}>
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] capitalize ${statusColors[e.status] || ""}`}
+                >
                   {e.status}
                 </Badge>
                 {sit && (
                   <Badge
                     variant="outline"
                     className={`text-[10px] ${
-                      sit === "ATIVA" ? "bg-success/10 text-success border-success/30" :
-                      (sit === "BAIXADA" || sit === "INAPTA" || sit === "NULA") ? "bg-destructive/10 text-destructive border-destructive/30" :
-                      "bg-warning/10 text-warning border-warning/30"
+                      sit === "ATIVA"
+                        ? "border-success/30 bg-success/10 text-success"
+                        : sit === "BAIXADA" || sit === "INAPTA" || sit === "NULA"
+                          ? "border-destructive/30 bg-destructive/10 text-destructive"
+                          : "border-warning/30 bg-warning/10 text-warning"
                     }`}
                   >
                     {sit}
                   </Badge>
                 )}
                 {e.porte && e.porte !== "NAO_INFORMADO" && (
-                  <Badge variant="outline" className="text-[10px]">{e.porte}</Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    {e.porte}
+                  </Badge>
                 )}
                 {e.uf && (
                   <Badge variant="outline" className="text-[10px]">
-                    <MapPin className="mr-0.5 h-2.5 w-2.5" />{e.uf}
+                    <MapPin className="mr-0.5 h-2.5 w-2.5" />
+                    {e.uf}
                   </Badge>
                 )}
                 {e.opcao_simples && (
-                  <Badge variant="outline" className="text-[10px] bg-info/10 text-info border-info/30">Simples</Badge>
+                  <Badge
+                    variant="outline"
+                    className="border-info/30 bg-info/10 text-[10px] text-info"
+                  >
+                    Simples
+                  </Badge>
                 )}
               </div>
+
+              {(() => {
+                const ff = funcFatDisplay(e);
+                if (!ff.hasAny) return null;
+                return (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                    {ff.funcionarios && (
+                      <span className="flex items-center gap-1">
+                        <Users className="h-3 w-3 shrink-0" />
+                        {ff.funcionarios}
+                      </span>
+                    )}
+                    {ff.faturamento && (
+                      <span className="flex items-center gap-1">
+                        <DollarSign className="h-3 w-3 shrink-0" />
+                        {ff.faturamento}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="mt-3 space-y-1">
                 {e.telefone_receita && (
@@ -176,46 +252,69 @@ export function EmpresasCardView({
                   </div>
                 )}
                 {e.valor_potencial_total ? (
-                  <div className="flex items-center justify-between text-xs pt-1">
+                  <div className="flex items-center justify-between pt-1 text-xs">
                     <span className="text-muted-foreground">Potencial</span>
-                    <span className="font-medium tabular-nums">{formatCompactCurrency(e.valor_potencial_total)}</span>
+                    <span className="font-medium tabular-nums">
+                      {formatCompactCurrency(e.valor_potencial_total)}
+                    </span>
                   </div>
                 ) : null}
               </div>
 
               {pastaNames.length > 0 && (
-                <div className="mt-2.5 flex gap-1 flex-wrap">
+                <div className="mt-2.5 flex flex-wrap gap-1">
                   {pastaNames.slice(0, 3).map((name) => (
                     <Badge key={name} variant="outline" className="text-[9px]">
-                      <Folder className="mr-0.5 h-2.5 w-2.5" />{name}
+                      <Folder className="mr-0.5 h-2.5 w-2.5" />
+                      {name}
                     </Badge>
                   ))}
                   {pastaNames.length > 3 && (
-                    <Badge variant="outline" className="text-[9px]">+{pastaNames.length - 3}</Badge>
+                    <Badge variant="outline" className="text-[9px]">
+                      +{pastaNames.length - 3}
+                    </Badge>
                   )}
                 </div>
               )}
 
-              <div className="mt-3 pt-2 border-t border-border flex items-center justify-end gap-0.5" data-card-action>
+              <div
+                className="mt-3 flex items-center justify-end gap-0.5 border-t border-border pt-2"
+                data-card-action
+              >
                 <Button
-                  variant="ghost" size="icon" className="h-7 w-7"
-                  onClick={(ev) => { ev.stopPropagation(); onOpenDetail(e); }}
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onOpenDetail(e);
+                  }}
                   aria-label={`Detalhes de ${e.nome}`}
                   title="Ver detalhes"
                 >
                   <Eye className="h-3.5 w-3.5" />
                 </Button>
                 <Button
-                  variant="ghost" size="icon" className="h-7 w-7"
-                  onClick={(ev) => { ev.stopPropagation(); onEnrichir(e); }}
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onEnrichir(e);
+                  }}
                   aria-label={`Atualizar RFB de ${e.nome}`}
                   title="Atualizar RFB"
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
                 <Button
-                  variant="ghost" size="icon" className="h-7 w-7"
-                  onClick={(ev) => { ev.stopPropagation(); onEdit(e); }}
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onEdit(e);
+                  }}
                   aria-label={`Editar ${e.nome}`}
                   title="Editar"
                 >
@@ -229,11 +328,13 @@ export function EmpresasCardView({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Por página</span>
             <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
-              <SelectTrigger className="h-7 w-[70px] text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-7 w-[70px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="25">25</SelectItem>
                 <SelectItem value="50">50</SelectItem>
@@ -246,18 +347,28 @@ export function EmpresasCardView({
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
-                  onClick={(e) => { e.preventDefault(); if (page > 1) onPageChange(page - 1); }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (page > 1) onPageChange(page - 1);
+                  }}
                   className={page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                 />
               </PaginationItem>
               <PaginationItem>
                 <PaginationLink isActive>{page}</PaginationLink>
               </PaginationItem>
-              <PaginationItem className="text-xs text-muted-foreground px-2">de {totalPages}</PaginationItem>
+              <PaginationItem className="px-2 text-xs text-muted-foreground">
+                de {totalPages}
+              </PaginationItem>
               <PaginationItem>
                 <PaginationNext
-                  onClick={(e) => { e.preventDefault(); if (page < totalPages) onPageChange(page + 1); }}
-                  className={page >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (page < totalPages) onPageChange(page + 1);
+                  }}
+                  className={
+                    page >= totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"
+                  }
                 />
               </PaginationItem>
             </PaginationContent>
