@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner";
 import { regimeShort, regimeColor } from "@/lib/regimeTributario";
 import { prospStatusColor } from "@/lib/prospeccaoStatus";
+import { formatCompactCurrency } from "@/lib/format";
 import type { StatusEmpresaAcao } from "@/lib/exportEmpresasAcao";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { AcaoEmpresasFilterPopover, AcaoEmpresasFilterChips } from "./AcaoEmpresasFilterPopover";
@@ -145,6 +146,27 @@ const PRESETS: Record<PresetKey, StatusCombinadoKey[] | undefined> = {
     "Serviço iniciado",
   ],
 };
+
+// Faturamento e funcionários podem vir do campo numérico (RFB/manual) OU da
+// faixa-texto importada da planilha (metadados). Espelha EmpresaDetailSheet:
+// prefere a faixa-texto quando existe, senão formata o número.
+function faturamentoDisplay(empresa: EmpresaAcao | undefined): string | null {
+  if (!empresa) return null;
+  const txt = empresa.metadados?.["Faixa de Faturamento"];
+  if (txt) return txt;
+  if (empresa.faturamento_anual != null) return formatCompactCurrency(empresa.faturamento_anual);
+  return null;
+}
+
+function funcionariosDisplay(empresa: EmpresaAcao | undefined): string | null {
+  if (!empresa) return null;
+  const txt = empresa.metadados?.["Faixa de Funcionários"];
+  if (txt) return txt;
+  if (empresa.quantidade_funcionarios != null) {
+    return `${empresa.quantidade_funcionarios} func.`;
+  }
+  return null;
+}
 
 function arraysEqUnordered<T>(a: T[] | undefined, b: T[] | undefined): boolean {
   if (a === b) return true;
@@ -459,7 +481,9 @@ export function AcaoEmpresasPanel({
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 text-xs"
-              onClick={handleExport}
+              onClick={() => {
+                void handleExport();
+              }}
               disabled={exporting || filtered.length === 0}
               title="Exportar empresas filtradas para XLSX"
             >
@@ -529,6 +553,9 @@ export function AcaoEmpresasPanel({
                       Regime
                     </th>
                     <th className="px-2 py-2 text-left font-medium text-muted-foreground">
+                      Faturamento · Func.
+                    </th>
+                    <th className="px-2 py-2 text-left font-medium text-muted-foreground">
                       Status
                     </th>
                     <th className="px-3 py-2 text-right font-medium text-muted-foreground">
@@ -590,6 +617,23 @@ export function AcaoEmpresasPanel({
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
+
+                        {(() => {
+                          const fat = faturamentoDisplay(empresa);
+                          const func = funcionariosDisplay(empresa);
+                          return (
+                            <td className="whitespace-nowrap px-2 py-2">
+                              {fat || func ? (
+                                <div className="flex flex-col gap-0.5 text-[11px] leading-tight">
+                                  <span className="text-foreground">{fat ?? "—"}</span>
+                                  <span className="text-muted-foreground">{func ?? "—"}</span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          );
+                        })()}
 
                         <td className="px-2 py-2">
                           {!el.elegivel ? (
@@ -674,15 +718,17 @@ export function AcaoEmpresasPanel({
                                       size="sm"
                                       className="h-7 flex-1 gap-1 text-xs"
                                       disabled={ctxLoading}
-                                      onClick={async () => {
-                                        setCtxLoading(true);
-                                        await onUpdateContexto(
-                                          el.id,
-                                          ctxDestaque,
-                                          ctxNotas.trim() || null
-                                        );
-                                        setCtxLoading(false);
-                                        setCtxOpen(null);
+                                      onClick={() => {
+                                        void (async () => {
+                                          setCtxLoading(true);
+                                          await onUpdateContexto(
+                                            el.id,
+                                            ctxDestaque,
+                                            ctxNotas.trim() || null
+                                          );
+                                          setCtxLoading(false);
+                                          setCtxOpen(null);
+                                        })();
                                       }}
                                     >
                                       {ctxLoading && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -768,12 +814,14 @@ export function AcaoEmpresasPanel({
                                           size="sm"
                                           className="h-7 flex-1 gap-1 text-xs"
                                           disabled={desqLoading}
-                                          onClick={async () => {
-                                            setDesqLoading(true);
-                                            await onDesqualificar(el.id, desqMotivo);
-                                            setDesqLoading(false);
-                                            setDesqOpen(null);
-                                            setDesqMotivo("");
+                                          onClick={() => {
+                                            void (async () => {
+                                              setDesqLoading(true);
+                                              await onDesqualificar(el.id, desqMotivo);
+                                              setDesqLoading(false);
+                                              setDesqOpen(null);
+                                              setDesqMotivo("");
+                                            })();
                                           }}
                                         >
                                           {desqLoading ? (
