@@ -261,7 +261,7 @@ P0 (imediato, < 1h cada):
   ✅ handleDesqualificar motivo (era pré-existente)
   ✅ anon key null-check (client.ts)
   ✅ DOMPurify em proposta.ts (era pré-existente)
-  ⬜ extractErrorMessage → lib/errors.ts
+  ✅ extractErrorMessage → lib/errors.ts (era pré-existente)
 
 P1 (próximo sprint, segurança):
   ✅ audit_log SECURITY DEFINER (2026-05-28)
@@ -270,12 +270,11 @@ P1 (próximo sprint, segurança):
 
 P2 (qualidade, faz a base ficar sólida):
   ⬜ regenerar types.ts + CI check
-  ⬜ extractErrorMessage → lib/errors.ts
   ⬜ CLAUDE.md / large-files.md atualizado
 
 P3 (UX visível):
   ⬜ Drag-and-drop kanban
-  ⬜ Relatório horas trabalhadas
+  ✅ Relatório horas trabalhadas — aba Horas em EquipeView (2026-05-28)
   ⬜ Timeline por empresa
 
 P4 (features estratégicas):

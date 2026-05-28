@@ -12,7 +12,9 @@ const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
   .map((s) => s.trim())
   .filter(Boolean);
 if (ALLOWED_ORIGINS.length === 0) {
-  console.warn("[criar-usuario] ALLOWED_ORIGINS não configurado — CORS rejeitará todas as origens cross-domain");
+  console.warn(
+    "[criar-usuario] ALLOWED_ORIGINS não configurado — CORS rejeitará todas as origens cross-domain"
+  );
 }
 
 function corsFor(req: Request) {
@@ -77,7 +79,10 @@ Deno.serve(async (req) => {
     const asUser = createClient(SUPABASE_URL, ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user: caller }, error: errUser } = await asUser.auth.getUser();
+    const {
+      data: { user: caller },
+      error: errUser,
+    } = await asUser.auth.getUser();
     if (errUser || !caller) return json({ error: "invalid token" }, 401, cors);
 
     const { data: isAdmin } = await asUser.rpc("is_admin", { _user_id: caller.id });
@@ -129,35 +134,25 @@ Deno.serve(async (req) => {
     }
 
     if (role !== "comercial") {
-      // Remove default 'comercial' (se o trigger já inseriu) e insere a role solicitada.
-      // Em caso de erro, tenta reverter — pelo menos deixa o user com 'comercial'.
-      const { error: errIns } = await admin
-        .from("user_roles")
-        .insert({ user_id: newUserId, role });
-      if (errIns) {
-        console.error("falha ao inserir role:", errIns.message);
+      // Atribuição atômica via função Postgres: DELETE todos os roles anteriores
+      // + INSERT o novo em uma única transação — sem risco de dois roles simultâneos.
+      const { error: errRole } = await admin.rpc("assign_user_role", {
+        p_uid: newUserId,
+        p_role: role,
+      });
+      if (errRole) {
+        console.error("falha ao atribuir role:", errRole.message);
         return json(
           {
             ok: false,
             warning: "usuário criado com role 'comercial' padrão; atribua o papel manualmente",
             user_id: newUserId,
             email,
-            detail: errIns.message,
+            detail: errRole.message,
           },
           207, // Multi-Status
           cors
         );
-      }
-
-      // só remove 'comercial' DEPOIS de garantir que a nova role foi gravada
-      const { error: errDel } = await admin
-        .from("user_roles")
-        .delete()
-        .eq("user_id", newUserId)
-        .eq("role", "comercial");
-      if (errDel) {
-        console.error("falha ao remover role default:", errDel.message);
-        // não é fatal — o usuário fica com duas roles
       }
     }
 
