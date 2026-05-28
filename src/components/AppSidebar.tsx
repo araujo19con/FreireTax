@@ -16,6 +16,7 @@ import {
   Filter,
   FileText,
   BookOpen,
+  BarChart2,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -56,6 +57,7 @@ const mainItems: ItemDef[] = [
   { title: "Elegibilidade", url: "/elegibilidade", icon: FileCheck },
   { title: "Prospecção", url: "/prospeccao", icon: Handshake, badgeKey: "prosp_parados" },
   { title: "Análise RFB", url: "/analise-rfb", icon: Filter },
+  { title: "Relatórios", url: "/relatorios", icon: BarChart2 },
   { title: "Importação", url: "/importacao", icon: Upload },
 ];
 

@@ -30,6 +30,7 @@ const MinhaSemana = lazy(() => import("./pages/MinhaSemana"));
 const MeuEspaco = lazy(() => import("./pages/MeuEspaco"));
 const Usuarios = lazy(() => import("./pages/Usuarios"));
 const AnaliseRFB = lazy(() => import("./pages/AnaliseRFB"));
+const Relatorios = lazy(() => import("./pages/Relatorios"));
 const Tutorial = lazy(() => import("./pages/Tutorial"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 
@@ -137,6 +138,7 @@ function AppRoutes() {
           <Route path="/minha-agenda" element={<MinhaAgenda />} />
           <Route path="/minha-semana" element={<MinhaSemana />} />
           <Route path="/analise-rfb" element={<AnaliseRFB />} />
+          <Route path="/relatorios" element={<Relatorios />} />
           <Route path="/tutorial" element={<Tutorial />} />
           <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/reset-password" element={<ResetPassword />} />
