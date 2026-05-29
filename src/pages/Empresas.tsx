@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, DragEvent, lazy, Suspense } from "react";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -135,7 +134,7 @@ export default function Empresas() {
   const bulkAddEmpPasta = useBulkAddEmpresasToPasta();
 
   const createEleg = useCreateElegibilidade();
-  const deleteEleg = useDeleteElegibilidade();
+  const _deleteEleg = useDeleteElegibilidade();
 
   // --- Local UI state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -398,6 +397,7 @@ export default function Empresas() {
         Observações: e.obs || "",
       }));
 
+      const XLSX = await import("xlsx");
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Empresas");
@@ -451,7 +451,11 @@ export default function Empresas() {
               <FolderPlus className="mr-2 h-4 w-4" />
               Nova Pasta
             </Button>
-            <EmpresaDialog onSave={handleCreate} />
+            <EmpresaDialog
+              onSave={(data) => {
+                void handleCreate(data);
+              }}
+            />
           </>
         }
       />
@@ -520,7 +524,9 @@ export default function Empresas() {
                     setDragOverPastaId(p.id);
                   }}
                   onDragLeave={() => setDragOverPastaId(null)}
-                  onDrop={(e) => handleDropPasta(e, p.id)}
+                  onDrop={(e) => {
+                    void handleDropPasta(e, p.id);
+                  }}
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     {isOver ? (
@@ -636,7 +642,9 @@ export default function Empresas() {
             onBulkMovePasta={handleBulkMovePasta}
             onBulkVincularAcao={handleBulkVincularAcao}
             onBulkDelete={handleBulkDelete}
-            onExport={handleExport}
+            onExport={(format) => {
+              void handleExport(format);
+            }}
             onClearSelection={clearSelection}
             totalCount={total}
           />
@@ -801,9 +809,11 @@ export default function Empresas() {
           onOpenChange={(o) => {
             if (!o) setEmpresaToEdit(null);
           }}
-          onSave={async (data) => {
-            await handleEdit(empresaToEdit.id, data);
-            setEmpresaToEdit(null);
+          onSave={(data) => {
+            void (async () => {
+              await handleEdit(empresaToEdit.id, data);
+              setEmpresaToEdit(null);
+            })();
           }}
           initialData={
             empresaToEdit as unknown as Parameters<typeof EmpresaDialog>[0]["initialData"]
@@ -824,7 +834,9 @@ export default function Empresas() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmDelete}
+              onClick={() => {
+                void confirmDelete();
+              }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Excluir
@@ -843,7 +855,9 @@ export default function Empresas() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmBulkDelete}
+              onClick={() => {
+                void confirmBulkDelete();
+              }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Excluir todas
@@ -887,7 +901,9 @@ export default function Empresas() {
               Cancelar
             </Button>
             <Button
-              onClick={confirmBulkMovePasta}
+              onClick={() => {
+                void confirmBulkMovePasta();
+              }}
               disabled={!bulkTargetPastaId || pastas.length === 0}
             >
               Mover
@@ -930,7 +946,9 @@ export default function Empresas() {
               Cancelar
             </Button>
             <Button
-              onClick={confirmBulkVincularAcao}
+              onClick={() => {
+                void confirmBulkVincularAcao();
+              }}
               disabled={!bulkTargetAcaoId || acoes.length === 0}
             >
               Vincular
@@ -1034,14 +1052,16 @@ export default function Empresas() {
               Cancelar
             </Button>
             <Button
-              onClick={async () => {
-                await createEleg.mutateAsync({
-                  empresa_id: elegEmpresaId,
-                  acao_id: elegAcaoId,
-                  elegivel: elegElegivel === "true",
-                  justificativa: elegJustificativa || "",
-                });
-                setElegDialogOpen(false);
+              onClick={() => {
+                void (async () => {
+                  await createEleg.mutateAsync({
+                    empresa_id: elegEmpresaId,
+                    acao_id: elegAcaoId,
+                    elegivel: elegElegivel === "true",
+                    justificativa: elegJustificativa || "",
+                  });
+                  setElegDialogOpen(false);
+                })();
               }}
             >
               Vincular

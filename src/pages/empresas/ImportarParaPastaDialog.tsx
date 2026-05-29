@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import * as XLSX from "xlsx";
 import {
   Dialog,
   DialogContent,
@@ -35,9 +34,17 @@ interface Props {
 
 // Resolve uma célula bruta a CNPJ de 14 dígitos (só dígitos). Recupera zeros
 // à esquerda que o Excel come quando trata CNPJ como número.
+// Converte célula Excel (unknown) para string segura — rejeita objetos.
+function cellStr(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
+  return "";
+}
+
 function resolveCNPJ(raw: unknown): string | null {
-  if (raw == null || String(raw).trim() === "") return null;
-  let digits = String(raw).replace(/\D/g, "");
+  const s = cellStr(raw);
+  if (!s.trim()) return null;
+  let digits = s.replace(/\D/g, "");
   if (digits.length === 13) digits = "0" + digits;
   if (digits.length === 12) digits = "00" + digits;
   if (digits.length === 11) digits = "000" + digits;
@@ -123,6 +130,7 @@ export function ImportarParaPastaDialog({ open, onOpenChange, pastaId, pastaNome
     setFile(f);
     setParsing(true);
     try {
+      const XLSX = await import("xlsx");
       const buf = await f.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -165,7 +173,7 @@ export function ImportarParaPastaDialog({ open, onOpenChange, pastaId, pastaNome
         seen.add(digits);
         const strOrNull = (col: string | null) => {
           if (!col) return null;
-          const v = String(row[col] ?? "").trim();
+          const v = cellStr(row[col]).trim();
           return v || null;
         };
         out.push({
@@ -173,11 +181,7 @@ export function ImportarParaPastaDialog({ open, onOpenChange, pastaId, pastaNome
           nome: strOrNull(nomeCol),
           razao: strOrNull(razaoCol),
           fantasia: strOrNull(fantasiaCol),
-          uf: ufCol
-            ? String(row[ufCol] ?? "")
-                .trim()
-                .toUpperCase() || null
-            : null,
+          uf: ufCol ? cellStr(row[ufCol]).trim().toUpperCase() || null : null,
           municipio: strOrNull(munCol),
         });
       }
@@ -400,7 +404,13 @@ export function ImportarParaPastaDialog({ open, onOpenChange, pastaId, pastaNome
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancelar
               </Button>
-              <Button onClick={execute} disabled={rows.length === 0} className="gap-2">
+              <Button
+                onClick={() => {
+                  void execute();
+                }}
+                disabled={rows.length === 0}
+                className="gap-2"
+              >
                 <Upload className="h-4 w-4" /> Importar e vincular
               </Button>
             </div>

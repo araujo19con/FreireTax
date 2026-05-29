@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
 import { formatCNPJ } from "./format";
@@ -190,7 +189,8 @@ function toSheetRow(r: ExportRow): SheetRow {
   };
 }
 
-export function exportEmpresasAcaoXlsx(rows: ExportRow[], acaoNome: string): void {
+export async function exportEmpresasAcaoXlsx(rows: ExportRow[], acaoNome: string): Promise<void> {
+  const XLSX = await import("xlsx");
   const data = rows.map(toSheetRow);
   const ws = XLSX.utils.json_to_sheet(data, { header: [...HEADERS] });
   ws["!cols"] = HEADERS.map((h) => ({ wch: COL_WIDTHS[h] }));

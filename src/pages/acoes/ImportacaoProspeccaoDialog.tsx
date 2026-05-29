@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import * as XLSX from "xlsx";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -239,158 +238,154 @@ export function ImportacaoProspeccaoDialog({
   // Parse xlsx
   // -------------------------------------------------------------------------
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result as ArrayBuffer);
-      const wb = XLSX.read(data, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const raw: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-      if (raw.length < 1) {
-        toast.error("Planilha vazia");
-        return;
+    const XLSX = await import("xlsx");
+    const data = new Uint8Array(await file.arrayBuffer());
+    const wb = XLSX.read(data, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const raw: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+    if (raw.length < 1) {
+      toast.error("Planilha vazia");
+      return;
+    }
+
+    // Detecta formato:
+    // Formato A (com cabeçalho): primeira linha tem labels como "EMPRESA", "CNPJ", "SITUAÇÃO"
+    // Formato B (sem cabeçalho): coluna 0 = número processo, col 1 = empresa, col 2 = CNPJ
+    const headers = raw[0].map((h) => String(h));
+    const iNomeLabel = findColIdx(headers, ["empresas em", "empresa", "nome"]);
+    const iCnpjLabel = findColIdx(headers, ["cnpj"]);
+    const hasHeaderRow = iNomeLabel !== -1;
+
+    let startRow: number;
+    let iSituacao: number, iNome: number, iCnpj: number, iProcesso: number;
+    let iValor: number, iUF: number, iObs: number, iSim: number;
+    let iFuncCol: number, iFatCol: number;
+
+    if (hasHeaderRow) {
+      // Formato A
+      startRow = 1;
+      iSituacao = findColIdx(headers, ["situacao", "situação", "status"]);
+      iNome = iNomeLabel;
+      iCnpj = iCnpjLabel;
+      iProcesso = findColIdx(headers, ["numero processo", "número processo", "processo"]);
+      iValor = findColIdx(headers, ["valor causa", "valor"]);
+      iUF = findColIdx(headers, ["estado", "uf"]);
+      iObs = findColIdx(headers, ["observ"]);
+      iSim = findColIdx(headers, ["sim"]);
+      iFuncCol = findColIdx(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
+      iFatCol = findColIdx(headers, ["faturamento", "receita", "revenue", "billing"]);
+    } else {
+      // Formato B: [processo_originario, empresa, cnpj, obs?] — sem linha de cabeçalho
+      startRow = 0;
+      iSituacao = -1;
+      iNome = 1;
+      iCnpj = 2;
+      iProcesso = 0;
+      iValor = -1;
+      iUF = -1;
+      iObs = 3;
+      iSim = -1;
+      iFuncCol = -1;
+      iFatCol = -1;
+    }
+
+    const parsed: ProspRow[] = [];
+
+    for (let i = startRow; i < raw.length; i++) {
+      const r = raw[i];
+      // Para CNPJ com múltiplos valores separados por quebra de linha, pega o primeiro
+      const cnpjCell = iCnpj !== -1 ? String(r[iCnpj] ?? "").split(/[\n\r]/)[0] : "";
+      const nomeRaw = String(r[iNome] ?? "").trim();
+      if (!nomeRaw) continue; // linha vazia
+
+      const cnpjRaw = cnpjCell;
+      const situacaoRaw = String(r[iSituacao] ?? "").trim();
+      const processoRaw = String(r[iProcesso] ?? "").trim();
+      const valorCausaRaw = String(r[iValor] ?? "").trim();
+      const ufRaw = String(r[iUF] ?? "").trim();
+      const obsRaw = String(r[iObs] ?? "").trim();
+      const simRaw = String(r[iSim] ?? "").trim();
+
+      const { cnpj, erro: cnpjErro } = resolveCNPJ(cnpjRaw);
+      const statusProspeccao = mapSituacao(situacaoRaw);
+      const numeroProcesso = parseProcesso(processoRaw);
+      const valorCausa = parseValor(valorCausaRaw);
+
+      const funcRawStr = iFuncCol !== -1 ? String(r[iFuncCol] ?? "").trim() : "";
+      const fatRawStr = iFatCol !== -1 ? String(r[iFatCol] ?? "").trim() : "";
+      const quantidadeFuncionarios = iFuncCol !== -1 ? parseValor(r[iFuncCol]) : null;
+      const faturamentoAnual = iFatCol !== -1 ? parseValor(r[iFatCol]) : null;
+      // Texto só quando não parseável como número (faixa como "100 A 499")
+      const faixaFuncRaw =
+        iFuncCol !== -1 && funcRawStr && quantidadeFuncionarios === null ? funcRawStr : "";
+      const faixaFatRaw = iFatCol !== -1 && fatRawStr && faturamentoAnual === null ? fatRawStr : "";
+
+      // Resolve empresa: 1º por CNPJ, 2º por nome (fallback)
+      let empresaId: string | null = null;
+      let empresaNome = nomeRaw;
+
+      if (cnpj) {
+        const foundId = cnpjToId.get(cnpj);
+        if (foundId) {
+          empresaId = foundId;
+          empresaNome = empresasMap.get(foundId)?.nome ?? nomeRaw;
+        }
       }
 
-      // Detecta formato:
-      // Formato A (com cabeçalho): primeira linha tem labels como "EMPRESA", "CNPJ", "SITUAÇÃO"
-      // Formato B (sem cabeçalho): coluna 0 = número processo, col 1 = empresa, col 2 = CNPJ
-      const headers = raw[0].map((h) => String(h));
-      const iNomeLabel = findColIdx(headers, ["empresas em", "empresa", "nome"]);
-      const iCnpjLabel = findColIdx(headers, ["cnpj"]);
-      const hasHeaderRow = iNomeLabel !== -1;
-
-      let startRow: number;
-      let iSituacao: number, iNome: number, iCnpj: number, iProcesso: number;
-      let iValor: number, iUF: number, iObs: number, iSim: number;
-      let iFuncCol: number, iFatCol: number;
-
-      if (hasHeaderRow) {
-        // Formato A
-        startRow = 1;
-        iSituacao = findColIdx(headers, ["situacao", "situação", "status"]);
-        iNome = iNomeLabel;
-        iCnpj = iCnpjLabel;
-        iProcesso = findColIdx(headers, ["numero processo", "número processo", "processo"]);
-        iValor = findColIdx(headers, ["valor causa", "valor"]);
-        iUF = findColIdx(headers, ["estado", "uf"]);
-        iObs = findColIdx(headers, ["observ"]);
-        iSim = findColIdx(headers, ["sim"]);
-        iFuncCol = findColIdx(headers, ["funcionario", "funcionarios", "colaborador", "employee"]);
-        iFatCol = findColIdx(headers, ["faturamento", "receita", "revenue", "billing"]);
-      } else {
-        // Formato B: [processo_originario, empresa, cnpj, obs?] — sem linha de cabeçalho
-        startRow = 0;
-        iSituacao = -1;
-        iNome = 1;
-        iCnpj = 2;
-        iProcesso = 0;
-        iValor = -1;
-        iUF = -1;
-        iObs = 3;
-        iSim = -1;
-        iFuncCol = -1;
-        iFatCol = -1;
-      }
-
-      const parsed: ProspRow[] = [];
-
-      for (let i = startRow; i < raw.length; i++) {
-        const r = raw[i];
-        // Para CNPJ com múltiplos valores separados por quebra de linha, pega o primeiro
-        const cnpjCell = iCnpj !== -1 ? String(r[iCnpj] ?? "").split(/[\n\r]/)[0] : "";
-        const nomeRaw = String(r[iNome] ?? "").trim();
-        if (!nomeRaw) continue; // linha vazia
-
-        const cnpjRaw = cnpjCell;
-        const situacaoRaw = String(r[iSituacao] ?? "").trim();
-        const processoRaw = String(r[iProcesso] ?? "").trim();
-        const valorCausaRaw = String(r[iValor] ?? "").trim();
-        const ufRaw = String(r[iUF] ?? "").trim();
-        const obsRaw = String(r[iObs] ?? "").trim();
-        const simRaw = String(r[iSim] ?? "").trim();
-
-        const { cnpj, erro: cnpjErro } = resolveCNPJ(cnpjRaw);
-        const statusProspeccao = mapSituacao(situacaoRaw);
-        const numeroProcesso = parseProcesso(processoRaw);
-        const valorCausa = parseValor(valorCausaRaw);
-
-        const funcRawStr = iFuncCol !== -1 ? String(r[iFuncCol] ?? "").trim() : "";
-        const fatRawStr = iFatCol !== -1 ? String(r[iFatCol] ?? "").trim() : "";
-        const quantidadeFuncionarios = iFuncCol !== -1 ? parseValor(r[iFuncCol]) : null;
-        const faturamentoAnual = iFatCol !== -1 ? parseValor(r[iFatCol]) : null;
-        // Texto só quando não parseável como número (faixa como "100 A 499")
-        const faixaFuncRaw =
-          iFuncCol !== -1 && funcRawStr && quantidadeFuncionarios === null ? funcRawStr : "";
-        const faixaFatRaw =
-          iFatCol !== -1 && fatRawStr && faturamentoAnual === null ? fatRawStr : "";
-
-        // Resolve empresa: 1º por CNPJ, 2º por nome (fallback)
-        let empresaId: string | null = null;
-        let empresaNome = nomeRaw;
-
-        if (cnpj) {
-          const foundId = cnpjToId.get(cnpj);
-          if (foundId) {
-            empresaId = foundId;
-            empresaNome = empresasMap.get(foundId)?.nome ?? nomeRaw;
+      // Fallback por nome — pega empresas existentes que não bateram por CNPJ
+      // (cnpj null no DB, formato diferente, typo nos dígitos verificadores,
+      //  variações como "&" vs "E", sufixos LTDA/SA, etc.)
+      if (!empresaId && nomeRaw) {
+        const nameKey = normalizeNameKey(nomeRaw);
+        if (nameKey) {
+          const foundByName = nameToId.get(nameKey);
+          if (foundByName) {
+            empresaId = foundByName;
+            empresaNome = empresasMap.get(foundByName)?.nome ?? nomeRaw;
           }
         }
-
-        // Fallback por nome — pega empresas existentes que não bateram por CNPJ
-        // (cnpj null no DB, formato diferente, typo nos dígitos verificadores,
-        //  variações como "&" vs "E", sufixos LTDA/SA, etc.)
-        if (!empresaId && nomeRaw) {
-          const nameKey = normalizeNameKey(nomeRaw);
-          if (nameKey) {
-            const foundByName = nameToId.get(nameKey);
-            if (foundByName) {
-              empresaId = foundByName;
-              empresaNome = empresasMap.get(foundByName)?.nome ?? nomeRaw;
-            }
-          }
-        }
-
-        const jaImportada = empresaId ? jaImportadas.has(empresaId) : false;
-
-        let rowStatus: RowStatus;
-        if (jaImportada) rowStatus = "ja_importada";
-        else if (empresaId) rowStatus = "ok_existente";
-        else if (cnpj) rowStatus = "ok_nova";
-        else if (cnpjErro) rowStatus = "cnpj_invalido";
-        else rowStatus = "sem_cnpj";
-
-        parsed.push({
-          nomeRaw,
-          cnpjRaw: String(cnpjRaw ?? "").trim(),
-          processoRaw,
-          situacaoRaw,
-          valorCausaRaw,
-          ufRaw,
-          obsRaw,
-          simRaw,
-          cnpj,
-          cnpjErro,
-          statusProspeccao,
-          numeroProcesso,
-          valorCausa,
-          quantidadeFuncionarios,
-          faturamentoAnual,
-          faixaFuncRaw,
-          faixaFatRaw,
-          empresaId,
-          empresaNome,
-          rowStatus,
-          // Todas as rows selecionadas por padrão — incluindo ja_importada
-          // (re-import atualiza status das prospecções existentes)
-          selected: true,
-        });
       }
 
-      setRows(parsed);
-      setStep(2);
-    };
-    reader.readAsArrayBuffer(file);
+      const jaImportada = empresaId ? jaImportadas.has(empresaId) : false;
+
+      let rowStatus: RowStatus;
+      if (jaImportada) rowStatus = "ja_importada";
+      else if (empresaId) rowStatus = "ok_existente";
+      else if (cnpj) rowStatus = "ok_nova";
+      else if (cnpjErro) rowStatus = "cnpj_invalido";
+      else rowStatus = "sem_cnpj";
+
+      parsed.push({
+        nomeRaw,
+        cnpjRaw: String(cnpjRaw ?? "").trim(),
+        processoRaw,
+        situacaoRaw,
+        valorCausaRaw,
+        ufRaw,
+        obsRaw,
+        simRaw,
+        cnpj,
+        cnpjErro,
+        statusProspeccao,
+        numeroProcesso,
+        valorCausa,
+        quantidadeFuncionarios,
+        faturamentoAnual,
+        faixaFuncRaw,
+        faixaFatRaw,
+        empresaId,
+        empresaNome,
+        rowStatus,
+        // Todas as rows selecionadas por padrão — incluindo ja_importada
+        // (re-import atualiza status das prospecções existentes)
+        selected: true,
+      });
+    }
+
+    setRows(parsed);
+    setStep(2);
   };
 
   const toggleRow = (i: number) =>

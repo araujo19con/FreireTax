@@ -31,7 +31,6 @@ import { ImportacaoProspeccaoDialog } from "./acoes/ImportacaoProspeccaoDialog";
 import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import { exportEmpresasAcaoXlsx, type ExportRow } from "@/lib/exportEmpresasAcao";
 import { ProspeccaoRapidaDialog } from "./acoes/ProspeccaoRapidaDialog";
-import * as XLSX from "xlsx";
 import { maskCNPJ, validateCNPJ } from "@/lib/cnpj";
 import { CriteriosAdmin } from "./elegibilidade/CriteriosAdmin";
 import { AcaoDialog } from "@/components/AcaoDialog";
@@ -351,7 +350,7 @@ export default function Acoes() {
         return;
       }
 
-      exportEmpresasAcaoXlsx(rows, payload.acaoNome);
+      await exportEmpresasAcaoXlsx(rows, payload.acaoNome);
       toast.success(`Planilha gerada (${rows.length} empresas).`);
       logAudit({
         tabela: "acoes_tributarias",
@@ -511,6 +510,7 @@ export default function Acoes() {
     setPlanilhaFileName(file.name);
     setPlanilhaProcessing(true);
     try {
+      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
       const sheet = wb.Sheets[wb.SheetNames[0]];

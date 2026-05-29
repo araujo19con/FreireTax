@@ -11,7 +11,6 @@ import {
   Legend,
 } from "recharts";
 import { Download, TrendingUp, DollarSign, Target, Percent } from "lucide-react";
-import * as XLSX from "xlsx";
 import { format, startOfYear } from "date-fns";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -192,7 +191,8 @@ export default function Relatorios() {
       .sort((a, b) => b.Ganhas - a.Ganhas);
   }, [filtered, filterAcao, acaoMap]);
 
-  function exportXLSX() {
+  async function exportXLSX() {
+    const XLSX = await import("xlsx");
     const rows = ganhas.map((p) => ({
       Empresa: p.empresa_nome,
       "Ação Tributária": p.acao_nome,
@@ -216,7 +216,14 @@ export default function Relatorios() {
         title="Relatórios"
         description="Funil de conversão e prospecções ganhas"
         actions={
-          <Button variant="outline" size="sm" onClick={exportXLSX} disabled={!ganhas.length}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void exportXLSX();
+            }}
+            disabled={!ganhas.length}
+          >
             <Download className="mr-1.5 h-4 w-4" />
             Exportar XLSX
           </Button>

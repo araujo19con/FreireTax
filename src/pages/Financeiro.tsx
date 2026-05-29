@@ -12,7 +12,6 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -247,7 +246,8 @@ export default function Financeiro() {
     void qc.invalidateQueries({ queryKey: ["financeiro"] });
   }
 
-  function exportXLSX() {
+  async function exportXLSX() {
+    const XLSX = await import("xlsx");
     const rows = enriched.map((l) => ({
       Empresa: empresaMap.get(l.empresa_id) ?? "—",
       Tipo: TIPO_LABEL[l.tipo],
@@ -277,7 +277,14 @@ export default function Financeiro() {
         description={`Honorários — ${mesLabel}`}
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={exportXLSX} disabled={!enriched.length}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void exportXLSX();
+              }}
+              disabled={!enriched.length}
+            >
               <Download className="mr-1.5 h-4 w-4" />
               Exportar
             </Button>

@@ -36,7 +36,6 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import * as XLSX from "xlsx";
 import type { Database } from "@/integrations/supabase/types";
 import {
   REGIMES_TRIBUTARIOS,
@@ -312,8 +311,9 @@ export default function AnaliseRFB() {
     filtros.faturamentoMin != null ||
     filtros.faturamentoMax != null;
 
-  const exportarFiltradas = () => {
+  const exportarFiltradas = async () => {
     if (filtered.length === 0) return toast.error("Nenhuma empresa filtrada para exportar");
+    const XLSX = await import("xlsx");
     const rows = filtered.map((e) => {
       const any = e as any;
       return {
@@ -358,7 +358,9 @@ export default function AnaliseRFB() {
             <Button
               variant="outline"
               size="sm"
-              onClick={exportarFiltradas}
+              onClick={() => {
+                void exportarFiltradas();
+              }}
               disabled={filtered.length === 0}
             >
               <Download className="mr-2 h-4 w-4" />

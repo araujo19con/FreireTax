@@ -40,7 +40,6 @@ import {
 } from "recharts";
 import { format, subMonths, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import * as XLSX from "xlsx";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
 import { FunilHormozi } from "@/components/FunilHormozi";
@@ -319,7 +318,8 @@ export default function Dashboard() {
     };
   }, [acoes, elegibilidades, processos, prospeccoes, selectedAcao, selectedTribunal]);
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
 
     // KPIs sheet
@@ -588,7 +588,9 @@ export default function Dashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={exportExcel}
+              onClick={() => {
+                void exportExcel();
+              }}
               aria-label="Exportar dashboard para Excel"
             >
               <FileSpreadsheet className="mr-2 h-4 w-4" aria-hidden="true" />
