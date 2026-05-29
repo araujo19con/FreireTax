@@ -72,6 +72,8 @@ interface Processo {
 interface Prospeccao {
   id: string;
   elegibilidade_id: string;
+  empresa_id: string | null;
+  acao_id: string | null;
   status_prospeccao: string;
   valor_contrato: number;
   contato_nome: string;

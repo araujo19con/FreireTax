@@ -87,8 +87,9 @@ const OBJECOES_COMUNS = [
 
 interface Prospeccao {
   id: string;
-  /** Único vínculo a empresa/ação: prospeccoes não tem FK direta. */
   elegibilidade_id: string;
+  empresa_id: string | null;
+  acao_id: string | null;
   contato_nome: string;
   contato_telefone: string;
   contato_email: string;
