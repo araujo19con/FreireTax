@@ -70,7 +70,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Acao {
   id: string;
@@ -166,14 +165,6 @@ const statusProcessoOptions = [
   "Suspenso",
   "Finalizado",
 ];
-const statusProspeccaoOptions = [
-  "Contato feito",
-  "Proposta enviada",
-  "Em negociação",
-  "Contrato assinado",
-  "Serviço iniciado",
-  "Perdido",
-];
 
 export default function Acoes() {
   const [acoes, setAcoes] = useState<Acao[]>([]);
@@ -232,22 +223,6 @@ export default function Acoes() {
   const [procDataProcesso, setProcDataProcesso] = useState("");
   const [procTribunal, setProcTribunal] = useState("");
   const [procTribunalOutro, setProcTribunalOutro] = useState("");
-
-  // Prospecção dialog
-  const [prospDialogOpen, setProspDialogOpen] = useState(false);
-  const [editingProsp, _setEditingProsp] = useState<Prospeccao | null>(null);
-  const [prospElegId, _setProspElegId] = useState("");
-  const [prospContatoNome, setProspContatoNome] = useState("");
-  const [prospContatoTel, setProspContatoTel] = useState("");
-  const [prospContatoEmail, setProspContatoEmail] = useState("");
-  const [prospContatoCargo, setProspContatoCargo] = useState("");
-  const [prospStatus, setProspStatus] = useState("Contato feito");
-  const [prospNotas, setProspNotas] = useState("");
-  const [prospValorContrato, setProspValorContrato] = useState("");
-  const [prospTipoContrato, setProspTipoContrato] = useState("");
-  const [prospDataContrato, setProspDataContrato] = useState("");
-  const [prospDataAssinatura, setProspDataAssinatura] = useState("");
-  const [prospObsContrato, setProspObsContrato] = useState("");
 
   // fetchAllRows (src/lib/supabaseFetchAll.ts) pagina automaticamente em chunks
   // de 1000 — necessário porque PostgREST corta cada response em max-rows.
@@ -603,8 +578,8 @@ export default function Acoes() {
           obs: "",
           user_id: user.id,
         }));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: ins, error } = await (supabase.from("empresas") as any)
+        const { data: ins, error } = await supabase
+          .from("empresas")
           .insert(insertData)
           .select("id, cnpj");
         if (error) {
@@ -653,8 +628,7 @@ export default function Acoes() {
 
     // upsert com ignoreDuplicates: o filtro `existingPairs` acima já remove duplicatas,
     // mas se houver race condition (outro user inseriu no meio), evita erro 23505.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from("elegibilidade") as any).upsert(items, {
+    const { error } = await supabase.from("elegibilidade").upsert(items, {
       onConflict: "empresa_id,acao_id",
       ignoreDuplicates: true,
     });
@@ -793,7 +767,8 @@ export default function Acoes() {
       tribunal: procTribunal === "Outro" ? procTribunalOutro : procTribunal,
     };
     if (editingProcesso) {
-      const { error } = await (supabase.from("processos") as any)
+      const { error } = await supabase
+        .from("processos")
         .update(payload)
         .eq("id", editingProcesso.id);
       if (error) {
@@ -808,7 +783,7 @@ export default function Acoes() {
         detalhes: payload,
       });
     } else {
-      const { error } = await (supabase.from("processos") as any).insert({
+      const { error } = await supabase.from("processos").insert({
         ...payload,
         elegibilidade_id: procElegId,
         user_id: user.id,
@@ -825,58 +800,6 @@ export default function Acoes() {
       });
     }
     setProcDialogOpen(false);
-    fetchAll();
-  };
-
-  const handleSaveProsp = async () => {
-    const payload = {
-      contato_nome: prospContatoNome,
-      contato_telefone: prospContatoTel,
-      contato_email: prospContatoEmail,
-      contato_cargo: prospContatoCargo,
-      status_prospeccao: prospStatus,
-      notas_prospeccao: prospNotas,
-      valor_contrato: parseFloat(prospValorContrato) || 0,
-      tipo_contrato: prospTipoContrato,
-      data_contrato: prospDataContrato || null,
-      data_assinatura: prospDataAssinatura || null,
-      observacoes_contrato: prospObsContrato,
-    };
-    if (editingProsp) {
-      const { error } = await (supabase.from("prospeccoes") as any)
-        .update(payload)
-        .eq("id", editingProsp.id);
-      if (error) {
-        toast.error("Erro ao atualizar prospecção");
-        console.error(error);
-        return;
-      }
-      toast.success("Prospecção atualizada!");
-      logAudit({
-        tabela: "prospeccoes",
-        acao: "Editou prospecção",
-        registro_id: editingProsp.id,
-        detalhes: { status: prospStatus },
-      });
-    } else {
-      const { error } = await (supabase.from("prospeccoes") as any).insert({
-        ...payload,
-        elegibilidade_id: prospElegId,
-        user_id: user.id,
-      });
-      if (error) {
-        toast.error("Erro ao criar prospecção");
-        console.error(error);
-        return;
-      }
-      toast.success("Prospecção registrada!");
-      logAudit({
-        tabela: "prospeccoes",
-        acao: "Criou prospecção",
-        detalhes: { elegibilidade_id: prospElegId, status: prospStatus },
-      });
-    }
-    setProspDialogOpen(false);
     fetchAll();
   };
 
@@ -1553,154 +1476,6 @@ export default function Acoes() {
               }}
             >
               {editingProcesso ? "Salvar" : "Criar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Prospecção Dialog */}
-      <Dialog open={prospDialogOpen} onOpenChange={setProspDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="font-heading">
-              {editingProsp ? "Editar Prospecção" : "Nova Prospecção"}
-            </DialogTitle>
-          </DialogHeader>
-          <Tabs defaultValue="contato" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="contato">Contato</TabsTrigger>
-              <TabsTrigger value="prospeccao">Prospecção</TabsTrigger>
-              <TabsTrigger value="contrato">Contrato</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="contato" className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Nome do Contato</Label>
-                  <Input
-                    value={prospContatoNome}
-                    onChange={(e) => setProspContatoNome(e.target.value)}
-                    placeholder="Nome completo"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cargo</Label>
-                  <Input
-                    value={prospContatoCargo}
-                    onChange={(e) => setProspContatoCargo(e.target.value)}
-                    placeholder="Ex: Diretor Financeiro"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Telefone</Label>
-                  <Input
-                    value={prospContatoTel}
-                    onChange={(e) => setProspContatoTel(e.target.value)}
-                    placeholder="(11) 99999-9999"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input
-                    type="email"
-                    value={prospContatoEmail}
-                    onChange={(e) => setProspContatoEmail(e.target.value)}
-                    placeholder="email@empresa.com"
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="prospeccao" className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label>Status da Prospecção</Label>
-                <Select value={prospStatus} onValueChange={setProspStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusProspeccaoOptions.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Notas da Prospecção</Label>
-                <Textarea
-                  value={prospNotas}
-                  onChange={(e) => setProspNotas(e.target.value)}
-                  placeholder="Histórico de contatos, observações..."
-                  rows={4}
-                />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="contrato" className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Tipo de Contrato</Label>
-                  <Input
-                    value={prospTipoContrato}
-                    onChange={(e) => setProspTipoContrato(e.target.value)}
-                    placeholder="Ex: Êxito, Mensal, Misto"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Valor do Contrato (R$)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={prospValorContrato}
-                    onChange={(e) => setProspValorContrato(e.target.value)}
-                    placeholder="0,00"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Data do Contrato</Label>
-                  <Input
-                    type="date"
-                    value={prospDataContrato}
-                    onChange={(e) => setProspDataContrato(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Data da Assinatura</Label>
-                  <Input
-                    type="date"
-                    value={prospDataAssinatura}
-                    onChange={(e) => setProspDataAssinatura(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Observações do Contrato</Label>
-                <Textarea
-                  value={prospObsContrato}
-                  onChange={(e) => setProspObsContrato(e.target.value)}
-                  placeholder="Cláusulas especiais, condições..."
-                  rows={3}
-                />
-              </div>
-            </TabsContent>
-          </Tabs>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setProspDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => {
-                void handleSaveProsp();
-              }}
-            >
-              {editingProsp ? "Salvar" : "Criar"}
             </Button>
           </DialogFooter>
         </DialogContent>
