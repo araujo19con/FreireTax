@@ -523,9 +523,11 @@ export type Database = {
       };
       processos: {
         Row: {
+          acao_id: string;
           created_at: string;
           data_processo: string | null;
           elegibilidade_id: string;
+          empresa_id: string;
           fase: string;
           id: string;
           numero_processo: string | null;
@@ -538,9 +540,11 @@ export type Database = {
           valor_ganho: number | null;
         };
         Insert: {
+          acao_id: string;
           created_at?: string;
           data_processo?: string | null;
           elegibilidade_id: string;
+          empresa_id: string;
           fase?: string;
           id?: string;
           numero_processo?: string | null;
@@ -553,9 +557,11 @@ export type Database = {
           valor_ganho?: number | null;
         };
         Update: {
+          acao_id?: string;
           created_at?: string;
           data_processo?: string | null;
           elegibilidade_id?: string;
+          empresa_id?: string;
           fase?: string;
           id?: string;
           numero_processo?: string | null;
@@ -569,10 +575,24 @@ export type Database = {
         };
         Relationships: [
           {
+            foreignKeyName: "processos_acao_id_fkey";
+            columns: ["acao_id"];
+            isOneToOne: false;
+            referencedRelation: "acoes_tributarias";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "processos_elegibilidade_id_fkey";
             columns: ["elegibilidade_id"];
             isOneToOne: false;
             referencedRelation: "elegibilidade";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "processos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
             referencedColumns: ["id"];
           },
         ];
@@ -828,7 +848,7 @@ export type Database = {
       };
       prospeccoes: {
         Row: {
-          acao_id: string | null;
+          acao_id: string;
           cargo_categoria: Database["public"]["Enums"]["cargo_categoria"] | null;
           contato_cargo: string | null;
           contato_email: string | null;
@@ -841,7 +861,7 @@ export type Database = {
           dor_identificada: string | null;
           eh_decisor: boolean;
           elegibilidade_id: string;
-          empresa_id: string | null;
+          empresa_id: string;
           id: string;
           motivo_perdido: Database["public"]["Enums"]["motivo_perdido"] | null;
           motivo_perdido_detalhes: string | null;
@@ -861,7 +881,7 @@ export type Database = {
           valor_emocional_articulado: string | null;
         };
         Insert: {
-          acao_id?: string | null;
+          acao_id: string;
           cargo_categoria?: Database["public"]["Enums"]["cargo_categoria"] | null;
           contato_cargo?: string | null;
           contato_email?: string | null;
@@ -874,7 +894,7 @@ export type Database = {
           dor_identificada?: string | null;
           eh_decisor?: boolean;
           elegibilidade_id: string;
-          empresa_id?: string | null;
+          empresa_id: string;
           id?: string;
           motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null;
           motivo_perdido_detalhes?: string | null;
@@ -894,7 +914,7 @@ export type Database = {
           valor_emocional_articulado?: string | null;
         };
         Update: {
-          acao_id?: string | null;
+          acao_id?: string;
           cargo_categoria?: Database["public"]["Enums"]["cargo_categoria"] | null;
           contato_cargo?: string | null;
           contato_email?: string | null;
@@ -907,7 +927,7 @@ export type Database = {
           dor_identificada?: string | null;
           eh_decisor?: boolean;
           elegibilidade_id?: string;
-          empresa_id?: string | null;
+          empresa_id?: string;
           id?: string;
           motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null;
           motivo_perdido_detalhes?: string | null;

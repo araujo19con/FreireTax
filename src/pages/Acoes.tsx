@@ -121,6 +121,8 @@ interface PastaItem {
 interface Processo {
   id: string;
   elegibilidade_id: string;
+  empresa_id: string;
+  acao_id: string;
   numero_processo: string;
   fase: string;
   valor_estimado: number;
@@ -805,8 +807,7 @@ export default function Acoes() {
 
   // Totals
   const getTotalsForAcao = (acaoId: string) => {
-    const elegIds = new Set(elegibilidades.filter((e) => e.acao_id === acaoId).map((e) => e.id));
-    const acaoProcessos = processos.filter((p) => elegIds.has(p.elegibilidade_id));
+    const acaoProcessos = processos.filter((p) => p.acao_id === acaoId);
     return {
       estimado: acaoProcessos.reduce((s, p) => s + (Number(p.valor_estimado) || 0), 0),
       ganho: acaoProcessos.reduce((s, p) => s + (Number(p.valor_ganho) || 0), 0),

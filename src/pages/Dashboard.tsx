@@ -61,6 +61,8 @@ interface ElegibilidadeRow {
 interface Processo {
   id: string;
   elegibilidade_id: string;
+  empresa_id: string;
+  acao_id: string;
   fase: string;
   valor_estimado: number;
   valor_ganho: number;
@@ -143,8 +145,8 @@ export default function Dashboard() {
       selectedAcao === "all"
         ? elegibilidades
         : elegibilidades.filter((e) => e.acao_id === selectedAcao);
-    const filtElegIds = new Set(filtEleg.map((e) => e.id));
-    let filtProc = processos.filter((p) => filtElegIds.has(p.elegibilidade_id));
+    let filtProc =
+      selectedAcao === "all" ? processos : processos.filter((p) => p.acao_id === selectedAcao);
     if (selectedTribunal !== "all") {
       filtProc = filtProc.filter((p) => (p.tribunal || "Não informado") === selectedTribunal);
     }
@@ -256,8 +258,7 @@ export default function Dashboard() {
     // Per-ação bar chart data
     const acaoBarData = acoes.map((a) => {
       const acaoElegs = elegibilidades.filter((e) => e.acao_id === a.id);
-      const acaoElegIds = new Set(acaoElegs.map((e) => e.id));
-      const acaoProc = processos.filter((p) => acaoElegIds.has(p.elegibilidade_id));
+      const acaoProc = processos.filter((p) => p.acao_id === a.id);
       const acaoProsp = prospeccoes.filter((p) => p.acao_id === a.id);
       return {
         nome: a.nome.length > 20 ? a.nome.slice(0, 18) + "…" : a.nome,
