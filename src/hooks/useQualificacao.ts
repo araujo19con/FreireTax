@@ -30,8 +30,7 @@ export interface Resposta {
   user_id: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const respostasTable = () => (supabase.from as any)("elegibilidade_respostas");
+const respostasTable = () => supabase.from("elegibilidade_respostas");
 
 /** Carrega respostas de uma elegibilidade existente (usado para "editar qualificação"). */
 export function useRespostas(elegibilidadeId: string | undefined) {
@@ -273,8 +272,8 @@ export function useCriarProspeccaoFromEleg() {
   const { user } = useAuth();
   return useMutation({
     mutationFn: async (elegibilidadeId: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.from("prospeccoes") as any)
+      const { data, error } = await supabase
+        .from("prospeccoes")
         .insert({
           elegibilidade_id: elegibilidadeId,
           user_id: user.id,

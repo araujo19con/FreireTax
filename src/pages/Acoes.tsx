@@ -32,6 +32,7 @@ import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import { exportEmpresasAcaoXlsx, type ExportRow } from "@/lib/exportEmpresasAcao";
 import { ProspeccaoRapidaDialog } from "./acoes/ProspeccaoRapidaDialog";
 import { maskCNPJ, validateCNPJ } from "@/lib/cnpj";
+import { formatCurrency } from "@/lib/format";
 import { CriteriosAdmin } from "./elegibilidade/CriteriosAdmin";
 import { AcaoDialog } from "@/components/AcaoDialog";
 import { PageHeader } from "@/components/PageHeader";
@@ -174,10 +175,6 @@ const statusProspeccaoOptions = [
   "Perdido",
 ];
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
-}
-
 export default function Acoes() {
   const [acoes, setAcoes] = useState<Acao[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -238,8 +235,8 @@ export default function Acoes() {
 
   // Prospecção dialog
   const [prospDialogOpen, setProspDialogOpen] = useState(false);
-  const [editingProsp, setEditingProsp] = useState<Prospeccao | null>(null);
-  const [prospElegId, setProspElegId] = useState("");
+  const [editingProsp, _setEditingProsp] = useState<Prospeccao | null>(null);
+  const [prospElegId, _setProspElegId] = useState("");
   const [prospContatoNome, setProspContatoNome] = useState("");
   const [prospContatoTel, setProspContatoTel] = useState("");
   const [prospContatoEmail, setProspContatoEmail] = useState("");
@@ -435,13 +432,6 @@ export default function Acoes() {
 
   const getElegibilidadesForAcao = (acaoId: string) =>
     elegibilidades.filter((e) => e.acao_id === acaoId);
-  const _getEmpresaNome = (empresaId: string) =>
-    empresas.find((e) => e.id === empresaId)?.nome || "Desconhecida";
-  const _getProcessoForEleg = (elegId: string) =>
-    processos.find((p) => p.elegibilidade_id === elegId);
-  const _getProspeccaoForEleg = (elegId: string) =>
-    prospeccoes.find((p) => p.elegibilidade_id === elegId);
-
   const handleDeleteEleg = async (id: string) => {
     const { error } = await supabase.from("elegibilidade").delete().eq("id", id);
     if (error) {
@@ -838,49 +828,6 @@ export default function Acoes() {
     fetchAll();
   };
 
-  const _handleDeleteProcesso = async (id: string) => {
-    const { error } = await (supabase.from("processos") as any).delete().eq("id", id);
-    if (error) {
-      toast.error("Erro ao remover processo");
-    } else {
-      toast.success("Processo removido!");
-      fetchAll();
-    }
-  };
-
-  // Prospecção handlers
-  const _openProspDialog = (elegId: string, existing?: Prospeccao) => {
-    setProspElegId(elegId);
-    if (existing) {
-      setEditingProsp(existing);
-      setProspContatoNome(existing.contato_nome || "");
-      setProspContatoTel(existing.contato_telefone || "");
-      setProspContatoEmail(existing.contato_email || "");
-      setProspContatoCargo(existing.contato_cargo || "");
-      setProspStatus(existing.status_prospeccao);
-      setProspNotas(existing.notas_prospeccao || "");
-      setProspValorContrato(String(existing.valor_contrato || 0));
-      setProspTipoContrato(existing.tipo_contrato || "");
-      setProspDataContrato(existing.data_contrato || "");
-      setProspDataAssinatura(existing.data_assinatura || "");
-      setProspObsContrato(existing.observacoes_contrato || "");
-    } else {
-      setEditingProsp(null);
-      setProspContatoNome("");
-      setProspContatoTel("");
-      setProspContatoEmail("");
-      setProspContatoCargo("");
-      setProspStatus("Contato feito");
-      setProspNotas("");
-      setProspValorContrato("");
-      setProspTipoContrato("");
-      setProspDataContrato("");
-      setProspDataAssinatura("");
-      setProspObsContrato("");
-    }
-    setProspDialogOpen(true);
-  };
-
   const handleSaveProsp = async () => {
     const payload = {
       contato_nome: prospContatoNome,
@@ -933,16 +880,6 @@ export default function Acoes() {
     fetchAll();
   };
 
-  const _handleDeleteProsp = async (id: string) => {
-    const { error } = await (supabase.from("prospeccoes") as any).delete().eq("id", id);
-    if (error) {
-      toast.error("Erro ao remover prospecção");
-    } else {
-      toast.success("Prospecção removida!");
-      fetchAll();
-    }
-  };
-
   // Totals
   const getTotalsForAcao = (acaoId: string) => {
     const elegIds = new Set(elegibilidades.filter((e) => e.acao_id === acaoId).map((e) => e.id));
@@ -952,23 +889,6 @@ export default function Acoes() {
       ganho: acaoProcessos.reduce((s, p) => s + (Number(p.valor_ganho) || 0), 0),
       count: acaoProcessos.length,
     };
-  };
-
-  const _getProspStatusColor = (status: string) => {
-    switch (status) {
-      case "Contato feito":
-        return "bg-info/10 text-info";
-      case "Proposta enviada":
-        return "bg-warning/10 text-warning";
-      case "Em negociação":
-        return "bg-primary/10 text-primary";
-      case "Contrato assinado":
-        return "bg-success/10 text-success";
-      case "Perdido":
-        return "bg-destructive/10 text-destructive";
-      default:
-        return "bg-muted text-muted-foreground";
-    }
   };
 
   if (loading) {

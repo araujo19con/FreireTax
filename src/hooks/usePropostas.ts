@@ -5,11 +5,8 @@ import { logAudit } from "@/lib/audit";
 import { toast } from "sonner";
 import type { ProposalSection } from "@/lib/proposta";
 
-// Tabelas novas — types não estão gerados ainda. Cast pontual.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const tplTable = () => (supabase.from as any)("propostas_templates");
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const propTable = () => (supabase.from as any)("propostas");
+const tplTable = () => supabase.from("propostas_templates");
+const propTable = () => supabase.from("propostas");
 
 // =========================================================================
 // TEMPLATES
@@ -56,10 +53,15 @@ export function useCreatePropostaTemplate() {
   const { user } = useAuth();
   return useMutation({
     mutationFn: async (input: Partial<TemplateInput>) => {
-      const payload = { ...input, user_id: user!.id };
+      const payload = { ...input, user_id: user.id };
       const { data, error } = await tplTable().insert(payload).select().single();
       if (error) throw error;
-      await logAudit({ tabela: "propostas_templates", acao: "Criou template de proposta", registro_id: data.id, detalhes: { nome: input.nome } });
+      await logAudit({
+        tabela: "propostas_templates",
+        acao: "Criou template de proposta",
+        registro_id: data.id,
+        detalhes: { nome: input.nome },
+      });
       return data as PropostaTemplate;
     },
     onSuccess: () => {
@@ -76,7 +78,11 @@ export function useUpdatePropostaTemplate() {
     mutationFn: async ({ id, data }: { id: string; data: Partial<TemplateInput> }) => {
       const { error } = await tplTable().update(data).eq("id", id);
       if (error) throw error;
-      await logAudit({ tabela: "propostas_templates", acao: "Editou template de proposta", registro_id: id });
+      await logAudit({
+        tabela: "propostas_templates",
+        acao: "Editou template de proposta",
+        registro_id: id,
+      });
     },
     onSuccess: () => {
       toast.success("Template atualizado");
@@ -92,7 +98,11 @@ export function useDeletePropostaTemplate() {
     mutationFn: async (id: string) => {
       const { error } = await tplTable().delete().eq("id", id);
       if (error) throw error;
-      await logAudit({ tabela: "propostas_templates", acao: "Removeu template de proposta", registro_id: id });
+      await logAudit({
+        tabela: "propostas_templates",
+        acao: "Removeu template de proposta",
+        registro_id: id,
+      });
     },
     onSuccess: () => {
       toast.success("Template removido");
@@ -130,9 +140,9 @@ export interface Proposta {
   updated_at: string;
 }
 
-export type PropostaInput = Omit<Proposta,
-  "id" | "created_by" | "created_at" | "updated_at" |
-  "enviada_em" | "aceita_em" | "rejeitada_em"
+export type PropostaInput = Omit<
+  Proposta,
+  "id" | "created_by" | "created_at" | "updated_at" | "enviada_em" | "aceita_em" | "rejeitada_em"
 >;
 
 /** Busca proposta de uma prospecção (única). Retorna null se não houver. */
@@ -162,20 +172,34 @@ export function useUpsertProposta() {
 
       // Verifica existência (1 proposta por prospecção)
       const { data: existing } = await propTable()
-        .select("id").eq("prospeccao_id", prospeccao_id).maybeSingle();
+        .select("id")
+        .eq("prospeccao_id", prospeccao_id)
+        .maybeSingle();
 
-      const payload = { ...input, created_by: user!.id };
+      const payload = { ...input, created_by: user.id };
 
       if (existing?.id) {
         const { data, error } = await propTable()
-          .update(payload).eq("id", existing.id).select().single();
+          .update(payload)
+          .eq("id", existing.id)
+          .select()
+          .single();
         if (error) throw error;
-        await logAudit({ tabela: "propostas", acao: "Atualizou proposta", registro_id: existing.id });
+        await logAudit({
+          tabela: "propostas",
+          acao: "Atualizou proposta",
+          registro_id: existing.id,
+        });
         return data as Proposta;
       }
       const { data, error } = await propTable().insert(payload).select().single();
       if (error) throw error;
-      await logAudit({ tabela: "propostas", acao: "Criou proposta", registro_id: data.id, detalhes: { prospeccao_id } });
+      await logAudit({
+        tabela: "propostas",
+        acao: "Criou proposta",
+        registro_id: data.id,
+        detalhes: { prospeccao_id },
+      });
       return data as Proposta;
     },
     onSuccess: (p) => {
@@ -195,7 +219,11 @@ export function useMarcarPropostaEnviada() {
         .update({ status: "enviada", enviada_em: new Date().toISOString() })
         .eq("id", id);
       if (error) throw error;
-      await logAudit({ tabela: "propostas", acao: "Marcou proposta como enviada", registro_id: id });
+      await logAudit({
+        tabela: "propostas",
+        acao: "Marcou proposta como enviada",
+        registro_id: id,
+      });
     },
     onSuccess: () => {
       toast.success("Proposta marcada como enviada");
