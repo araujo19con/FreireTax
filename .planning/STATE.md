@@ -1,65 +1,64 @@
 # Project State — Tax Trakker
 
 **Atualizado:** 2026-05-29
-**Milestone ativo:** Estabilização — CONCLUÍDO
+**Milestone ativo:** Fase 2.2 concluída — elegibilidade_id legacy cleanup
 
 ---
 
 ## Status geral
 
-Todos os itens de estabilização foram concluídos. O sistema está limpo, seguro e com types atualizados.
+Fase 2.2 da limpeza de campos legacy concluída. `empresa_id` e `acao_id` estão agora como colunas diretas em `prospeccoes` e o código usa esses campos em vez de joins via `elegibilidade_id`.
 
-## Próxima fase recomendada
+## O que ainda referencia elegibilidade_id (59 ocorrências — todas legítimas)
 
-**Fase opcional de qualidade:**
+| Categoria                            | Arquivos                                               | Motivo para manter                                   |
+| ------------------------------------ | ------------------------------------------------------ | ---------------------------------------------------- |
+| `processos.elegibilidade_id`         | `Acoes.tsx`, `Dashboard.tsx`                           | Tabela `processos` ainda usa FK legada               |
+| `valor_potencial_estimado` lookup    | `Prospeccao.tsx`                                       | Campo vive em `elegibilidade`, não foi denormalizado |
+| Payloads INSERT com elegibilidade_id | `ProspeccaoRapidaDialog`, `ImportacaoProspeccaoDialog` | Backward compat — campo ainda NOT NULL no DB         |
+| `elegibilidade_respostas` FK         | `useQualificacao.ts`                                   | Tabela separada, FK legítima                         |
+| Fallback pattern                     | `TarefaDialog`, `ReuniaoDialog`, `AcaoEmpresasPanel`   | Já implementado corretamente                         |
+| Schema types.ts                      | `types.ts`                                             | Reflete DB real — remover quando dropado do schema   |
 
-- ⬜ Remover dialog de prospecção legado em Acoes.tsx (~1563+) — código morto desde remoção de `_openProspDialog`
-- ⬜ Limpeza dos `as any` restantes em Importacao.tsx, Prospeccao.tsx, Admin.tsx (gradual)
-- ⬜ Fase 2.2 do ROADMAP: limpar campos legacy `elegibilidade_id` em prospeccoes (19 arquivos)
+## Próximas etapas opcionais (não urgentes)
 
-## Trabalho concluído (histórico)
+1. **Adicionar `NOT NULL` constraint** em `empresa_id`/`acao_id` de prospeccoes (após confirmar que todas rows futuras terão esses campos — já são 36/36)
+2. **Migrar `processos`** para ter `empresa_id`/`acao_id` diretamente (similar surgery)
+3. **Denormalizar `valor_potencial_estimado`** em prospeccoes (elimina todos os lookups restantes via elegibilidade_id em Prospeccao.tsx)
+4. **Drop `elegibilidade_id`** de prospeccoes (etapa final — após toda a codebase migrada)
 
-### 2026-05-29 (sessão 2)
+## Trabalho concluído (histórico completo)
 
-- ✅ Guard `/admin` com `<RequireAdmin>` (App.tsx)
-- ✅ Validação mod-11 CNPJ no edge function `enriquecer-cnpj`
-- ✅ `topojson-client` declarado como dep explícita em package.json
-- ✅ Fallback de migration 20260424 removido de Importacao.tsx
-- ✅ Trigger Postgres `marcar_honorarios_atrasados` + integração em verificar-prazos
-- ✅ xlsx carregado dinamicamente em 10 arquivos (~900 KB off bundle)
-- ✅ `types.ts` regenerado: 1624 → 1869 linhas (inclui honorarios, prazos, rfb_busca)
-- ✅ 7 funções dead-code `_prefixadas` removidas de Acoes.tsx
-- ✅ `formatCurrency` duplicada removida de Acoes.tsx (importa de @/lib/format)
-- ✅ Casts `as any` removidos de useQualificacao.ts, usePropostas.ts
+### 2026-05-29 (sessão 3 — Fase 2.2 elegibilidade_id)
+
+- ✅ Migration aplicada ao cloud: empresa_id + acao_id em prospeccoes (36/36 backfill)
+- ✅ types.ts regenerado: 1869 → 1889 linhas
+- ✅ ProspeccaoRapidaDialog: insert tipado com empresa_id + acao_id
+- ✅ Prospeccao.tsx: handleCreate passa empresa_id + acao_id; elegiveisForCreate usa campos diretos
+- ✅ ImportacaoProspeccaoDialog: queries por empresa_id+acao_id em vez de elegibilidade_id
+- ✅ Dashboard.tsx: filtProsp e semProspeccao usam campos diretos
+- ✅ Relatorios.tsx: query de elegibilidades eliminada; enriched usa campos diretos
+- ✅ Prospeccao.tsx: getEmpresa/getAcao usam empresa_id/acao_id diretamente; elegMap removido
+- ✅ Interfaces Prospeccao atualizadas em todos os arquivos
+
+### 2026-05-29 (sessão 2 — Estabilização)
+
+- ✅ Guard `/admin`, CNPJ mod-11, topojson-client, fallback migration removido
+- ✅ Trigger atrasado honorários, xlsx dinâmico, types.ts regenerado
+- ✅ Dead code Acoes.tsx (-222 linhas), formatCurrency deduplicada, as any removidos
 
 ### 2026-05-29 (sessão 1)
 
-- ✅ Fix export de ações: faixa de funcionários/faturamento do DRIVA
-- ✅ Linting: removidos imports/vars não-usados em Acoes.tsx, Dashboard.tsx, AnaliseRFB.tsx
-- ✅ Codebase map completo em `.planning/codebase/` (8 documentos)
-- ✅ GSD inicializado: PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md
+- ✅ Fix export ações faixa DRIVA, codebase map, GSD inicializado
 
 ### 2026-05-28
 
-- ✅ Tela /relatorios com funil e contratos ganhos
-- ✅ Módulo financeiro (honorários_lancamentos + CRUD + KPIs + XLSX)
-- ✅ Prazos processuais (tabela + edge function verificar-prazos + UI)
-- ✅ Timeline cronológica por empresa (EmpresaDetailSheet)
-- ✅ Relatório de horas trabalhadas (aba Horas em EquipeView)
-- ✅ Drag-and-drop kanban (@hello-pangea/dnd)
-- ✅ audit_log via SECURITY DEFINER
-- ✅ validateFormula → expr-eval (sem `new Function()`)
-- ✅ criar-usuario atomicidade de role assignment
-- ✅ fetchAllRows extraído para src/lib/supabaseFetchAll.ts
-- ✅ Dashboard truncation corrigida (fetchAllRows)
-- ✅ Trigger create_initial_tarefa_on_prospeccao revivido
-- ✅ Index prospeccoes(empresa_id, acao_id)
-- ✅ Testes para cnpj, criterios, proposta, supabaseFetchAll
-- ✅ PAT Supabase removido de MIGRATION.md
+- ✅ /relatorios, financeiro, prazos processuais, timeline, horas, kanban DnD
+- ✅ audit_log SECURITY DEFINER, expr-eval, criar-usuario atômico
+- ✅ fetchAllRows, Dashboard truncation, trigger, index, testes, PAT removido
 
 ## Arquivos de referência
 
-- `.planning/codebase/CONCERNS.md` — bugs e riscos identificados (2026-05-29)
-- `.planning/codebase/FEATURE_GAPS.md` — gaps funcionais priorizados (2026-05-28)
+- `.planning/codebase/CONCERNS.md` — bugs e riscos (2026-05-29)
 - `.planning/ROADMAP.md` — todas as fases com status
 - `.planning/REQUIREMENTS.md` — requirements formais
