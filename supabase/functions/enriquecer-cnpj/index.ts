@@ -15,9 +15,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 // Fail-closed: sem ALLOWED_ORIGINS configurado, nenhuma origem cross-domain é aceita.
 // Em produção, setar ALLOWED_ORIGINS="https://freire-tax.vercel.app" no Supabase.
 const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGINS") ?? "")
-  .split(",").map((s) => s.trim()).filter(Boolean);
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 if (ALLOWED_ORIGINS.length === 0) {
-  console.warn("[enriquecer-cnpj] ALLOWED_ORIGINS não configurado — CORS rejeitará todas as origens cross-domain");
+  console.warn(
+    "[enriquecer-cnpj] ALLOWED_ORIGINS não configurado — CORS rejeitará todas as origens cross-domain"
+  );
 }
 
 function corsFor(req: Request) {
@@ -33,15 +37,30 @@ function corsFor(req: Request) {
 }
 function json(body: unknown, status: number, cors: HeadersInit) {
   return new Response(JSON.stringify(body), {
-    status, headers: { ...cors, "Content-Type": "application/json" },
+    status,
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
 
 function normalizeCNPJ(s: string): string {
   return (s ?? "").replace(/\D/g, "");
 }
+
+// Validação mod-11 real — rejeita CNPJs com dígitos verificadores incorretos.
+// Sem isso, qualquer string de 14 dígitos passava (ex: 00000000000000).
 function validCNPJ(s: string): boolean {
-  return normalizeCNPJ(s).length === 14;
+  const cnpj = normalizeCNPJ(s);
+  if (cnpj.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(cnpj)) return false;
+  const calc = (base: string, weights: number[]): number => {
+    const sum = weights.reduce((acc, w, i) => acc + parseInt(base[i], 10) * w, 0);
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+  const d1 = calc(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  if (d1 !== parseInt(cnpj[12], 10)) return false;
+  const d2 = calc(cnpj.slice(0, 13), [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return d2 === parseInt(cnpj[13], 10);
 }
 
 // Mapeia situacao_cadastral da BrasilAPI pro enum do DB
@@ -105,14 +124,18 @@ interface BrasilAPICNPJ {
   }>;
 }
 
-async function fetchBrasilAPI(cnpj: string): Promise<{ ok: true; data: BrasilAPICNPJ } | { ok: false; error: string; status: number }> {
+async function fetchBrasilAPI(
+  cnpj: string
+): Promise<{ ok: true; data: BrasilAPICNPJ } | { ok: false; error: string; status: number }> {
   try {
     const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, {
       headers: { Accept: "application/json" },
     });
-    if (r.status === 404) return { ok: false, error: "CNPJ não encontrado na Receita", status: 404 };
+    if (r.status === 404)
+      return { ok: false, error: "CNPJ não encontrado na Receita", status: 404 };
     if (r.status === 400) return { ok: false, error: "CNPJ inválido", status: 400 };
-    if (r.status === 429) return { ok: false, error: "Rate limit — tente novamente em instantes", status: 429 };
+    if (r.status === 429)
+      return { ok: false, error: "Rate limit — tente novamente em instantes", status: 429 };
     if (!r.ok) return { ok: false, error: `BrasilAPI retornou ${r.status}`, status: r.status };
     const data = (await r.json()) as BrasilAPICNPJ;
     return { ok: true, data };
@@ -155,12 +178,15 @@ interface ReceitaWSResponse {
   simei?: { optante?: boolean };
 }
 
-async function fetchReceitaWS(cnpj: string): Promise<{ ok: true; data: ReceitaWSResponse } | { ok: false; error: string; status: number }> {
+async function fetchReceitaWS(
+  cnpj: string
+): Promise<{ ok: true; data: ReceitaWSResponse } | { ok: false; error: string; status: number }> {
   try {
     const r = await fetch(`https://receitaws.com.br/v1/cnpj/${cnpj}`, {
       headers: { Accept: "application/json" },
     });
-    if (r.status === 429) return { ok: false, error: "ReceitaWS rate limit (3/min no plano grátis)", status: 429 };
+    if (r.status === 429)
+      return { ok: false, error: "ReceitaWS rate limit (3/min no plano grátis)", status: 429 };
     if (r.status === 504) return { ok: false, error: "ReceitaWS timeout", status: 504 };
     if (!r.ok) return { ok: false, error: `ReceitaWS retornou ${r.status}`, status: r.status };
     const data = (await r.json()) as ReceitaWSResponse;
@@ -228,13 +254,16 @@ interface CNPJaResponse {
   sideActivities?: Array<{ id?: number; text?: string }>;
 }
 
-async function fetchCNPJa(cnpj: string): Promise<{ ok: true; data: CNPJaResponse } | { ok: false; error: string; status: number }> {
+async function fetchCNPJa(
+  cnpj: string
+): Promise<{ ok: true; data: CNPJaResponse } | { ok: false; error: string; status: number }> {
   try {
     const r = await fetch(`https://open.cnpja.com/office/${cnpj}`, {
       headers: { Accept: "application/json" },
     });
     if (r.status === 404) return { ok: false, error: "CNPJ não encontrado (CNPJa)", status: 404 };
-    if (r.status === 429) return { ok: false, error: "CNPJa rate limit (5/min no plano grátis)", status: 429 };
+    if (r.status === 429)
+      return { ok: false, error: "CNPJa rate limit (5/min no plano grátis)", status: 429 };
     if (r.status === 504) return { ok: false, error: "CNPJa timeout", status: 504 };
     if (!r.ok) return { ok: false, error: `CNPJa retornou ${r.status}`, status: r.status };
     const data = (await r.json()) as CNPJaResponse;
@@ -375,13 +404,22 @@ Deno.serve(async (req) => {
     // Supabase Edge Runtime auto-popula estas vars. Se alguma estiver undefined,
     // falha cedo com mensagem clara (em vez de propagar "undefined" pra createClient).
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
+    const ANON_KEY =
+      Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ?? "";
     const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     if (!SUPABASE_URL || !ANON_KEY || !SERVICE_ROLE) {
-      return json({
-        error: "env vars missing",
-        detail: { SUPABASE_URL: !!SUPABASE_URL, ANON_KEY: !!ANON_KEY, SERVICE_ROLE: !!SERVICE_ROLE },
-      }, 500, cors);
+      return json(
+        {
+          error: "env vars missing",
+          detail: {
+            SUPABASE_URL: !!SUPABASE_URL,
+            ANON_KEY: !!ANON_KEY,
+            SERVICE_ROLE: !!SERVICE_ROLE,
+          },
+        },
+        500,
+        cors
+      );
     }
 
     step = "auth";
@@ -391,14 +429,19 @@ Deno.serve(async (req) => {
     const asUser = createClient(SUPABASE_URL, ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user: caller }, error: errAuth } = await asUser.auth.getUser();
+    const {
+      data: { user: caller },
+      error: errAuth,
+    } = await asUser.auth.getUser();
     if (errAuth || !caller) {
       return json({ error: "invalid token", step, detail: errAuth?.message }, 401, cors);
     }
 
     step = "parse-body";
     const body = (await req.json().catch(() => null)) as {
-      cnpj?: string; force?: boolean; empresa_id?: string;
+      cnpj?: string;
+      force?: boolean;
+      empresa_id?: string;
     } | null;
 
     if (!body?.cnpj || !validCNPJ(body.cnpj)) {
@@ -491,7 +534,8 @@ Deno.serve(async (req) => {
     if (erroApi) {
       if (body.empresa_id) {
         step = "mark-empresa-error";
-        await admin.from("empresas")
+        await admin
+          .from("empresas")
           .update({ receita_erro: erroApi, receita_atualizada_em: new Date().toISOString() })
           .eq("id", body.empresa_id);
       }
@@ -534,7 +578,11 @@ Deno.serve(async (req) => {
         .update(finalPayload)
         .eq("id", body.empresa_id);
       if (upErr) {
-        return json({ ok: false, error: "erro ao gravar empresa", step, detail: upErr.message }, 500, cors);
+        return json(
+          { ok: false, error: "erro ao gravar empresa", step, detail: upErr.message },
+          500,
+          cors
+        );
       }
     }
 

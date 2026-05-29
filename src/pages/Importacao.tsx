@@ -809,9 +809,6 @@ export default function Importacao() {
       let upsertedCount = 0;
 
       // 1) INSERT em batch das novas — defensivo: se colunas novas
-      //    (quantidade_funcionarios, faturamento_anual, metadados) não
-      //    existirem no DB, faz fallback sem elas.
-      let usandoNovasColunas = true;
       if (newRows.length > 0) {
         const buildRow = (r: ImportRow, comExtras: boolean) => {
           const base: Record<string, unknown> = {
@@ -851,24 +848,8 @@ export default function Importacao() {
         };
 
         const first = await tryInsert(true);
-        let ins = first.data;
-        if (first.error) {
-          // Provavelmente colunas novas ainda não foram criadas no Supabase.
-          // Loga e tenta de novo sem elas.
-          console.warn(
-            "[Importacao] insert com colunas novas falhou:",
-            extractErrorMessage(first.error)
-          );
-          const retry = await tryInsert(false);
-          if (retry.error) throw retry.error;
-          ins = retry.data;
-          usandoNovasColunas = false;
-          toast.warning(
-            "Importadas sem funcionários/faturamento/faixas — aplique as migrations 20260424 no Supabase pra usar esses campos.",
-            { duration: 8000 }
-          );
-        }
-        inserted = (ins ?? []) as typeof inserted;
+        if (first.error) throw first.error;
+        inserted = (first.data ?? []) as typeof inserted;
       }
 
       // Busca receita_atualizada_em das existentes pra decidir se planilha sobrescreve RFB.
@@ -906,40 +887,38 @@ export default function Importacao() {
                 patchFull.nome = r.nome;
                 patchSafe.nome = r.nome;
               }
-              if (usandoNovasColunas) {
-                if (hasFuncionariosCol && r.quantidade_funcionarios != null) {
-                  patchFull.quantidade_funcionarios = r.quantidade_funcionarios;
-                }
-                if (hasFaturamentoCol && r.faturamento_anual != null) {
-                  patchFull.faturamento_anual = r.faturamento_anual;
-                }
-                if (r.regime_tributario) {
-                  patchFull.regime_tributario = r.regime_tributario;
-                }
-                // Contatos importados → marca como manual. Só sobrescreve se
-                // a planilha trouxe valor (cell vazia preserva o que estiver no DB).
-                if (r.email) {
-                  patchFull.email_receita = r.email;
-                  patchFull.email_manual = true;
-                }
-                if (r.telefone) {
-                  patchFull.telefone_receita = r.telefone;
-                  patchFull.telefone_manual = true;
-                }
-                // RFB fields: sobrescreve quando DB não tem dado ou planilha é mais recente.
-                // Evita reverter um enriquecimento BrasilAPI recente por uma planilha antiga.
-                const dbReceitaAt = dbRfbStaleness.get(r.existing_id) ?? null;
-                const planilhaReceitaAt = r.rfb.receita_atualizada_em;
-                const planilhaMaisFresca =
-                  !dbReceitaAt ||
-                  (planilhaReceitaAt && new Date(planilhaReceitaAt) > new Date(dbReceitaAt));
-                if (planilhaMaisFresca) {
-                  Object.assign(patchFull, buildRfbPatch(r.rfb));
-                }
-                // Faixas + endereço composto + extras DRIVA como metadados
-                const meta = buildMetaPatch(r);
-                if (Object.keys(meta).length > 0) patchFull.metadados = meta;
+              if (hasFuncionariosCol && r.quantidade_funcionarios != null) {
+                patchFull.quantidade_funcionarios = r.quantidade_funcionarios;
               }
+              if (hasFaturamentoCol && r.faturamento_anual != null) {
+                patchFull.faturamento_anual = r.faturamento_anual;
+              }
+              if (r.regime_tributario) {
+                patchFull.regime_tributario = r.regime_tributario;
+              }
+              // Contatos importados → marca como manual. Só sobrescreve se
+              // a planilha trouxe valor (cell vazia preserva o que estiver no DB).
+              if (r.email) {
+                patchFull.email_receita = r.email;
+                patchFull.email_manual = true;
+              }
+              if (r.telefone) {
+                patchFull.telefone_receita = r.telefone;
+                patchFull.telefone_manual = true;
+              }
+              // RFB fields: sobrescreve quando DB não tem dado ou planilha é mais recente.
+              // Evita reverter um enriquecimento BrasilAPI recente por uma planilha antiga.
+              const dbReceitaAt = dbRfbStaleness.get(r.existing_id) ?? null;
+              const planilhaReceitaAt = r.rfb.receita_atualizada_em;
+              const planilhaMaisFresca =
+                !dbReceitaAt ||
+                (planilhaReceitaAt && new Date(planilhaReceitaAt) > new Date(dbReceitaAt));
+              if (planilhaMaisFresca) {
+                Object.assign(patchFull, buildRfbPatch(r.rfb));
+              }
+              // Faixas + endereço composto + extras DRIVA como metadados
+              const meta = buildMetaPatch(r);
+              if (Object.keys(meta).length > 0) patchFull.metadados = meta;
               if (Object.keys(patchFull).length === 0) return;
 
               // eslint-disable-next-line @typescript-eslint/no-explicit-any

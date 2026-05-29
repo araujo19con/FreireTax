@@ -123,7 +123,14 @@ function AppRoutes() {
           <Route path="/elegibilidade" element={<Elegibilidade />} />
           <Route path="/prospeccao" element={<Prospeccao />} />
           <Route path="/importacao" element={<Importacao />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route
+            path="/admin"
+            element={
+              <RequireAdmin>
+                <Admin />
+              </RequireAdmin>
+            }
+          />
           <Route
             path="/usuarios"
             element={
