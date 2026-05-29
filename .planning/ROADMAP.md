@@ -285,4 +285,40 @@ P4 (features estratégicas):
 
 ---
 
-_Roadmap atualizado em: 2026-05-28_
+## Achados novos — análise 2026-05-29
+
+> Descobertos na análise `gsd-map-codebase` de hoje. Nenhum destes estava no roadmap anterior.
+
+### 🔴 Segurança
+
+| Item                                                                                                        | Arquivo                                          | Esforço |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------- |
+| ⬜ Rota `/admin` sem guard — qualquer user autenticado acessa                                               | `src/App.tsx:126`                                | 30 min  |
+| ⬜ Edge function `enriquecer-cnpj` valida CNPJ só por `length === 14` (sem mod-11)                          | `supabase/functions/enriquecer-cnpj/index.ts:43` | 1h      |
+| ⬜ Confirmar `ALLOWED_ORIGINS` nas secrets do Supabase (enriquecimento pode estar falhando silenciosamente) | Supabase Dashboard                               | 15 min  |
+
+### 🟠 Integridade de dados
+
+| Item                                                                                   | Arquivo                            | Esforço               |
+| -------------------------------------------------------------------------------------- | ---------------------------------- | --------------------- |
+| ⬜ `Financeiro.tsx` deriva `atrasado` em runtime — coluna no DB sempre fica `pendente` | `src/pages/Financeiro.tsx:80`      | 2h (trigger Postgres) |
+| ⬜ `Importacao.tsx` fallback de migration `20260424` mascarando erros reais            | `src/pages/Importacao.tsx:856–869` | 1h                    |
+
+### 🟡 Qualidade / débito técnico
+
+| Item                                                                           | Arquivo                              | Esforço |
+| ------------------------------------------------------------------------------ | ------------------------------------ | ------- |
+| ⬜ Regenerar `types.ts` (já estava pendente)                                   | `src/integrations/supabase/types.ts` | 1h      |
+| ⬜ `topojson-client` não declarado em `package.json` — dep transitiva instável | `package.json`                       | 15 min  |
+| ⬜ Dead functions `_prefixadas` em `Acoes.tsx` — remover                       | `src/pages/Acoes.tsx`                | 30 min  |
+
+### 🟡 Performance
+
+| Item                                                             | Arquivo              | Esforço |
+| ---------------------------------------------------------------- | -------------------- | ------- |
+| ⬜ `ibgeGeo.ts` faz 27 fetches sem cache a cada abertura do mapa | `src/lib/ibgeGeo.ts` | 2h      |
+| ⬜ `xlsx` (~900 KB) carregado estaticamente em 10 arquivos       | múltiplos            | 2h      |
+
+---
+
+_Roadmap atualizado em: 2026-05-29_

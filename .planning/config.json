@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "project": "tax-trakker",
+  "workflow": {
+    "phase_size": "small",
+    "commit_per_task": true,
+    "require_verification": true,
+    "auto_plan": false
+  },
+  "conventions": {
+    "language": "pt-BR",
+    "package_manager": "bun",
+    "test_command": "bun test",
+    "build_command": "bun run build",
+    "lint_command": "bun run lint"
+  },
+  "intel": {
+    "enabled": false
+  }
+}
