@@ -557,8 +557,12 @@ export default function Prospeccao() {
       toast.error("Selecione uma empresa elegível");
       return;
     }
+    const eleg = elegibilidades.find((e) => e.id === createElegId);
     const payload = {
       elegibilidade_id: createElegId,
+      // Desnormaliza empresa_id + acao_id para evitar join via elegibilidade
+      empresa_id: eleg?.empresa_id ?? null,
+      acao_id: eleg?.acao_id ?? null,
       user_id: user.id,
       status_prospeccao: "Contato feito",
       contato_nome: createContatoNome,
@@ -566,7 +570,8 @@ export default function Prospeccao() {
       contato_email: createContatoEmail,
       contato_cargo: createContatoCargo,
     };
-    const { error } = await supabase.from("prospeccoes").insert(payload);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from("prospeccoes") as any).insert(payload);
     if (error) {
       toast.error("Erro ao criar prospecção");
       console.error(error);
