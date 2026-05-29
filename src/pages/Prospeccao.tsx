@@ -570,8 +570,7 @@ export default function Prospeccao() {
       contato_email: createContatoEmail,
       contato_cargo: createContatoCargo,
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from("prospeccoes") as any).insert(payload);
+    const { error } = await supabase.from("prospeccoes").insert(payload);
     if (error) {
       toast.error("Erro ao criar prospecção");
       console.error(error);

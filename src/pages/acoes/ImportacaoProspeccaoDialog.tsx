@@ -416,23 +416,21 @@ export function ImportacaoProspeccaoDialog({
         // 1) Resolver empresa: lookup fresco no DB
         // 1a) Por CNPJ se disponível
         if (row.cnpj) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: existingByC } = await (supabase as any)
+          const { data: existingByC } = await supabase
             .from("empresas")
             .select("id")
             .eq("cnpj", row.cnpj)
             .maybeSingle();
-          empresaId = (existingByC as { id: string } | null)?.id ?? null;
+          empresaId = existingByC?.id ?? null;
         }
         // 1b) Fallback por nome — cobre cnpj null no DB, formato diferente, typo nos dígitos
         if (!empresaId && row.nomeRaw) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: byName } = await (supabase as any)
+          const { data: byName } = await supabase
             .from("empresas")
             .select("id")
             .ilike("nome", row.nomeRaw)
             .limit(1);
-          empresaId = (byName as Array<{ id: string }> | null)?.[0]?.id ?? null;
+          empresaId = byName?.[0]?.id ?? null;
         }
 
         // Helper: monta patch de func/fat pra qualquer empresa
@@ -488,8 +486,7 @@ export function ImportacaoProspeccaoDialog({
 
         // 2) Elegibilidade
         let elegId: string | null = null;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: existingEleg } = await (supabase as any)
+        const { data: existingEleg } = await supabase
           .from("elegibilidade")
           .select("id")
           .eq("empresa_id", empresaId)
@@ -497,32 +494,32 @@ export function ImportacaoProspeccaoDialog({
           .maybeSingle();
 
         if (existingEleg) {
-          elegId = (existingEleg as { id: string }).id;
+          elegId = existingEleg.id;
         } else {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: newEleg, error: elegErr } = await (supabase as any)
+          const { data: newEleg, error: elegErr } = await supabase
             .from("elegibilidade")
             .insert({ empresa_id: empresaId, acao_id: acaoId, elegivel: true, user_id: user.id })
             .select("id")
             .single();
           if (elegErr) throw elegErr;
-          elegId = (newEleg as { id: string }).id;
+          elegId = newEleg?.id ?? null;
         }
 
         // 3) Prospecção — só cria/atualiza se houver status válido
         // statusProspeccao=null significa "Aguardando" (sem prospecção criada)
         if (row.statusProspeccao) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: existingProsp } = await (supabase as any)
+          const { data: existingProsp } = await supabase
             .from("prospeccoes")
             .select("id")
-            .eq("elegibilidade_id", elegId)
+            .eq("empresa_id", empresaId)
+            .eq("acao_id", acaoId)
             .maybeSingle();
 
           if (!existingProsp) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const { error: prospErr } = await (supabase.from("prospeccoes") as any).insert({
+            const { error: prospErr } = await supabase.from("prospeccoes").insert({
               elegibilidade_id: elegId,
+              empresa_id: empresaId,
+              acao_id: acaoId,
               status_prospeccao: row.statusProspeccao,
               user_id: user.id,
               notas_prospeccao: row.obsRaw || null,
@@ -533,15 +530,18 @@ export function ImportacaoProspeccaoDialog({
           } else {
             // Atualiza o status no reimport (importações anteriores podem ter status errado)
             const existingId = (existingProsp as { id: string }).id;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await (supabase.from("prospeccoes") as any)
+            await supabase
+              .from("prospeccoes")
               .update({ status_prospeccao: row.statusProspeccao })
               .eq("id", existingId);
           }
         } else {
           // Sem status válido: se já existia prospecção, deleta (volta pra Aguardando)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          await (supabase.from("prospeccoes") as any).delete().eq("elegibilidade_id", elegId);
+          await supabase
+            .from("prospeccoes")
+            .delete()
+            .eq("empresa_id", empresaId)
+            .eq("acao_id", acaoId);
         }
 
         // 4) Processo (se tiver número)
