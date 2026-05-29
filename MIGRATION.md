@@ -61,7 +61,9 @@ claude-code login
 ### 3. Supabase CLI (opcional, pra deploys)
 
 Usamos `npx supabase` — não precisa instalar global. Só precisa do token:
-- `sbp_1a8356097e6a8ff2a449294b6367dbd9597773c2` (ou gere novo em https://supabase.com/dashboard/account/tokens)
+
+- `<seu_supabase_personal_access_token>` — gere em https://supabase.com/dashboard/account/tokens
+  e exporte como `SUPABASE_ACCESS_TOKEN` (NUNCA commitar literalmente).
 
 ---
 
@@ -107,6 +109,7 @@ git clone https://github.com/araujo19con/obsidian-vault.git
 ```
 
 No Obsidian, habilite de novo os plugins (já estão no vault via `.obsidian/`):
+
 - **Local REST API** — vai precisar **gerar uma nova API key** (Settings → Local REST API → Regenerate) e atualizar o `mcp.json` (ver seção MCP abaixo)
 
 ---
@@ -127,6 +130,7 @@ cd xquads-installer
 ```
 
 Crie `package.json`:
+
 ```json
 {
   "name": "xquads-installer",
@@ -174,6 +178,7 @@ Reinicie o Claude Code depois.
 ### Memórias do projeto
 
 As memórias do projeto estão em:
+
 ```
 C:\Users\<old-user>\.claude\projects\C--Users-<old-user>-OneDrive--rea-de-Trabalho-FREIRETAX\memory\
 ```
@@ -198,18 +203,19 @@ Rode `npm run dev` no FreireTax e teste:
 
 ## 📋 Sumário do que está espalhado
 
-| Item | Local atual | Migra como |
-|---|---|---|
-| Código FreireTax | GitHub `araujo19con/FreireTax` | `git clone` |
-| Obsidian vault | GitHub `araujo19con/obsidian-vault` | `git clone` + abrir no Obsidian |
-| Env vars | `.env` local (não commitado) | Copiar manualmente ou regenerar anon key |
-| Agentes xquads (177) | `~/.claude/agents/xquads/` | Reinstalar via installer |
-| MCP configs | `~/.claude/mcp.json` | Recriar com nova Obsidian key |
-| Memórias | `~/.claude/projects/.../memory/` | Copiar arquivos |
-| Node modules | `FreireTax/node_modules` | `npm install` regenera |
-| Supabase (projeto) | Cloud | Já está online, nada a fazer |
+| Item                 | Local atual                         | Migra como                               |
+| -------------------- | ----------------------------------- | ---------------------------------------- |
+| Código FreireTax     | GitHub `araujo19con/FreireTax`      | `git clone`                              |
+| Obsidian vault       | GitHub `araujo19con/obsidian-vault` | `git clone` + abrir no Obsidian          |
+| Env vars             | `.env` local (não commitado)        | Copiar manualmente ou regenerar anon key |
+| Agentes xquads (177) | `~/.claude/agents/xquads/`          | Reinstalar via installer                 |
+| MCP configs          | `~/.claude/mcp.json`                | Recriar com nova Obsidian key            |
+| Memórias             | `~/.claude/projects/.../memory/`    | Copiar arquivos                          |
+| Node modules         | `FreireTax/node_modules`            | `npm install` regenera                   |
+| Supabase (projeto)   | Cloud                               | Já está online, nada a fazer             |
 
 Chaves/tokens que você vai precisar anotar/regenerar:
+
 - Anon key Supabase — dashboard → Settings → API
 - Personal Access Token Supabase (se for fazer deploys) — `sbp_...` em https://supabase.com/dashboard/account/tokens
 - API key Obsidian Local REST API — gerar nova no plugin
@@ -250,4 +256,4 @@ npm run test
 
 ---
 
-*Atualizado: 2026-04-21*
+_Atualizado: 2026-04-21_

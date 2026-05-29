@@ -59,39 +59,42 @@ type Header = (typeof HEADERS)[number];
 type SheetRow = Record<Header, string | number>;
 
 const COL_WIDTHS: Record<Header, number> = {
-  "Nome": 32,
+  Nome: 32,
   "Razão social": 32,
   "Nome fantasia": 28,
-  "CNPJ": 18,
+  CNPJ: 18,
   "Status na ação": 18,
-  "Elegível": 10,
-  "Justificativa": 28,
+  Elegível: 10,
+  Justificativa: 28,
   "Valor potencial estimado": 18,
   "Situação cadastral": 14,
-  "Porte": 10,
+  Porte: 10,
   "Regime tributário": 18,
   "Optante Simples": 12,
-  "MEI": 8,
-  "UF": 6,
-  "Município": 18,
+  MEI: 8,
+  UF: 6,
+  Município: 18,
   "CNAE principal": 14,
   "CNAE descrição": 28,
   "Natureza jurídica": 22,
   "Capital social": 16,
   "Data de abertura": 14,
-  "Funcionários": 12,
+  Funcionários: 12,
   "Faturamento anual": 18,
   "E-mail (RFB)": 28,
   "Telefone (RFB)": 16,
-  "Endereço": 36,
+  Endereço: 36,
   "Receita atualizada em": 18,
 };
 
 function statusLabel(s: StatusEmpresaAcao): string {
   switch (s.tipo) {
-    case "nao_elegivel": return "Não elegível";
-    case "aguardando": return "Aguardando";
-    case "em_prospeccao": return s.status;
+    case "nao_elegivel":
+      return "Não elegível";
+    case "aguardando":
+      return "Aguardando";
+    case "em_prospeccao":
+      return s.status;
   }
 }
 
@@ -117,9 +120,20 @@ function safeStr(v: string | null | undefined): string {
   return v ?? "";
 }
 
-function safeNum(v: number | null | undefined): string | number {
-  if (v == null || Number.isNaN(v)) return "";
-  return v;
+function safeFuncionarios(e: EmpresaRow): string | number {
+  if (e.quantidade_funcionarios != null && !Number.isNaN(e.quantidade_funcionarios)) {
+    return e.quantidade_funcionarios;
+  }
+  const faixa = e.metadados?.["Faixa de Funcionários"];
+  return typeof faixa === "string" && faixa ? faixa : "";
+}
+
+function safeFaturamento(e: EmpresaRow): string {
+  if (e.faturamento_anual != null && !Number.isNaN(e.faturamento_anual)) {
+    return safeCurrency(e.faturamento_anual);
+  }
+  const faixa = e.metadados?.["Faixa de Faturamento"];
+  return typeof faixa === "string" && faixa ? faixa : "";
 }
 
 function buildEndereco(e: EmpresaRow): string {
@@ -147,31 +161,31 @@ function slugify(s: string): string {
 function toSheetRow(r: ExportRow): SheetRow {
   const e = r.empresa;
   return {
-    "Nome": safeStr(e.nome),
+    Nome: safeStr(e.nome),
     "Razão social": safeStr(e.razao_social),
     "Nome fantasia": safeStr(e.nome_fantasia),
-    "CNPJ": e.cnpj ? formatCNPJ(e.cnpj) : "",
+    CNPJ: e.cnpj ? formatCNPJ(e.cnpj) : "",
     "Status na ação": statusLabel(r.status),
-    "Elegível": r.elegivel ? "Sim" : "Não",
-    "Justificativa": safeStr(r.justificativa),
+    Elegível: r.elegivel ? "Sim" : "Não",
+    Justificativa: safeStr(r.justificativa),
     "Valor potencial estimado": safeCurrency(r.valor_potencial_estimado),
     "Situação cadastral": safeStr(e.situacao_cadastral),
-    "Porte": safeStr(e.porte),
+    Porte: safeStr(e.porte),
     "Regime tributário": e.regime_tributario ? humanizeRegime(e.regime_tributario) : "",
     "Optante Simples": safeBool(e.opcao_simples),
-    "MEI": safeBool(e.opcao_mei),
-    "UF": safeStr(e.uf),
-    "Município": safeStr(e.municipio),
+    MEI: safeBool(e.opcao_mei),
+    UF: safeStr(e.uf),
+    Município: safeStr(e.municipio),
     "CNAE principal": safeStr(e.cnae_principal),
     "CNAE descrição": safeStr(e.cnae_principal_desc),
     "Natureza jurídica": safeStr(e.natureza_juridica),
     "Capital social": safeCurrency(e.capital_social),
     "Data de abertura": safeDate(e.data_abertura),
-    "Funcionários": safeNum(e.quantidade_funcionarios),
-    "Faturamento anual": safeCurrency(e.faturamento_anual),
+    Funcionários: safeFuncionarios(e),
+    "Faturamento anual": safeFaturamento(e),
     "E-mail (RFB)": safeStr(e.email_receita),
     "Telefone (RFB)": safeStr(e.telefone_receita),
-    "Endereço": buildEndereco(e),
+    Endereço: buildEndereco(e),
     "Receita atualizada em": safeDate(e.receita_atualizada_em),
   };
 }

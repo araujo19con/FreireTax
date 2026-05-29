@@ -4,21 +4,46 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Building2, Filter, MapPin, FileText, Search, RefreshCw,
-  CheckCircle2, XCircle, TrendingUp, Users, Download, BookOpen,
+  Building2,
+  Filter,
+  MapPin,
+  FileText,
+  Search,
+  RefreshCw,
+  CheckCircle2,
+  XCircle,
+  TrendingUp,
+  Users,
+  Download,
+  BookOpen,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/supabaseFetchAll";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
 import { EmptyState } from "@/components/EmptyState";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
 import * as XLSX from "xlsx";
 import type { Database } from "@/integrations/supabase/types";
-import { REGIMES_TRIBUTARIOS, getRegimeEffective, humanizeRegime, type RegimeTributario } from "@/lib/regimeTributario";
+import {
+  REGIMES_TRIBUTARIOS,
+  getRegimeEffective,
+  humanizeRegime,
+  type RegimeTributario,
+} from "@/lib/regimeTributario";
 
 type Empresa = Database["public"]["Tables"]["empresas"]["Row"];
 
@@ -27,27 +52,31 @@ function formatBRL(v: number) {
   if (v >= 1_000_000_000) return `R$ ${(v / 1_000_000_000).toFixed(1)}B`;
   if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
   if (v >= 1_000) return `R$ ${(v / 1_000).toFixed(0)}k`;
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(v);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(v);
 }
 
 // Cores temáticas (usam vars do theme atual: preto + bege + semantic)
 const CHART_COLORS = [
-  "hsl(var(--primary))",          // preto
+  "hsl(var(--primary))", // preto
   "hsl(var(--info))",
   "hsl(var(--warning))",
   "hsl(var(--success))",
   "hsl(var(--destructive))",
   "hsl(var(--accent-foreground))", // cinza escuro
   "hsl(var(--muted-foreground))",
-  "hsl(28 16% 60%)",               // bege escuro
+  "hsl(28 16% 60%)", // bege escuro
 ];
 
 const PORTE_LABELS: Record<string, string> = {
-  "MEI": "MEI",
-  "ME": "Microempresa",
-  "EPP": "Pequeno Porte",
-  "DEMAIS": "Médio/Grande",
-  "NAO_INFORMADO": "Não informado",
+  MEI: "MEI",
+  ME: "Microempresa",
+  EPP: "Pequeno Porte",
+  DEMAIS: "Médio/Grande",
+  NAO_INFORMADO: "Não informado",
 };
 
 const SITUACAO_LABELS: Record<string, string> = {
@@ -88,35 +117,28 @@ export default function AnaliseRFB() {
 
   const fetchEmpresas = async () => {
     setLoading(true);
-    // Supabase tem cap default de 1.000 linhas por select. Paginamos em
-    // janelas de 1.000 até esgotar pra que os agregados (capital total,
-    // enriquecidas, etc.) reflitam o universo real, não o teto da API.
-    const PAGE_SIZE = 1000;
-    const all: Empresa[] = [];
-    let from = 0;
-    let pageError: unknown = null;
-
-    // safety cap para evitar loop infinito caso .order seja instável
-    for (let pages = 0; pages < 200; pages++) {
-      const { data, error } = await supabase
-        .from("empresas")
-        .select("*")
-        .order("valor_potencial_total", { ascending: false, nullsFirst: false })
-        .order("id", { ascending: true })
-        .range(from, from + PAGE_SIZE - 1);
-      if (error) { pageError = error; break; }
-      if (!data || data.length === 0) break;
-      all.push(...(data as Empresa[]));
-      if (data.length < PAGE_SIZE) break;
-      from += PAGE_SIZE;
+    // Paginar via fetchAllRows pra que os agregados (capital total, enriquecidas,
+    // etc.) reflitam o universo real, não o cap de 1k linhas do PostgREST.
+    try {
+      const all = await fetchAllRows<Empresa>((from, to) =>
+        supabase
+          .from("empresas")
+          .select("*")
+          .order("valor_potencial_total", { ascending: false, nullsFirst: false })
+          .order("id", { ascending: true })
+          .range(from, to)
+      );
+      setEmpresas(all);
+    } catch {
+      toast.error("Erro ao carregar empresas");
+    } finally {
+      setLoading(false);
     }
-
-    if (pageError) toast.error("Erro ao carregar empresas");
-    setEmpresas(all);
-    setLoading(false);
   };
 
-  useEffect(() => { fetchEmpresas(); }, []);
+  useEffect(() => {
+    fetchEmpresas();
+  }, []);
 
   // ========= FILTROS =========
   const filtered = useMemo(() => {
@@ -124,8 +146,10 @@ export default function AnaliseRFB() {
     return empresas.filter((e) => {
       const any = e as any;
       if (filtros.uf.length > 0 && !filtros.uf.includes(any.uf ?? "")) return false;
-      if (filtros.porte.length > 0 && !filtros.porte.includes(any.porte ?? "NAO_INFORMADO")) return false;
-      if (filtros.situacao.length > 0 && !filtros.situacao.includes(any.situacao_cadastral ?? "")) return false;
+      if (filtros.porte.length > 0 && !filtros.porte.includes(any.porte ?? "NAO_INFORMADO"))
+        return false;
+      if (filtros.situacao.length > 0 && !filtros.situacao.includes(any.situacao_cadastral ?? ""))
+        return false;
       // Regime tributário (campo manual, com fallback para opcao_simples/opcao_mei)
       if (filtros.regime.length > 0) {
         const eff = getRegimeEffective(any);
@@ -133,18 +157,26 @@ export default function AnaliseRFB() {
       }
       // Filtros numéricos novos: funcionários e faturamento_anual
       const qf = any.quantidade_funcionarios as number | null | undefined;
-      if (filtros.funcionariosMin != null && (qf == null || qf < filtros.funcionariosMin)) return false;
-      if (filtros.funcionariosMax != null && (qf == null || qf > filtros.funcionariosMax)) return false;
+      if (filtros.funcionariosMin != null && (qf == null || qf < filtros.funcionariosMin))
+        return false;
+      if (filtros.funcionariosMax != null && (qf == null || qf > filtros.funcionariosMax))
+        return false;
       const fa = any.faturamento_anual as number | null | undefined;
-      if (filtros.faturamentoMin != null && (fa == null || fa < filtros.faturamentoMin)) return false;
-      if (filtros.faturamentoMax != null && (fa == null || fa > filtros.faturamentoMax)) return false;
-      if (s && !(
-        e.nome.toLowerCase().includes(s) ||
-        e.cnpj.includes(s) ||
-        (any.razao_social ?? "").toLowerCase().includes(s) ||
-        (any.cnae_principal_desc ?? "").toLowerCase().includes(s) ||
-        (any.municipio ?? "").toLowerCase().includes(s)
-      )) return false;
+      if (filtros.faturamentoMin != null && (fa == null || fa < filtros.faturamentoMin))
+        return false;
+      if (filtros.faturamentoMax != null && (fa == null || fa > filtros.faturamentoMax))
+        return false;
+      if (
+        s &&
+        !(
+          e.nome.toLowerCase().includes(s) ||
+          e.cnpj.includes(s) ||
+          (any.razao_social ?? "").toLowerCase().includes(s) ||
+          (any.cnae_principal_desc ?? "").toLowerCase().includes(s) ||
+          (any.municipio ?? "").toLowerCase().includes(s)
+        )
+      )
+        return false;
       return true;
     });
   }, [empresas, filtros]);
@@ -158,7 +190,12 @@ export default function AnaliseRFB() {
     const porSituacao: Record<string, number> = {};
     const porCNAE: Record<string, number> = {};
     const porRegime: Record<string, number> = {
-      simples: 0, mei: 0, lucro_presumido: 0, lucro_real: 0, imune_isento: 0, nao_informado: 0,
+      simples: 0,
+      mei: 0,
+      lucro_presumido: 0,
+      lucro_real: 0,
+      imune_isento: 0,
+      nao_informado: 0,
     };
     const porStatusCRM: Record<string, number> = {};
 
@@ -200,12 +237,18 @@ export default function AnaliseRFB() {
 
     // converte pra arrays ordenados para charts
     const toSortedArray = (obj: Record<string, number>) =>
-      Object.entries(obj).map(([k, v]) => ({ name: k, value: v })).sort((a, b) => b.value - a.value);
+      Object.entries(obj)
+        .map(([k, v]) => ({ name: k, value: v }))
+        .sort((a, b) => b.value - a.value);
 
     return {
       total: base.length,
-      enriquecidas, semEnriquecer, comErro,
-      capitalTotal, valorPotencialTotal, comQSA,
+      enriquecidas,
+      semEnriquecer,
+      comErro,
+      capitalTotal,
+      valorPotencialTotal,
+      comQSA,
       capitalMedio: enriquecidas > 0 ? capitalTotal / enriquecidas : 0,
       porUF: toSortedArray(porUF).slice(0, 10),
       porPorte: toSortedArray(porPorte),
@@ -246,17 +289,28 @@ export default function AnaliseRFB() {
 
   const limparFiltros = () => {
     setFiltros({
-      uf: [], porte: [], situacao: [], regime: [], search: "",
-      funcionariosMin: null, funcionariosMax: null,
-      faturamentoMin: null, faturamentoMax: null,
+      uf: [],
+      porte: [],
+      situacao: [],
+      regime: [],
+      search: "",
+      funcionariosMin: null,
+      funcionariosMax: null,
+      faturamentoMin: null,
+      faturamentoMax: null,
     });
   };
 
   const hasFiltros =
-    filtros.uf.length > 0 || filtros.porte.length > 0 || filtros.situacao.length > 0 ||
-    filtros.regime.length > 0 || filtros.search.trim() !== "" ||
-    filtros.funcionariosMin != null || filtros.funcionariosMax != null ||
-    filtros.faturamentoMin != null || filtros.faturamentoMax != null;
+    filtros.uf.length > 0 ||
+    filtros.porte.length > 0 ||
+    filtros.situacao.length > 0 ||
+    filtros.regime.length > 0 ||
+    filtros.search.trim() !== "" ||
+    filtros.funcionariosMin != null ||
+    filtros.funcionariosMax != null ||
+    filtros.faturamentoMin != null ||
+    filtros.faturamentoMax != null;
 
   const exportarFiltradas = () => {
     if (filtered.length === 0) return toast.error("Nenhuma empresa filtrada para exportar");
@@ -294,18 +348,29 @@ export default function AnaliseRFB() {
   if (loading) return <LoadingState variant="page" />;
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="animate-fade-in space-y-6">
       <PageHeader
         title="Análise RFB"
         description="Distribuições, filtros e scoring de empresas pelos dados da Receita Federal"
         icon={<Filter className="h-7 w-7" />}
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={exportarFiltradas} disabled={filtered.length === 0}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportarFiltradas}
+              disabled={filtered.length === 0}
+            >
               <Download className="mr-2 h-4 w-4" />
               Exportar {filtered.length}
             </Button>
-            <Button variant="outline" size="sm" onClick={fetchEmpresas}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void fetchEmpresas();
+              }}
+            >
               <RefreshCw className="mr-2 h-4 w-4" />
               Atualizar
             </Button>
@@ -324,76 +389,90 @@ export default function AnaliseRFB() {
       ) : (
         <>
           {/* KPIs top */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Card className="shadow-card">
-              <CardHeader className="pb-1 pt-4 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Filtradas</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between px-4 pb-1 pt-4">
+                <CardTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Filtradas
+                </CardTitle>
                 <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-heading font-bold tabular-nums">{agg.total}</div>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <div className="font-heading text-2xl font-bold tabular-nums">{agg.total}</div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
                   de {empresas.length} totais
                 </p>
               </CardContent>
             </Card>
             <Card className="shadow-card">
-              <CardHeader className="pb-1 pt-4 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Capital total</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between px-4 pb-1 pt-4">
+                <CardTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Capital total
+                </CardTitle>
                 <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-heading font-bold tabular-nums">{formatBRL(agg.capitalTotal)}</div>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <div className="font-heading text-2xl font-bold tabular-nums">
+                  {formatBRL(agg.capitalTotal)}
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
                   média {formatBRL(agg.capitalMedio)}
                 </p>
               </CardContent>
             </Card>
             <Card className="shadow-card">
-              <CardHeader className="pb-1 pt-4 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Enriquecidas</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between px-4 pb-1 pt-4">
+                <CardTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Enriquecidas
+                </CardTitle>
                 <CheckCircle2 className="h-3.5 w-3.5 text-success" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-heading font-bold tabular-nums text-success">{agg.enriquecidas}</div>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {agg.comErro > 0 && <span className="text-destructive">{agg.comErro} erro · </span>}
+                <div className="font-heading text-2xl font-bold tabular-nums text-success">
+                  {agg.enriquecidas}
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {agg.comErro > 0 && (
+                    <span className="text-destructive">{agg.comErro} erro · </span>
+                  )}
                   {agg.semEnriquecer > 0 && <>{agg.semEnriquecer} pendente</>}
                 </p>
               </CardContent>
             </Card>
             <Card className="shadow-card">
-              <CardHeader className="pb-1 pt-4 px-4 flex flex-row items-center justify-between">
-                <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Com QSA</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between px-4 pb-1 pt-4">
+                <CardTitle className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Com QSA
+                </CardTitle>
                 <Users className="h-3.5 w-3.5 text-muted-foreground" />
               </CardHeader>
               <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-heading font-bold tabular-nums">{agg.comQSA}</div>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
-                  decisores mapeados
-                </p>
+                <div className="font-heading text-2xl font-bold tabular-nums">{agg.comQSA}</div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">decisores mapeados</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Filtros */}
-          <Card className="p-4 shadow-card space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h3 className="text-sm font-semibold flex items-center gap-2">
-                <Filter className="h-4 w-4" />Filtros
+          <Card className="space-y-3 p-4 shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <Filter className="h-4 w-4" />
+                Filtros
               </h3>
               {hasFiltros && (
                 <Button variant="ghost" size="sm" onClick={limparFiltros}>
-                  <XCircle className="mr-1.5 h-3 w-3" />Limpar filtros
+                  <XCircle className="mr-1.5 h-3 w-3" />
+                  Limpar filtros
                 </Button>
               )}
             </div>
 
             {/* Busca */}
             <div className="relative max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
-                className="pl-9 h-9 text-sm"
+                className="h-9 pl-9 text-sm"
                 placeholder="Buscar por nome, razão social, CNPJ, CNAE, município..."
                 value={filtros.search}
                 onChange={(e) => setFiltros((f) => ({ ...f, search: e.target.value }))}
@@ -403,8 +482,9 @@ export default function AnaliseRFB() {
             {/* UFs */}
             {opcoes.ufs.length > 0 && (
               <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />UF
+                <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <MapPin className="h-3 w-3" />
+                  UF
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {opcoes.ufs.map((uf) => {
@@ -412,15 +492,17 @@ export default function AnaliseRFB() {
                     const count = empresas.filter((e) => (e as any).uf === uf).length;
                     return (
                       <button
-                        key={uf} type="button"
+                        key={uf}
+                        type="button"
                         onClick={() => toggleFiltro("uf", uf)}
-                        className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
+                        className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
                           active
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
                         }`}
                       >
-                        {active && "✓ "}{uf} <span className="opacity-60">({count})</span>
+                        {active && "✓ "}
+                        {uf} <span className="opacity-60">({count})</span>
                       </button>
                     );
                   })}
@@ -431,8 +513,9 @@ export default function AnaliseRFB() {
             {/* Portes */}
             {opcoes.portes.length > 0 && (
               <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest flex items-center gap-1">
-                  <Building2 className="h-3 w-3" />Porte
+                <p className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <Building2 className="h-3 w-3" />
+                  Porte
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {opcoes.portes.map((p) => {
@@ -440,15 +523,17 @@ export default function AnaliseRFB() {
                     const count = empresas.filter((e) => (e as any).porte === p).length;
                     return (
                       <button
-                        key={p} type="button"
+                        key={p}
+                        type="button"
                         onClick={() => toggleFiltro("porte", p)}
-                        className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
+                        className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
                           active
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
                         }`}
                       >
-                        {active && "✓ "}{PORTE_LABELS[p] ?? p} <span className="opacity-60">({count})</span>
+                        {active && "✓ "}
+                        {PORTE_LABELS[p] ?? p} <span className="opacity-60">({count})</span>
                       </button>
                     );
                   })}
@@ -459,25 +544,31 @@ export default function AnaliseRFB() {
             {/* Situação */}
             {opcoes.situacoes.length > 0 && (
               <div className="space-y-1">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Situação RFB</p>
+                <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Situação RFB
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {opcoes.situacoes.map((s) => {
                     const active = filtros.situacao.includes(s);
-                    const count = empresas.filter((e) => (e as any).situacao_cadastral === s).length;
+                    const count = empresas.filter(
+                      (e) => (e as any).situacao_cadastral === s
+                    ).length;
                     const danger = s === "BAIXADA" || s === "INAPTA" || s === "NULA";
                     return (
                       <button
-                        key={s} type="button"
+                        key={s}
+                        type="button"
                         onClick={() => toggleFiltro("situacao", s)}
-                        className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
+                        className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
                           active
                             ? danger
-                              ? "bg-destructive text-destructive-foreground border-destructive"
-                              : "bg-success text-success-foreground border-success"
-                            : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                              ? "border-destructive bg-destructive text-destructive-foreground"
+                              : "border-success bg-success text-success-foreground"
+                            : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
                         }`}
                       >
-                        {active && "✓ "}{SITUACAO_LABELS[s] ?? s} <span className="opacity-60">({count})</span>
+                        {active && "✓ "}
+                        {SITUACAO_LABELS[s] ?? s} <span className="opacity-60">({count})</span>
                       </button>
                     );
                   })}
@@ -487,21 +578,28 @@ export default function AnaliseRFB() {
 
             {/* Regime tributário (multi-select) */}
             <div className="space-y-1">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Regime tributário</p>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Regime tributário
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {REGIMES_TRIBUTARIOS.map((r) => {
                   const active = filtros.regime.includes(r.value);
                   return (
                     <button
-                      key={r.value} type="button"
-                      onClick={() => setFiltros((f) => ({
-                        ...f,
-                        regime: active
-                          ? f.regime.filter((x) => x !== r.value)
-                          : [...f.regime, r.value],
-                      }))}
-                      className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
-                        active ? r.color + " ring-1 ring-current" : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                      key={r.value}
+                      type="button"
+                      onClick={() =>
+                        setFiltros((f) => ({
+                          ...f,
+                          regime: active
+                            ? f.regime.filter((x) => x !== r.value)
+                            : [...f.regime, r.value],
+                        }))
+                      }
+                      className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
+                        active
+                          ? r.color + " ring-1 ring-current"
+                          : "border-border bg-muted/40 text-muted-foreground hover:bg-muted"
                       }`}
                     >
                       {r.short}
@@ -513,52 +611,89 @@ export default function AnaliseRFB() {
 
             {/* Funcionários — range */}
             <div className="space-y-1">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Funcionários (faixa)</p>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Funcionários (faixa)
+              </p>
               <div className="flex items-center gap-2">
                 <Input
-                  type="number" inputMode="numeric" min={0} placeholder="mín"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="mín"
                   value={filtros.funcionariosMin ?? ""}
-                  onChange={(e) => setFiltros((f) => ({ ...f, funcionariosMin: e.target.value === "" ? null : Number(e.target.value) }))}
-                  className="h-8 text-xs w-24"
+                  onChange={(e) =>
+                    setFiltros((f) => ({
+                      ...f,
+                      funcionariosMin: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="h-8 w-24 text-xs"
                 />
-                <span className="text-muted-foreground text-xs">a</span>
+                <span className="text-xs text-muted-foreground">a</span>
                 <Input
-                  type="number" inputMode="numeric" min={0} placeholder="máx"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="máx"
                   value={filtros.funcionariosMax ?? ""}
-                  onChange={(e) => setFiltros((f) => ({ ...f, funcionariosMax: e.target.value === "" ? null : Number(e.target.value) }))}
-                  className="h-8 text-xs w-24"
+                  onChange={(e) =>
+                    setFiltros((f) => ({
+                      ...f,
+                      funcionariosMax: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="h-8 w-24 text-xs"
                 />
               </div>
             </div>
 
             {/* Faturamento anual — range */}
             <div className="space-y-1">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Faturamento anual (R$)</p>
+              <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Faturamento anual (R$)
+              </p>
               <div className="flex items-center gap-2">
                 <Input
-                  type="number" inputMode="decimal" min={0} placeholder="mín"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder="mín"
                   value={filtros.faturamentoMin ?? ""}
-                  onChange={(e) => setFiltros((f) => ({ ...f, faturamentoMin: e.target.value === "" ? null : Number(e.target.value) }))}
-                  className="h-8 text-xs w-32"
+                  onChange={(e) =>
+                    setFiltros((f) => ({
+                      ...f,
+                      faturamentoMin: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="h-8 w-32 text-xs"
                 />
-                <span className="text-muted-foreground text-xs">a</span>
+                <span className="text-xs text-muted-foreground">a</span>
                 <Input
-                  type="number" inputMode="decimal" min={0} placeholder="máx"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder="máx"
                   value={filtros.faturamentoMax ?? ""}
-                  onChange={(e) => setFiltros((f) => ({ ...f, faturamentoMax: e.target.value === "" ? null : Number(e.target.value) }))}
-                  className="h-8 text-xs w-32"
+                  onChange={(e) =>
+                    setFiltros((f) => ({
+                      ...f,
+                      faturamentoMax: e.target.value === "" ? null : Number(e.target.value),
+                    }))
+                  }
+                  className="h-8 w-32 text-xs"
                 />
               </div>
             </div>
           </Card>
 
           {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* UF bar */}
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />Top 10 UFs
+                <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                  <MapPin className="h-4 w-4" />
+                  Top 10 UFs
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -577,15 +712,19 @@ export default function AnaliseRFB() {
             {/* Porte pie */}
             <Card className="shadow-card">
               <CardHeader>
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />Distribuição por Porte
+                <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                  <Building2 className="h-4 w-4" />
+                  Distribuição por Porte
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={260}>
                   <PieChart>
                     <Pie
-                      data={agg.porPorte.map((p) => ({ ...p, name: PORTE_LABELS[p.name] ?? p.name }))}
+                      data={agg.porPorte.map((p) => ({
+                        ...p,
+                        name: PORTE_LABELS[p.name] ?? p.name,
+                      }))}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -635,7 +774,10 @@ export default function AnaliseRFB() {
                 <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
                     <Pie
-                      data={agg.porSituacao.map((p) => ({ ...p, name: SITUACAO_LABELS[p.name] ?? p.name }))}
+                      data={agg.porSituacao.map((p) => ({
+                        ...p,
+                        name: SITUACAO_LABELS[p.name] ?? p.name,
+                      }))}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
@@ -645,11 +787,18 @@ export default function AnaliseRFB() {
                       labelLine={false}
                     >
                       {agg.porSituacao.map((p, i) => {
-                        const danger = p.name === "BAIXADA" || p.name === "INAPTA" || p.name === "NULA";
+                        const danger =
+                          p.name === "BAIXADA" || p.name === "INAPTA" || p.name === "NULA";
                         return (
                           <Cell
                             key={i}
-                            fill={p.name === "ATIVA" ? "hsl(var(--success))" : danger ? "hsl(var(--destructive))" : "hsl(var(--warning))"}
+                            fill={
+                              p.name === "ATIVA"
+                                ? "hsl(var(--success))"
+                                : danger
+                                  ? "hsl(var(--destructive))"
+                                  : "hsl(var(--warning))"
+                            }
                           />
                         );
                       })}
@@ -664,29 +813,35 @@ export default function AnaliseRFB() {
           {/* CNAE chart */}
           <Card className="shadow-card">
             <CardHeader>
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4" />Top 10 CNAEs
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                <FileText className="h-4 w-4" />
+                Top 10 CNAEs
               </CardTitle>
             </CardHeader>
             <CardContent>
               {agg.porCNAE.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">Sem dados de CNAE nas empresas filtradas.</p>
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  Sem dados de CNAE nas empresas filtradas.
+                </p>
               ) : (
                 <div className="space-y-1.5">
                   {agg.porCNAE.map((c, i) => {
                     const pct = (c.value / Math.max(1, agg.total)) * 100;
                     return (
                       <div key={c.name} className="group">
-                        <div className="flex items-center justify-between mb-0.5 text-xs">
+                        <div className="mb-0.5 flex items-center justify-between text-xs">
                           <span className="line-clamp-1 flex-1">{c.name}</span>
-                          <span className="text-muted-foreground tabular-nums ml-2">
+                          <span className="ml-2 tabular-nums text-muted-foreground">
                             {c.value} <span className="text-[10px]">({pct.toFixed(0)}%)</span>
                           </span>
                         </div>
-                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                           <div
                             className="h-full bg-primary transition-all"
-                            style={{ width: `${pct}%`, backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                            style={{
+                              width: `${pct}%`,
+                              backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                            }}
                           />
                         </div>
                       </div>
@@ -700,23 +855,39 @@ export default function AnaliseRFB() {
           {/* Tabela de empresas filtradas */}
           <Card className="shadow-card">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center justify-between">
+              <CardTitle className="flex items-center justify-between text-sm font-semibold">
                 <span>Empresas filtradas</span>
-                <Badge variant="outline" className="text-[10px]">{filtered.length}</Badge>
+                <Badge variant="outline" className="text-[10px]">
+                  {filtered.length}
+                </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <div className="max-h-[500px] overflow-x-auto overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-card z-10">
+                  <thead className="sticky top-0 z-10 bg-card">
                     <tr className="border-b border-border">
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">Empresa</th>
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">Porte</th>
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">Situação</th>
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">UF / Município</th>
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">CNAE</th>
-                      <th className="text-right py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">Capital</th>
-                      <th className="text-center py-2 px-3 font-medium text-muted-foreground text-[11px] uppercase">QSA</th>
+                      <th className="px-3 py-2 text-left text-[11px] font-medium uppercase text-muted-foreground">
+                        Empresa
+                      </th>
+                      <th className="px-3 py-2 text-left text-[11px] font-medium uppercase text-muted-foreground">
+                        Porte
+                      </th>
+                      <th className="px-3 py-2 text-left text-[11px] font-medium uppercase text-muted-foreground">
+                        Situação
+                      </th>
+                      <th className="px-3 py-2 text-left text-[11px] font-medium uppercase text-muted-foreground">
+                        UF / Município
+                      </th>
+                      <th className="px-3 py-2 text-left text-[11px] font-medium uppercase text-muted-foreground">
+                        CNAE
+                      </th>
+                      <th className="px-3 py-2 text-right text-[11px] font-medium uppercase text-muted-foreground">
+                        Capital
+                      </th>
+                      <th className="px-3 py-2 text-center text-[11px] font-medium uppercase text-muted-foreground">
+                        QSA
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -726,58 +897,88 @@ export default function AnaliseRFB() {
                           Nenhuma empresa bate com os filtros atuais.
                         </td>
                       </tr>
-                    ) : filtered.slice(0, 200).map((e, idx) => {
-                      const any = e as any;
-                      const danger = any.situacao_cadastral === "BAIXADA" || any.situacao_cadastral === "INAPTA" || any.situacao_cadastral === "NULA";
-                      return (
-                        <tr
-                          key={e.id}
-                          className={`border-b border-border last:border-0 hover:bg-muted/40 ${idx % 2 === 1 ? "bg-muted/[0.15]" : ""}`}
-                        >
-                          <td className="py-2 px-3">
-                            <div className="font-medium line-clamp-1">{e.nome}</div>
-                            <div className="text-[10px] text-muted-foreground font-mono">{e.cnpj}</div>
-                          </td>
-                          <td className="py-2 px-3">
-                            {any.porte ? (
-                              <Badge variant="outline" className="text-[10px]">{PORTE_LABELS[any.porte] ?? any.porte}</Badge>
-                            ) : "—"}
-                          </td>
-                          <td className="py-2 px-3">
-                            {any.situacao_cadastral ? (
-                              <Badge variant="secondary" className={`text-[10px] ${
-                                any.situacao_cadastral === "ATIVA" ? "bg-success/10 text-success"
-                                : danger ? "bg-destructive/10 text-destructive"
-                                : "bg-warning/10 text-warning"
-                              }`}>
-                                {SITUACAO_LABELS[any.situacao_cadastral] ?? any.situacao_cadastral}
-                              </Badge>
-                            ) : <span className="text-[10px] text-muted-foreground">sem dados</span>}
-                          </td>
-                          <td className="py-2 px-3 text-[11px]">
-                            {any.uf ? (
-                              <>
-                                <span className="font-medium">{any.uf}</span>
-                                {any.municipio && <span className="text-muted-foreground"> · {any.municipio}</span>}
-                              </>
-                            ) : "—"}
-                          </td>
-                          <td className="py-2 px-3 text-[11px] text-muted-foreground line-clamp-1 max-w-xs">
-                            {any.cnae_principal_desc ?? "—"}
-                          </td>
-                          <td className="py-2 px-3 text-right tabular-nums text-[11px]">
-                            {any.capital_social ? formatBRL(Number(any.capital_social)) : "—"}
-                          </td>
-                          <td className="py-2 px-3 text-center tabular-nums text-[11px]">
-                            {Array.isArray(any.qsa) && any.qsa.length > 0 ? any.qsa.length : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    ) : (
+                      filtered.slice(0, 200).map((e, idx) => {
+                        const any = e as any;
+                        const danger =
+                          any.situacao_cadastral === "BAIXADA" ||
+                          any.situacao_cadastral === "INAPTA" ||
+                          any.situacao_cadastral === "NULA";
+                        return (
+                          <tr
+                            key={e.id}
+                            className={`border-b border-border last:border-0 hover:bg-muted/40 ${idx % 2 === 1 ? "bg-muted/[0.15]" : ""}`}
+                          >
+                            <td className="px-3 py-2">
+                              <div className="line-clamp-1 font-medium">{e.nome}</div>
+                              <div className="font-mono text-[10px] text-muted-foreground">
+                                {e.cnpj}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2">
+                              {any.porte ? (
+                                <Badge variant="outline" className="text-[10px]">
+                                  {PORTE_LABELS[any.porte] ?? any.porte}
+                                </Badge>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              {any.situacao_cadastral ? (
+                                <Badge
+                                  variant="secondary"
+                                  className={`text-[10px] ${
+                                    any.situacao_cadastral === "ATIVA"
+                                      ? "bg-success/10 text-success"
+                                      : danger
+                                        ? "bg-destructive/10 text-destructive"
+                                        : "bg-warning/10 text-warning"
+                                  }`}
+                                >
+                                  {SITUACAO_LABELS[any.situacao_cadastral] ??
+                                    any.situacao_cadastral}
+                                </Badge>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground">sem dados</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-[11px]">
+                              {any.uf ? (
+                                <>
+                                  <span className="font-medium">{any.uf}</span>
+                                  {any.municipio && (
+                                    <span className="text-muted-foreground">
+                                      {" "}
+                                      · {any.municipio}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="line-clamp-1 max-w-xs px-3 py-2 text-[11px] text-muted-foreground">
+                              {any.cnae_principal_desc ?? "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right text-[11px] tabular-nums">
+                              {any.capital_social ? formatBRL(Number(any.capital_social)) : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-center text-[11px] tabular-nums">
+                              {Array.isArray(any.qsa) && any.qsa.length > 0 ? any.qsa.length : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                     {filtered.length > 200 && (
                       <tr>
-                        <td colSpan={7} className="py-3 text-center text-[11px] text-muted-foreground">
-                          ... + {filtered.length - 200} empresas. Use filtros mais específicos ou exporte pra ver todas.
+                        <td
+                          colSpan={7}
+                          className="py-3 text-center text-[11px] text-muted-foreground"
+                        >
+                          ... + {filtered.length - 200} empresas. Use filtros mais específicos ou
+                          exporte pra ver todas.
                         </td>
                       </tr>
                     )}

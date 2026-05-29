@@ -7,8 +7,26 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus, ChevronDown, ChevronUp, Folder, Users, FileText, DollarSign, Pencil, Phone, Mail, UserCheck, Handshake, ListChecks, FileSpreadsheet, Upload, CheckCircle2, XCircle } from "lucide-react";
-import { AcaoEmpresasPanel, type ProspMin, type AcaoEmpresasExportPayload } from "./acoes/AcaoEmpresasPanel";
+import {
+  Trash2,
+  Plus,
+  ChevronDown,
+  ChevronUp,
+  Folder,
+  Users,
+  DollarSign,
+  UserCheck,
+  ListChecks,
+  FileSpreadsheet,
+  Upload,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
+import {
+  AcaoEmpresasPanel,
+  type ProspMin,
+  type AcaoEmpresasExportPayload,
+} from "./acoes/AcaoEmpresasPanel";
 import { ImportacaoProspeccaoDialog } from "./acoes/ImportacaoProspeccaoDialog";
 import { EmpresaQuickSheet } from "./empresas/EmpresaQuickSheet";
 import { exportEmpresasAcaoXlsx, type ExportRow } from "@/lib/exportEmpresasAcao";
@@ -24,17 +42,33 @@ import { Scale, BookOpen } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchAllRows } from "@/lib/supabaseFetchAll";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -116,9 +150,30 @@ interface Prospeccao {
   observacoes_contrato: string;
 }
 
-const faseOptions = ["Inicial", "Recurso", "Sentença", "Acórdão", "Trânsito em Julgado", "Execução", "Finalizado"];
-const statusProcessoOptions = ["Em andamento", "Favorável", "Desfavorável", "Suspenso", "Finalizado"];
-const statusProspeccaoOptions = ["Contato feito", "Proposta enviada", "Em negociação", "Contrato assinado", "Serviço iniciado", "Perdido"];
+const faseOptions = [
+  "Inicial",
+  "Recurso",
+  "Sentença",
+  "Acórdão",
+  "Trânsito em Julgado",
+  "Execução",
+  "Finalizado",
+];
+const statusProcessoOptions = [
+  "Em andamento",
+  "Favorável",
+  "Desfavorável",
+  "Suspenso",
+  "Finalizado",
+];
+const statusProspeccaoOptions = [
+  "Contato feito",
+  "Proposta enviada",
+  "Em negociação",
+  "Contrato assinado",
+  "Serviço iniciado",
+  "Perdido",
+];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -198,52 +253,25 @@ export default function Acoes() {
   const [prospDataAssinatura, setProspDataAssinatura] = useState("");
   const [prospObsContrato, setProspObsContrato] = useState("");
 
-  // PostgREST cap em max-rows (~1000) faz range(0, 49999) parar em 1k. Pra
-  // bancos grandes (empresas/eleg/prosp acima de 1k) o painel mostrava só
-  // uma fatia, quebrando o filtro por empresa via deep-link. Pagina em
-  // chunks de 1000 até esgotar.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fetchAllPaginated = async <T,>(buildQuery: (from: number, to: number) => any): Promise<T[]> => {
-    const PAGE = 1000;
-    const out: T[] = [];
-    let from = 0;
-    for (;;) {
-      const { data, error } = await buildQuery(from, from + PAGE - 1);
-      if (error) throw error;
-      const rows = (data ?? []) as T[];
-      out.push(...rows);
-      if (rows.length < PAGE) break;
-      from += PAGE;
-    }
-    return out;
-  };
-
+  // fetchAllRows (src/lib/supabaseFetchAll.ts) pagina automaticamente em chunks
+  // de 1000 — necessário porque PostgREST corta cada response em max-rows.
   const fetchAll = async () => {
-    const [acoesRes, empresas, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] = await Promise.all([
-      supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-      fetchAllPaginated<Empresa>((from, to) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase.from("empresas") as any)
-          .select("id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados")
-          .range(from, to),
-      ),
-      fetchAllPaginated<ElegibilidadeRow>((from, to) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase.from("elegibilidade") as any)
-          .select("id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto")
-          .range(from, to),
-      ),
-      supabase.from("pastas_empresas").select("id, nome"),
-      supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
-      fetchAllPaginated<Processo>((from, to) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase.from("processos") as any).select("*").range(from, to),
-      ),
-      fetchAllPaginated<Prospeccao>((from, to) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (supabase.from("prospeccoes") as any).select("*").range(from, to),
-      ),
-    ]);
+    const [acoesRes, empresas, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] =
+      await Promise.all([
+        supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
+        fetchAllRows<Empresa>(
+          "empresas",
+          "id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados"
+        ),
+        fetchAllRows<ElegibilidadeRow>(
+          "elegibilidade",
+          "id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto"
+        ),
+        supabase.from("pastas_empresas").select("id, nome"),
+        supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
+        fetchAllRows<Processo>("processos", "*"),
+        fetchAllRows<Prospeccao>("prospeccoes", "*"),
+      ]);
     setAcoes(acoesRes.data || []);
     setEmpresas(empresas);
     setElegibilidades(elegibilidades);
@@ -254,11 +282,15 @@ export default function Acoes() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    fetchAll();
+  }, []);
 
-  const acoesIniciais = acoes.filter((a) => a.tipo === "INICIAL").map((a) => ({ id: a.id, nome: a.nome }));
+  const acoesIniciais = acoes
+    .filter((a) => a.tipo === "INICIAL")
+    .map((a) => ({ id: a.id, nome: a.nome }));
 
-  const empresasMap = useMemo(() => new Map(empresas.map(e => [e.id, e])), [empresas]);
+  const empresasMap = useMemo(() => new Map(empresas.map((e) => [e.id, e])), [empresas]);
 
   // Deep-link: /acoes?acao=<id>&empresa=<id> abre a ação expandida e filtra
   // o painel pela empresa. Usado pelo "click na ação" dentro do EmpresaDetailSheet.
@@ -298,7 +330,7 @@ export default function Acoes() {
         chunks.push(payload.empresaIds.slice(i, i + 1000));
       }
       const results = await Promise.all(
-        chunks.map((c) => supabase.from("empresas").select("*").in("id", c)),
+        chunks.map((c) => supabase.from("empresas").select("*").in("id", c))
       );
       if (results.some((r) => r.error)) throw new Error("Erro Supabase");
       const empresasFull = results.flatMap((r) => r.data ?? []);
@@ -333,19 +365,45 @@ export default function Acoes() {
   };
 
   // CRUD Ação
-  const handleCreate = async (data: { nome: string; tipo: string; status: string; vinculo: string }) => {
-    const { error } = await supabase.from("acoes_tributarias").insert({ ...data, vinculo: data.vinculo || "", user_id: user?.id });
-    if (error) { toast.error("Erro ao criar ação"); } else {
-      logAudit({ tabela: "acoes_tributarias", acao: "Criou ação", detalhes: { nome: data.nome, tipo: data.tipo } });
+  const handleCreate = async (data: {
+    nome: string;
+    tipo: string;
+    status: string;
+    vinculo: string;
+  }) => {
+    const { error } = await supabase
+      .from("acoes_tributarias")
+      .insert({ ...data, vinculo: data.vinculo || "", user_id: user?.id });
+    if (error) {
+      toast.error("Erro ao criar ação");
+    } else {
+      logAudit({
+        tabela: "acoes_tributarias",
+        acao: "Criou ação",
+        detalhes: { nome: data.nome, tipo: data.tipo },
+      });
       fetchAll();
     }
   };
 
-  const handleEdit = async (id: string, data: { nome: string; tipo: string; status: string; vinculo: string }) => {
-    const { error } = await supabase.from("acoes_tributarias").update({ ...data, vinculo: data.vinculo || "" }).eq("id", id);
-    if (error) { toast.error("Erro ao atualizar ação"); } else {
+  const handleEdit = async (
+    id: string,
+    data: { nome: string; tipo: string; status: string; vinculo: string }
+  ) => {
+    const { error } = await supabase
+      .from("acoes_tributarias")
+      .update({ ...data, vinculo: data.vinculo || "" })
+      .eq("id", id);
+    if (error) {
+      toast.error("Erro ao atualizar ação");
+    } else {
       toast.success("Ação atualizada!");
-      logAudit({ tabela: "acoes_tributarias", acao: "Editou ação", registro_id: id, detalhes: { nome: data.nome } });
+      logAudit({
+        tabela: "acoes_tributarias",
+        acao: "Editou ação",
+        registro_id: id,
+        detalhes: { nome: data.nome },
+      });
       fetchAll();
     }
   };
@@ -353,9 +411,16 @@ export default function Acoes() {
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("acoes_tributarias").delete().eq("id", id);
     const acao = acoes.find((a) => a.id === id);
-    if (error) { toast.error("Erro ao remover ação"); } else {
+    if (error) {
+      toast.error("Erro ao remover ação");
+    } else {
       toast.success("Ação removida");
-      logAudit({ tabela: "acoes_tributarias", acao: "Removeu ação", registro_id: id, detalhes: { nome: acao?.nome } });
+      logAudit({
+        tabela: "acoes_tributarias",
+        acao: "Removeu ação",
+        registro_id: id,
+        detalhes: { nome: acao?.nome },
+      });
       // CASCADE no DB já remove elegibilidades/prospeccoes/criterios. Mas outras
       // páginas usam React Query com cache próprio — precisa invalidar pra que
       // /elegibilidade, /empresas, /prospeccao, /dashboard reflitam a remoção.
@@ -371,13 +436,18 @@ export default function Acoes() {
 
   const getElegibilidadesForAcao = (acaoId: string) =>
     elegibilidades.filter((e) => e.acao_id === acaoId);
-  const getEmpresaNome = (empresaId: string) => empresas.find((e) => e.id === empresaId)?.nome || "Desconhecida";
-  const getProcessoForEleg = (elegId: string) => processos.find((p) => p.elegibilidade_id === elegId);
-  const getProspeccaoForEleg = (elegId: string) => prospeccoes.find((p) => p.elegibilidade_id === elegId);
+  const _getEmpresaNome = (empresaId: string) =>
+    empresas.find((e) => e.id === empresaId)?.nome || "Desconhecida";
+  const _getProcessoForEleg = (elegId: string) =>
+    processos.find((p) => p.elegibilidade_id === elegId);
+  const _getProspeccaoForEleg = (elegId: string) =>
+    prospeccoes.find((p) => p.elegibilidade_id === elegId);
 
   const handleDeleteEleg = async (id: string) => {
     const { error } = await supabase.from("elegibilidade").delete().eq("id", id);
-    if (error) { toast.error("Erro ao remover"); } else {
+    if (error) {
+      toast.error("Erro ao remover");
+    } else {
       toast.success("Removido!");
       logAudit({ tabela: "elegibilidade", acao: "Removeu elegibilidade", registro_id: id });
       fetchAll();
@@ -385,17 +455,27 @@ export default function Acoes() {
   };
 
   const handleDesqualificar = async (elegId: string, motivo: string) => {
+    // Persistir motivo + estado enum (mig 20260506000000/20260421000000) — antes
+    // o motivo passado pela UI era silenciosamente descartado.
+    const motivoTrim = motivo.trim();
     const { error } = await supabase
       .from("elegibilidade")
       .update({
         elegivel: false,
+        estado: "desqualificada",
+        motivo_desqualificacao: motivoTrim || null,
       })
       .eq("id", elegId);
     if (error) {
       toast.error("Erro ao desqualificar empresa");
     } else {
       toast.success("Empresa marcada como inelegível");
-      logAudit({ tabela: "elegibilidade", acao: "Desqualificou empresa", registro_id: elegId });
+      logAudit({
+        tabela: "elegibilidade",
+        acao: "Desqualificou empresa",
+        registro_id: elegId,
+        detalhes: motivoTrim ? { motivo: motivoTrim } : undefined,
+      });
       fetchAll();
     }
   };
@@ -434,18 +514,32 @@ export default function Acoes() {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-      if (json.length < 2) { toast.error("Planilha vazia"); return; }
+      const json = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, { header: 1 });
+      if (json.length < 2) {
+        toast.error("Planilha vazia");
+        return;
+      }
 
-      const headers = (json[0] as string[]).map((h) => String(h).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+      const headers = (json[0] as string[]).map((h) =>
+        String(h)
+          .trim()
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+      );
       const cnpjCol = headers.findIndex((h) => h.includes("cnpj"));
-      const nomeCol = headers.findIndex((h) => h.includes("nome") || h.includes("razao") || h.includes("empresa"));
-      if (cnpjCol === -1) { toast.error("Coluna CNPJ não encontrada"); return; }
+      const nomeCol = headers.findIndex(
+        (h) => h.includes("nome") || h.includes("razao") || h.includes("empresa")
+      );
+      if (cnpjCol === -1) {
+        toast.error("Coluna CNPJ não encontrada");
+        return;
+      }
 
       const draft: Array<Omit<PlanilhaRow, "existing_id">> = [];
       const seen = new Set<string>();
       for (let i = 1; i < json.length; i++) {
-        const row = json[i] as unknown[];
+        const row = json[i];
         if (!row || row.length === 0) continue;
         const rawCnpj = String(row[cnpjCol] ?? "").trim();
         const cnpj = maskCNPJ(rawCnpj);
@@ -480,7 +574,9 @@ export default function Acoes() {
       const novas = final.filter((r) => r.valid && !r.existing_id).length;
       const exist = final.filter((r) => r.valid && r.existing_id).length;
       const erros = final.filter((r) => !r.valid).length;
-      toast.success(`${final.length} linhas: ${novas} novas, ${exist} existentes, ${erros} com erro`);
+      toast.success(
+        `${final.length} linhas: ${novas} novas, ${exist} existentes, ${erros} com erro`
+      );
     } catch (e) {
       console.error(e);
       toast.error("Erro ao processar planilha");
@@ -489,7 +585,8 @@ export default function Acoes() {
     }
   };
 
-  const empresaIdsInPasta = (pastaId: string) => new Set(pastaItems.filter((i) => i.pasta_id === pastaId).map((i) => i.empresa_id));
+  const empresaIdsInPasta = (pastaId: string) =>
+    new Set(pastaItems.filter((i) => i.pasta_id === pastaId).map((i) => i.empresa_id));
 
   const handleSaveElegibilidade = async () => {
     let empresaIds: string[] = [];
@@ -501,7 +598,10 @@ export default function Acoes() {
     } else if (elegMode === "planilha") {
       // 1) Cria empresas novas (CNPJs sem match) e enriquece via Receita
       const validRows = planilhaRows.filter((r) => r.valid);
-      if (validRows.length === 0) { toast.error("Nenhuma linha válida na planilha"); return; }
+      if (validRows.length === 0) {
+        toast.error("Nenhuma linha válida na planilha");
+        return;
+      }
 
       const novasParaCriar = validRows.filter((r) => !r.existing_id);
       let criadasIds: string[] = [];
@@ -511,53 +611,84 @@ export default function Acoes() {
           nome: r.nome || "Importação — pendente RFB",
           status: "prospect",
           obs: "",
-          user_id: user!.id,
+          user_id: user.id,
         }));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { data: ins, error } = await (supabase.from("empresas") as any)
           .insert(insertData)
           .select("id, cnpj");
-        if (error) { toast.error("Erro ao criar empresas: " + error.message); return; }
+        if (error) {
+          toast.error("Erro ao criar empresas: " + error.message);
+          return;
+        }
         criadasIds = (ins ?? []).map((e: { id: string }) => e.id);
 
         // Dispara enriquecimento async (fire-and-forget — não bloqueia o save)
         for (const e of (ins ?? []) as Array<{ id: string; cnpj: string }>) {
-          supabase.functions.invoke("enriquecer-cnpj", {
-            body: { cnpj: e.cnpj, empresa_id: e.id },
-          }).catch(() => {/* silently */});
+          supabase.functions
+            .invoke("enriquecer-cnpj", {
+              body: { cnpj: e.cnpj, empresa_id: e.id },
+            })
+            .catch(() => {
+              /* silently */
+            });
         }
       }
       // 2) Junta IDs existentes + recém-criados
-      const existentesIds = validRows.filter((r) => r.existing_id).map((r) => r.existing_id!);
+      const existentesIds = validRows.filter((r) => r.existing_id).map((r) => r.existing_id);
       empresaIds = [...existentesIds, ...criadasIds];
     }
 
-    if (empresaIds.length === 0) { toast.error("Selecione ao menos uma empresa"); return; }
+    if (empresaIds.length === 0) {
+      toast.error("Selecione ao menos uma empresa");
+      return;
+    }
 
-    const existingPairs = new Set(elegibilidades.filter((e) => e.acao_id === elegAcaoId).map((e) => e.empresa_id));
+    const existingPairs = new Set(
+      elegibilidades.filter((e) => e.acao_id === elegAcaoId).map((e) => e.empresa_id)
+    );
     const newIds = empresaIds.filter((id) => !existingPairs.has(id));
-    if (newIds.length === 0) { toast.error("Todas as empresas já possuem elegibilidade nesta ação"); return; }
+    if (newIds.length === 0) {
+      toast.error("Todas as empresas já possuem elegibilidade nesta ação");
+      return;
+    }
 
     const items = newIds.map((empresa_id) => ({
-      empresa_id, acao_id: elegAcaoId, elegivel: elegElegivel === "true", justificativa: elegJustificativa || "", user_id: user!.id,
+      empresa_id,
+      acao_id: elegAcaoId,
+      elegivel: elegElegivel === "true",
+      justificativa: elegJustificativa || "",
+      user_id: user.id,
     }));
 
     // upsert com ignoreDuplicates: o filtro `existingPairs` acima já remove duplicatas,
     // mas se houver race condition (outro user inseriu no meio), evita erro 23505.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from("elegibilidade") as any)
-      .upsert(items, { onConflict: "empresa_id,acao_id", ignoreDuplicates: true });
-    if (error) { toast.error("Erro ao salvar"); console.error(error); return; }
-    const novasEmpresasMsg = elegMode === "planilha"
-      ? ` (${planilhaRows.filter(r => r.valid && !r.existing_id).length} empresas novas criadas + RFB sendo enriquecida em background)`
-      : "";
+    const { error } = await (supabase.from("elegibilidade") as any).upsert(items, {
+      onConflict: "empresa_id,acao_id",
+      ignoreDuplicates: true,
+    });
+    if (error) {
+      toast.error("Erro ao salvar");
+      console.error(error);
+      return;
+    }
+    const novasEmpresasMsg =
+      elegMode === "planilha"
+        ? ` (${planilhaRows.filter((r) => r.valid && !r.existing_id).length} empresas novas criadas + RFB sendo enriquecida em background)`
+        : "";
     toast.success(`${newIds.length} elegibilidade(s) adicionada(s)!${novasEmpresasMsg}`);
     setElegDialogOpen(false);
     fetchAll();
   };
 
   const toggleEmpresa = (id: string) => {
-    setElegSelectedEmpresas((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+    setElegSelectedEmpresas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   // Processo handlers
@@ -572,47 +703,153 @@ export default function Acoes() {
       setProcStatus(existing.status);
       setProcObs(existing.observacoes || "");
       setProcDataProcesso(existing.data_processo || "");
-      const knownTribunais = ["JFAC","JFAL","JFAM","JFAP","JFBA","JFCE","JFDF","JFES","JFGO","JFMA","JFMG","JFMS","JFMT","JFPA","JFPB","JFPE","JFPI","JFPR","JFRJ","JFRN","JFRO","JFRR","JFRS","JFSC","JFSE","JFSP","JFTO","TJAC","TJAL","TJAM","TJAP","TJBA","TJCE","TJDFT","TJES","TJGO","TJMA","TJMG","TJMS","TJMT","TJPA","TJPB","TJPE","TJPI","TJPR","TJRJ","TJRN","TJRO","TJRR","TJRS","TJSC","TJSE","TJSP","TJTO","TRF1","TRF2","TRF3","TRF4","TRF5","TRF6","STJ","STF",""];
+      const knownTribunais = [
+        "JFAC",
+        "JFAL",
+        "JFAM",
+        "JFAP",
+        "JFBA",
+        "JFCE",
+        "JFDF",
+        "JFES",
+        "JFGO",
+        "JFMA",
+        "JFMG",
+        "JFMS",
+        "JFMT",
+        "JFPA",
+        "JFPB",
+        "JFPE",
+        "JFPI",
+        "JFPR",
+        "JFRJ",
+        "JFRN",
+        "JFRO",
+        "JFRR",
+        "JFRS",
+        "JFSC",
+        "JFSE",
+        "JFSP",
+        "JFTO",
+        "TJAC",
+        "TJAL",
+        "TJAM",
+        "TJAP",
+        "TJBA",
+        "TJCE",
+        "TJDFT",
+        "TJES",
+        "TJGO",
+        "TJMA",
+        "TJMG",
+        "TJMS",
+        "TJMT",
+        "TJPA",
+        "TJPB",
+        "TJPE",
+        "TJPI",
+        "TJPR",
+        "TJRJ",
+        "TJRN",
+        "TJRO",
+        "TJRR",
+        "TJRS",
+        "TJSC",
+        "TJSE",
+        "TJSP",
+        "TJTO",
+        "TRF1",
+        "TRF2",
+        "TRF3",
+        "TRF4",
+        "TRF5",
+        "TRF6",
+        "STJ",
+        "STF",
+        "",
+      ];
       const t = existing.tribunal || "";
-      if (knownTribunais.includes(t)) { setProcTribunal(t); setProcTribunalOutro(""); }
-      else { setProcTribunal("Outro"); setProcTribunalOutro(t); }
+      if (knownTribunais.includes(t)) {
+        setProcTribunal(t);
+        setProcTribunalOutro("");
+      } else {
+        setProcTribunal("Outro");
+        setProcTribunalOutro(t);
+      }
     } else {
       setEditingProcesso(null);
-      setProcNumero(""); setProcFase("Inicial"); setProcValorEstimado(""); setProcValorGanho(""); setProcStatus("Em andamento"); setProcObs("");
-      setProcDataProcesso(""); setProcTribunal(""); setProcTribunalOutro("");
+      setProcNumero("");
+      setProcFase("Inicial");
+      setProcValorEstimado("");
+      setProcValorGanho("");
+      setProcStatus("Em andamento");
+      setProcObs("");
+      setProcDataProcesso("");
+      setProcTribunal("");
+      setProcTribunalOutro("");
     }
     setProcDialogOpen(true);
   };
 
   const handleSaveProcesso = async () => {
     const payload = {
-      numero_processo: procNumero, fase: procFase,
-      valor_estimado: parseFloat(procValorEstimado) || 0, valor_ganho: parseFloat(procValorGanho) || 0,
-      status: procStatus, observacoes: procObs,
-      data_processo: procDataProcesso || null, tribunal: procTribunal === "Outro" ? procTribunalOutro : procTribunal,
+      numero_processo: procNumero,
+      fase: procFase,
+      valor_estimado: parseFloat(procValorEstimado) || 0,
+      valor_ganho: parseFloat(procValorGanho) || 0,
+      status: procStatus,
+      observacoes: procObs,
+      data_processo: procDataProcesso || null,
+      tribunal: procTribunal === "Outro" ? procTribunalOutro : procTribunal,
     };
     if (editingProcesso) {
-      const { error } = await (supabase.from("processos") as any).update(payload).eq("id", editingProcesso.id);
-      if (error) { toast.error("Erro ao atualizar processo"); return; }
+      const { error } = await (supabase.from("processos") as any)
+        .update(payload)
+        .eq("id", editingProcesso.id);
+      if (error) {
+        toast.error("Erro ao atualizar processo");
+        return;
+      }
       toast.success("Processo atualizado!");
-      logAudit({ tabela: "processos", acao: "Editou processo", registro_id: editingProcesso.id, detalhes: payload });
+      logAudit({
+        tabela: "processos",
+        acao: "Editou processo",
+        registro_id: editingProcesso.id,
+        detalhes: payload,
+      });
     } else {
-      const { error } = await (supabase.from("processos") as any).insert({ ...payload, elegibilidade_id: procElegId, user_id: user!.id });
-      if (error) { toast.error("Erro ao criar processo"); return; }
+      const { error } = await (supabase.from("processos") as any).insert({
+        ...payload,
+        elegibilidade_id: procElegId,
+        user_id: user.id,
+      });
+      if (error) {
+        toast.error("Erro ao criar processo");
+        return;
+      }
       toast.success("Processo registrado!");
-      logAudit({ tabela: "processos", acao: "Criou processo", detalhes: { ...payload, elegibilidade_id: procElegId } });
+      logAudit({
+        tabela: "processos",
+        acao: "Criou processo",
+        detalhes: { ...payload, elegibilidade_id: procElegId },
+      });
     }
     setProcDialogOpen(false);
     fetchAll();
   };
 
-  const handleDeleteProcesso = async (id: string) => {
+  const _handleDeleteProcesso = async (id: string) => {
     const { error } = await (supabase.from("processos") as any).delete().eq("id", id);
-    if (error) { toast.error("Erro ao remover processo"); } else { toast.success("Processo removido!"); fetchAll(); }
+    if (error) {
+      toast.error("Erro ao remover processo");
+    } else {
+      toast.success("Processo removido!");
+      fetchAll();
+    }
   };
 
   // Prospecção handlers
-  const openProspDialog = (elegId: string, existing?: Prospeccao) => {
+  const _openProspDialog = (elegId: string, existing?: Prospeccao) => {
     setProspElegId(elegId);
     if (existing) {
       setEditingProsp(existing);
@@ -629,9 +866,17 @@ export default function Acoes() {
       setProspObsContrato(existing.observacoes_contrato || "");
     } else {
       setEditingProsp(null);
-      setProspContatoNome(""); setProspContatoTel(""); setProspContatoEmail(""); setProspContatoCargo("");
-      setProspStatus("Contato feito"); setProspNotas("");
-      setProspValorContrato(""); setProspTipoContrato(""); setProspDataContrato(""); setProspDataAssinatura(""); setProspObsContrato("");
+      setProspContatoNome("");
+      setProspContatoTel("");
+      setProspContatoEmail("");
+      setProspContatoCargo("");
+      setProspStatus("Contato feito");
+      setProspNotas("");
+      setProspValorContrato("");
+      setProspTipoContrato("");
+      setProspDataContrato("");
+      setProspDataAssinatura("");
+      setProspObsContrato("");
     }
     setProspDialogOpen(true);
   };
@@ -651,23 +896,51 @@ export default function Acoes() {
       observacoes_contrato: prospObsContrato,
     };
     if (editingProsp) {
-      const { error } = await (supabase.from("prospeccoes") as any).update(payload).eq("id", editingProsp.id);
-      if (error) { toast.error("Erro ao atualizar prospecção"); console.error(error); return; }
+      const { error } = await (supabase.from("prospeccoes") as any)
+        .update(payload)
+        .eq("id", editingProsp.id);
+      if (error) {
+        toast.error("Erro ao atualizar prospecção");
+        console.error(error);
+        return;
+      }
       toast.success("Prospecção atualizada!");
-      logAudit({ tabela: "prospeccoes", acao: "Editou prospecção", registro_id: editingProsp.id, detalhes: { status: prospStatus } });
+      logAudit({
+        tabela: "prospeccoes",
+        acao: "Editou prospecção",
+        registro_id: editingProsp.id,
+        detalhes: { status: prospStatus },
+      });
     } else {
-      const { error } = await (supabase.from("prospeccoes") as any).insert({ ...payload, elegibilidade_id: prospElegId, user_id: user!.id });
-      if (error) { toast.error("Erro ao criar prospecção"); console.error(error); return; }
+      const { error } = await (supabase.from("prospeccoes") as any).insert({
+        ...payload,
+        elegibilidade_id: prospElegId,
+        user_id: user.id,
+      });
+      if (error) {
+        toast.error("Erro ao criar prospecção");
+        console.error(error);
+        return;
+      }
       toast.success("Prospecção registrada!");
-      logAudit({ tabela: "prospeccoes", acao: "Criou prospecção", detalhes: { elegibilidade_id: prospElegId, status: prospStatus } });
+      logAudit({
+        tabela: "prospeccoes",
+        acao: "Criou prospecção",
+        detalhes: { elegibilidade_id: prospElegId, status: prospStatus },
+      });
     }
     setProspDialogOpen(false);
     fetchAll();
   };
 
-  const handleDeleteProsp = async (id: string) => {
+  const _handleDeleteProsp = async (id: string) => {
     const { error } = await (supabase.from("prospeccoes") as any).delete().eq("id", id);
-    if (error) { toast.error("Erro ao remover prospecção"); } else { toast.success("Prospecção removida!"); fetchAll(); }
+    if (error) {
+      toast.error("Erro ao remover prospecção");
+    } else {
+      toast.success("Prospecção removida!");
+      fetchAll();
+    }
   };
 
   // Totals
@@ -681,14 +954,20 @@ export default function Acoes() {
     };
   };
 
-  const getProspStatusColor = (status: string) => {
+  const _getProspStatusColor = (status: string) => {
     switch (status) {
-      case "Contato feito": return "bg-info/10 text-info";
-      case "Proposta enviada": return "bg-warning/10 text-warning";
-      case "Em negociação": return "bg-primary/10 text-primary";
-      case "Contrato assinado": return "bg-success/10 text-success";
-      case "Perdido": return "bg-destructive/10 text-destructive";
-      default: return "bg-muted text-muted-foreground";
+      case "Contato feito":
+        return "bg-info/10 text-info";
+      case "Proposta enviada":
+        return "bg-warning/10 text-warning";
+      case "Em negociação":
+        return "bg-primary/10 text-primary";
+      case "Contrato assinado":
+        return "bg-success/10 text-success";
+      case "Perdido":
+        return "bg-destructive/10 text-destructive";
+      default:
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -697,14 +976,21 @@ export default function Acoes() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="animate-fade-in space-y-6">
       <PageHeader
         title="Ações Tributárias"
         description="Gestão de ações iniciais e rescisórias"
         icon={<Scale className="h-7 w-7" />}
         helpTutorialTab="fluxo"
         helpTooltip="Fluxo: Criar ações tributárias"
-        actions={<AcaoDialog onSave={handleCreate} acoesIniciais={acoesIniciais} />}
+        actions={
+          <AcaoDialog
+            onSave={(d) => {
+              void handleCreate(d);
+            }}
+            acoesIniciais={acoesIniciais}
+          />
+        }
       />
 
       {acoes.length === 0 && (
@@ -739,60 +1025,104 @@ export default function Acoes() {
                 if (node) acaoCardRefs.current.set(a.id, node);
                 else acaoCardRefs.current.delete(a.id);
               }}
-              className="shadow-card hover:shadow-elevated transition-shadow"
+              className="shadow-card transition-shadow hover:shadow-elevated"
             >
               <div className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <h3 className="font-medium">{a.nome}</h3>
-                      <Badge variant={a.tipo === "INICIAL" ? "default" : "secondary"} className="text-[10px]">{a.tipo}</Badge>
+                      <Badge
+                        variant={a.tipo === "INICIAL" ? "default" : "secondary"}
+                        className="text-[10px]"
+                      >
+                        {a.tipo}
+                      </Badge>
                     </div>
                     {a.tipo === "RESCISÓRIA" && a.vinculo && (
-                      <p className="text-xs text-muted-foreground">Vinculada a: <span className="text-foreground">{a.vinculo}</span></p>
+                      <p className="text-xs text-muted-foreground">
+                        Vinculada a: <span className="text-foreground">{a.vinculo}</span>
+                      </p>
                     )}
                     {totals.count > 0 && (
                       <div className="flex items-center gap-4 text-xs">
                         <span className="flex items-center gap-1 text-muted-foreground">
-                          <DollarSign className="h-3 w-3" />Estimado: <span className="text-foreground font-medium">{formatCurrency(totals.estimado)}</span>
+                          <DollarSign className="h-3 w-3" />
+                          Estimado:{" "}
+                          <span className="font-medium text-foreground">
+                            {formatCurrency(totals.estimado)}
+                          </span>
                         </span>
                         <span className="flex items-center gap-1 text-muted-foreground">
-                          Ganho: <span className="text-success font-medium">{formatCurrency(totals.ganho)}</span>
+                          Ganho:{" "}
+                          <span className="font-medium text-success">
+                            {formatCurrency(totals.ganho)}
+                          </span>
                         </span>
                       </div>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      a.status === "Ativa" ? "bg-success/10 text-success" : a.status === "Inativa" ? "bg-muted text-muted-foreground" : "bg-warning/10 text-warning"
-                    }`}>{a.status}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        a.status === "Ativa"
+                          ? "bg-success/10 text-success"
+                          : a.status === "Inativa"
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-warning/10 text-warning"
+                      }`}
+                    >
+                      {a.status}
+                    </span>
                     <Badge variant="outline" className="text-[10px]">
-                      <Users className="mr-1 h-3 w-3" />{empresasCount} empresas
+                      <Users className="mr-1 h-3 w-3" />
+                      {empresasCount} empresas
                     </Badge>
                     {elegiveisCount > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-success/30 text-success">
-                        <UserCheck className="mr-1 h-3 w-3" />{elegiveisCount} elegíveis
+                      <Badge
+                        variant="outline"
+                        className="border-success/30 text-[10px] text-success"
+                      >
+                        <UserCheck className="mr-1 h-3 w-3" />
+                        {elegiveisCount} elegíveis
                       </Badge>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => setImportProspAcao({ id: a.id, nome: a.nome })}>
-                      <FileSpreadsheet className="mr-1 h-3 w-3" />Importar
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setImportProspAcao({ id: a.id, nome: a.nome })}
+                    >
+                      <FileSpreadsheet className="mr-1 h-3 w-3" />
+                      Importar
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => openElegDialog(a.id)}>
-                      <Plus className="mr-1 h-3 w-3" />Elegibilidade
+                      <Plus className="mr-1 h-3 w-3" />
+                      Elegibilidade
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => setCriteriosAcaoId(a.id)}>
-                      <ListChecks className="mr-1 h-3 w-3" />Critérios
+                      <ListChecks className="mr-1 h-3 w-3" />
+                      Critérios
                     </Button>
                     <AcaoDialog
-                      onSave={(data) => handleEdit(a.id, data)}
+                      onSave={(data) => {
+                        void handleEdit(a.id, data);
+                      }}
                       initialData={a}
                       title="Editar Ação"
                       acoesIniciais={acoesIniciais}
-                      trigger={<Button variant="ghost" size="sm">Editar</Button>}
+                      trigger={
+                        <Button variant="ghost" size="sm">
+                          Editar
+                        </Button>
+                      }
                     />
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
@@ -803,12 +1133,27 @@ export default function Acoes() {
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleDelete(a.id)}>Excluir</AlertDialogAction>
+                          <AlertDialogAction
+                            onClick={() => {
+                              void handleDelete(a.id);
+                            }}
+                          >
+                            Excluir
+                          </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setExpandedAcao(isExpanded ? null : a.id)}>
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setExpandedAcao(isExpanded ? null : a.id)}
+                    >
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -824,7 +1169,9 @@ export default function Acoes() {
                     prospeccoes={prospeccoes as unknown as ProspMin[]}
                     onProspectar={handleProspectar}
                     onOpenProcesso={(elegId) => openProcessoDialog(elegId)}
-                    onDeleteEleg={handleDeleteEleg}
+                    onDeleteEleg={(id) => {
+                      void handleDeleteEleg(id);
+                    }}
                     onDesqualificar={handleDesqualificar}
                     onUpdateContexto={handleUpdateContexto}
                     onExport={handleExportAcao}
@@ -845,8 +1192,10 @@ export default function Acoes() {
         elegId={prospRapidaElegId}
         empresaId={prospRapidaEmpresaId}
         acaoId={expandedAcao ?? ""}
-        empresaNome={empresas.find(e => e.id === prospRapidaEmpresaId)?.nome ?? ""}
-        onSuccess={fetchAll}
+        empresaNome={empresas.find((e) => e.id === prospRapidaEmpresaId)?.nome ?? ""}
+        onSuccess={() => {
+          void fetchAll();
+        }}
       />
 
       <EmpresaQuickSheet empresaId={detailEmpresaId} onClose={() => setDetailEmpresaId(null)} />
@@ -857,7 +1206,10 @@ export default function Acoes() {
           acaoNome={importProspAcao.nome}
           open={!!importProspAcao}
           onClose={() => setImportProspAcao(null)}
-          onImported={() => { fetchAll(); setImportProspAcao(null); }}
+          onImported={() => {
+            fetchAll();
+            setImportProspAcao(null);
+          }}
           empresasMap={empresasMap}
           elegibilidades={elegibilidades}
         />
@@ -865,31 +1217,54 @@ export default function Acoes() {
 
       {/* Elegibilidade Dialog */}
       <Dialog open={elegDialogOpen} onOpenChange={setElegDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh]">
+        <DialogContent className="max-h-[85vh] sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-heading">Adicionar Elegibilidade — {acoes.find((a) => a.id === elegAcaoId)?.nome}</DialogTitle>
+            <DialogTitle className="font-heading">
+              Adicionar Elegibilidade — {acoes.find((a) => a.id === elegAcaoId)?.nome}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex gap-2 flex-wrap">
-              <Button variant={elegMode === "individual" ? "default" : "outline"} size="sm" onClick={() => setElegMode("individual")}>
-                <Users className="mr-2 h-3 w-3" />Individual
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={elegMode === "individual" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setElegMode("individual")}
+              >
+                <Users className="mr-2 h-3 w-3" />
+                Individual
               </Button>
-              <Button variant={elegMode === "pasta" ? "default" : "outline"} size="sm" onClick={() => setElegMode("pasta")}>
-                <Folder className="mr-2 h-3 w-3" />Por Pasta
+              <Button
+                variant={elegMode === "pasta" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setElegMode("pasta")}
+              >
+                <Folder className="mr-2 h-3 w-3" />
+                Por Pasta
               </Button>
-              <Button variant={elegMode === "planilha" ? "default" : "outline"} size="sm" onClick={() => setElegMode("planilha")}>
-                <FileSpreadsheet className="mr-2 h-3 w-3" />Planilha
+              <Button
+                variant={elegMode === "planilha" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setElegMode("planilha")}
+              >
+                <FileSpreadsheet className="mr-2 h-3 w-3" />
+                Planilha
               </Button>
             </div>
             {elegMode === "individual" && (
-              <div className="space-y-2 overflow-y-auto max-h-[30vh]">
+              <div className="max-h-[30vh] space-y-2 overflow-y-auto">
                 <Label>Selecione as empresas</Label>
                 {empresas.map((e) => (
-                  <label key={e.id} className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 cursor-pointer">
-                    <Checkbox checked={elegSelectedEmpresas.has(e.id)} onCheckedChange={() => toggleEmpresa(e.id)} />
+                  <label
+                    key={e.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50"
+                  >
+                    <Checkbox
+                      checked={elegSelectedEmpresas.has(e.id)}
+                      onCheckedChange={() => toggleEmpresa(e.id)}
+                    />
                     <div>
                       <div className="text-sm font-medium">{e.nome}</div>
-                      <div className="text-xs text-muted-foreground font-mono">{e.cnpj}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{e.cnpj}</div>
                     </div>
                   </label>
                 ))}
@@ -899,10 +1274,14 @@ export default function Acoes() {
               <div className="space-y-2">
                 <Label>Selecione a pasta</Label>
                 <Select value={elegSelectedPasta} onValueChange={setElegSelectedPasta}>
-                  <SelectTrigger><SelectValue placeholder="Escolha uma pasta..." /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Escolha uma pasta..." />
+                  </SelectTrigger>
                   <SelectContent>
                     {pastas.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.nome} ({empresaIdsInPasta(p.id).size} empresas)</SelectItem>
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.nome} ({empresaIdsInPasta(p.id).size} empresas)
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -910,18 +1289,31 @@ export default function Acoes() {
             )}
             {elegMode === "planilha" && (
               <div className="space-y-3">
-                <div className="border-2 border-dashed border-border rounded-lg p-4 text-center hover:border-muted-foreground/30 transition-colors">
-                  <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-sm font-medium mb-1">{planilhaFileName || "Selecione um arquivo"}</p>
-                  <p className="text-[11px] text-muted-foreground mb-2">CSV ou XLSX com coluna CNPJ (e Nome opcional)</p>
+                <div className="rounded-lg border-2 border-dashed border-border p-4 text-center transition-colors hover:border-muted-foreground/30">
+                  <Upload className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+                  <p className="mb-1 text-sm font-medium">
+                    {planilhaFileName || "Selecione um arquivo"}
+                  </p>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    CSV ou XLSX com coluna CNPJ (e Nome opcional)
+                  </p>
                   <input
                     type="file"
                     accept=".csv,.xlsx,.xls"
                     className="hidden"
                     id="planilha-eleg-input"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePlanilhaUpload(f); }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handlePlanilhaUpload(f);
+                    }}
                   />
-                  <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("planilha-eleg-input")?.click()} disabled={planilhaProcessing}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById("planilha-eleg-input")?.click()}
+                    disabled={planilhaProcessing}
+                  >
                     <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
                     {planilhaProcessing ? "Processando..." : "Escolher arquivo"}
                   </Button>
@@ -929,40 +1321,56 @@ export default function Acoes() {
 
                 {planilhaRows.length > 0 && (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap text-xs">
-                      <Badge variant="outline" className="bg-info/10 text-info border-0 gap-1">
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <Badge variant="outline" className="gap-1 border-0 bg-info/10 text-info">
                         <Plus className="h-2.5 w-2.5" />
-                        {planilhaRows.filter(r => r.valid && !r.existing_id).length} novas
+                        {planilhaRows.filter((r) => r.valid && !r.existing_id).length} novas
                       </Badge>
-                      <Badge variant="outline" className="bg-success/10 text-success border-0 gap-1">
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-0 bg-success/10 text-success"
+                      >
                         <CheckCircle2 className="h-2.5 w-2.5" />
-                        {planilhaRows.filter(r => r.valid && r.existing_id).length} existentes
+                        {planilhaRows.filter((r) => r.valid && r.existing_id).length} existentes
                       </Badge>
-                      {planilhaRows.some(r => !r.valid) && (
-                        <Badge variant="outline" className="bg-destructive/10 text-destructive border-0 gap-1">
+                      {planilhaRows.some((r) => !r.valid) && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 border-0 bg-destructive/10 text-destructive"
+                        >
                           <XCircle className="h-2.5 w-2.5" />
-                          {planilhaRows.filter(r => !r.valid).length} com erro
+                          {planilhaRows.filter((r) => !r.valid).length} com erro
                         </Badge>
                       )}
                     </div>
-                    <div className="border border-border rounded-md overflow-y-auto max-h-[28vh]">
+                    <div className="max-h-[28vh] overflow-y-auto rounded-md border border-border">
                       <table className="w-full text-xs">
-                        <thead className="bg-muted/30 sticky top-0">
+                        <thead className="sticky top-0 bg-muted/30">
                           <tr>
-                            <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">CNPJ</th>
-                            <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Nome</th>
-                            <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Status</th>
+                            <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                              CNPJ
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                              Nome
+                            </th>
+                            <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">
+                              Status
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {planilhaRows.map((r, i) => (
                             <tr key={i} className="border-t border-border">
-                              <td className="py-1 px-2 font-mono text-[10px]">{r.cnpj || "—"}</td>
-                              <td className="py-1 px-2 truncate max-w-[140px]">{r.nome || "—"}</td>
-                              <td className="py-1 px-2">
-                                {!r.valid ? <span className="text-destructive">{r.errors.join(", ")}</span>
-                                  : r.existing_id ? <span className="text-success">existente</span>
-                                  : <span className="text-info">nova</span>}
+                              <td className="px-2 py-1 font-mono text-[10px]">{r.cnpj || "—"}</td>
+                              <td className="max-w-[140px] truncate px-2 py-1">{r.nome || "—"}</td>
+                              <td className="px-2 py-1">
+                                {!r.valid ? (
+                                  <span className="text-destructive">{r.errors.join(", ")}</span>
+                                ) : r.existing_id ? (
+                                  <span className="text-success">existente</span>
+                                ) : (
+                                  <span className="text-info">nova</span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -970,8 +1378,9 @@ export default function Acoes() {
                       </table>
                     </div>
                     <p className="text-[10px] text-muted-foreground">
-                      Empresas novas serão criadas com nome da planilha (ou "Importação — pendente RFB" se vazio)
-                      e enriquecidas via Receita Federal automaticamente em background.
+                      Empresas novas serão criadas com nome da planilha (ou "Importação — pendente
+                      RFB" se vazio) e enriquecidas via Receita Federal automaticamente em
+                      background.
                     </p>
                   </div>
                 )}
@@ -980,7 +1389,9 @@ export default function Acoes() {
             <div className="space-y-2">
               <Label>Elegível?</Label>
               <Select value={elegElegivel} onValueChange={setElegElegivel}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="true">Sim — Elegível</SelectItem>
                   <SelectItem value="false">Não — Não elegível</SelectItem>
@@ -989,12 +1400,25 @@ export default function Acoes() {
             </div>
             <div className="space-y-2">
               <Label>Justificativa</Label>
-              <Textarea value={elegJustificativa} onChange={(e) => setElegJustificativa(e.target.value)} placeholder="Motivo (opcional)" rows={2} />
+              <Textarea
+                value={elegJustificativa}
+                onChange={(e) => setElegJustificativa(e.target.value)}
+                placeholder="Motivo (opcional)"
+                rows={2}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setElegDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveElegibilidade}>Adicionar</Button>
+            <Button variant="outline" onClick={() => setElegDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                void handleSaveElegibilidade();
+              }}
+            >
+              Adicionar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1003,85 +1427,224 @@ export default function Acoes() {
       <Dialog open={procDialogOpen} onOpenChange={setProcDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle className="font-heading">{editingProcesso ? "Editar Processo" : "Novo Processo"}</DialogTitle>
+            <DialogTitle className="font-heading">
+              {editingProcesso ? "Editar Processo" : "Novo Processo"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Número do Processo</Label>
-                <Input value={procNumero} onChange={(e) => setProcNumero(e.target.value)} placeholder="Ex: 0001234-56.2024.8.26.0100" />
+                <Input
+                  value={procNumero}
+                  onChange={(e) => setProcNumero(e.target.value)}
+                  placeholder="Ex: 0001234-56.2024.8.26.0100"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Tribunal</Label>
-                <Select value={procTribunal} onValueChange={(v) => { setProcTribunal(v); if (v !== "Outro") setProcTribunalOutro(""); }}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <Select
+                  value={procTribunal}
+                  onValueChange={(v) => {
+                    setProcTribunal(v);
+                    if (v !== "Outro") setProcTribunalOutro("");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
                   <SelectContent className="max-h-60">
                     {[
-                      { label: "— Justiça Federal —", items: ["JFAC","JFAL","JFAM","JFAP","JFBA","JFCE","JFDF","JFES","JFGO","JFMA","JFMG","JFMS","JFMT","JFPA","JFPB","JFPE","JFPI","JFPR","JFRJ","JFRN","JFRO","JFRR","JFRS","JFSC","JFSE","JFSP","JFTO"] },
-                      { label: "— Tribunais Estaduais —", items: ["TJAC","TJAL","TJAM","TJAP","TJBA","TJCE","TJDFT","TJES","TJGO","TJMA","TJMG","TJMS","TJMT","TJPA","TJPB","TJPE","TJPI","TJPR","TJRJ","TJRN","TJRO","TJRR","TJRS","TJSC","TJSE","TJSP","TJTO"] },
-                      { label: "— Tribunais Regionais Federais —", items: ["TRF1","TRF2","TRF3","TRF4","TRF5","TRF6"] },
-                      { label: "— Tribunais Superiores —", items: ["STJ","STF"] },
+                      {
+                        label: "— Justiça Federal —",
+                        items: [
+                          "JFAC",
+                          "JFAL",
+                          "JFAM",
+                          "JFAP",
+                          "JFBA",
+                          "JFCE",
+                          "JFDF",
+                          "JFES",
+                          "JFGO",
+                          "JFMA",
+                          "JFMG",
+                          "JFMS",
+                          "JFMT",
+                          "JFPA",
+                          "JFPB",
+                          "JFPE",
+                          "JFPI",
+                          "JFPR",
+                          "JFRJ",
+                          "JFRN",
+                          "JFRO",
+                          "JFRR",
+                          "JFRS",
+                          "JFSC",
+                          "JFSE",
+                          "JFSP",
+                          "JFTO",
+                        ],
+                      },
+                      {
+                        label: "— Tribunais Estaduais —",
+                        items: [
+                          "TJAC",
+                          "TJAL",
+                          "TJAM",
+                          "TJAP",
+                          "TJBA",
+                          "TJCE",
+                          "TJDFT",
+                          "TJES",
+                          "TJGO",
+                          "TJMA",
+                          "TJMG",
+                          "TJMS",
+                          "TJMT",
+                          "TJPA",
+                          "TJPB",
+                          "TJPE",
+                          "TJPI",
+                          "TJPR",
+                          "TJRJ",
+                          "TJRN",
+                          "TJRO",
+                          "TJRR",
+                          "TJRS",
+                          "TJSC",
+                          "TJSE",
+                          "TJSP",
+                          "TJTO",
+                        ],
+                      },
+                      {
+                        label: "— Tribunais Regionais Federais —",
+                        items: ["TRF1", "TRF2", "TRF3", "TRF4", "TRF5", "TRF6"],
+                      },
+                      { label: "— Tribunais Superiores —", items: ["STJ", "STF"] },
                     ].map((group) => (
                       <div key={group.label}>
-                        <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">{group.label}</div>
-                        {group.items.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                        <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground">
+                          {group.label}
+                        </div>
+                        {group.items.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t}
+                          </SelectItem>
+                        ))}
                       </div>
                     ))}
                     <SelectItem value="Outro">Outro</SelectItem>
                   </SelectContent>
                 </Select>
                 {procTribunal === "Outro" && (
-                  <Input className="mt-2" value={procTribunalOutro} onChange={(e) => setProcTribunalOutro(e.target.value)} placeholder="Informe o tribunal..." />
+                  <Input
+                    className="mt-2"
+                    value={procTribunalOutro}
+                    onChange={(e) => setProcTribunalOutro(e.target.value)}
+                    placeholder="Informe o tribunal..."
+                  />
                 )}
               </div>
             </div>
             <div className="space-y-2">
               <Label>Data do Processo</Label>
-              <Input type="date" value={procDataProcesso} onChange={(e) => setProcDataProcesso(e.target.value)} />
+              <Input
+                type="date"
+                value={procDataProcesso}
+                onChange={(e) => setProcDataProcesso(e.target.value)}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Fase</Label>
                 <Select value={procFase} onValueChange={setProcFase}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{faseOptions.map((f) => <SelectItem key={f} value={f}>{f}</SelectItem>)}</SelectContent>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {faseOptions.map((f) => (
+                      <SelectItem key={f} value={f}>
+                        {f}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select value={procStatus} onValueChange={setProcStatus}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{statusProcessoOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statusProcessoOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Valor Estimado (R$)</Label>
-                <Input type="number" step="0.01" min="0" value={procValorEstimado} onChange={(e) => setProcValorEstimado(e.target.value)} placeholder="0,00" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={procValorEstimado}
+                  onChange={(e) => setProcValorEstimado(e.target.value)}
+                  placeholder="0,00"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Valor Ganho (R$)</Label>
-                <Input type="number" step="0.01" min="0" value={procValorGanho} onChange={(e) => setProcValorGanho(e.target.value)} placeholder="0,00" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={procValorGanho}
+                  onChange={(e) => setProcValorGanho(e.target.value)}
+                  placeholder="0,00"
+                />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Observações</Label>
-              <Textarea value={procObs} onChange={(e) => setProcObs(e.target.value)} placeholder="Detalhes (opcional)" rows={2} />
+              <Textarea
+                value={procObs}
+                onChange={(e) => setProcObs(e.target.value)}
+                placeholder="Detalhes (opcional)"
+                rows={2}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProcDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveProcesso}>{editingProcesso ? "Salvar" : "Criar"}</Button>
+            <Button variant="outline" onClick={() => setProcDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                void handleSaveProcesso();
+              }}
+            >
+              {editingProcesso ? "Salvar" : "Criar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Prospecção Dialog */}
       <Dialog open={prospDialogOpen} onOpenChange={setProspDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle className="font-heading">{editingProsp ? "Editar Prospecção" : "Nova Prospecção"}</DialogTitle>
+            <DialogTitle className="font-heading">
+              {editingProsp ? "Editar Prospecção" : "Nova Prospecção"}
+            </DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="contato" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
@@ -1090,86 +1653,144 @@ export default function Acoes() {
               <TabsTrigger value="contrato">Contrato</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="contato" className="space-y-4 mt-4">
+            <TabsContent value="contato" className="mt-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Nome do Contato</Label>
-                  <Input value={prospContatoNome} onChange={(e) => setProspContatoNome(e.target.value)} placeholder="Nome completo" />
+                  <Input
+                    value={prospContatoNome}
+                    onChange={(e) => setProspContatoNome(e.target.value)}
+                    placeholder="Nome completo"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Cargo</Label>
-                  <Input value={prospContatoCargo} onChange={(e) => setProspContatoCargo(e.target.value)} placeholder="Ex: Diretor Financeiro" />
+                  <Input
+                    value={prospContatoCargo}
+                    onChange={(e) => setProspContatoCargo(e.target.value)}
+                    placeholder="Ex: Diretor Financeiro"
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Telefone</Label>
-                  <Input value={prospContatoTel} onChange={(e) => setProspContatoTel(e.target.value)} placeholder="(11) 99999-9999" />
+                  <Input
+                    value={prospContatoTel}
+                    onChange={(e) => setProspContatoTel(e.target.value)}
+                    placeholder="(11) 99999-9999"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Email</Label>
-                  <Input type="email" value={prospContatoEmail} onChange={(e) => setProspContatoEmail(e.target.value)} placeholder="email@empresa.com" />
+                  <Input
+                    type="email"
+                    value={prospContatoEmail}
+                    onChange={(e) => setProspContatoEmail(e.target.value)}
+                    placeholder="email@empresa.com"
+                  />
                 </div>
               </div>
             </TabsContent>
 
-            <TabsContent value="prospeccao" className="space-y-4 mt-4">
+            <TabsContent value="prospeccao" className="mt-4 space-y-4">
               <div className="space-y-2">
                 <Label>Status da Prospecção</Label>
                 <Select value={prospStatus} onValueChange={setProspStatus}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {statusProspeccaoOptions.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    {statusProspeccaoOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Notas da Prospecção</Label>
-                <Textarea value={prospNotas} onChange={(e) => setProspNotas(e.target.value)} placeholder="Histórico de contatos, observações..." rows={4} />
+                <Textarea
+                  value={prospNotas}
+                  onChange={(e) => setProspNotas(e.target.value)}
+                  placeholder="Histórico de contatos, observações..."
+                  rows={4}
+                />
               </div>
             </TabsContent>
 
-            <TabsContent value="contrato" className="space-y-4 mt-4">
+            <TabsContent value="contrato" className="mt-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Tipo de Contrato</Label>
-                  <Input value={prospTipoContrato} onChange={(e) => setProspTipoContrato(e.target.value)} placeholder="Ex: Êxito, Mensal, Misto" />
+                  <Input
+                    value={prospTipoContrato}
+                    onChange={(e) => setProspTipoContrato(e.target.value)}
+                    placeholder="Ex: Êxito, Mensal, Misto"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Valor do Contrato (R$)</Label>
-                  <Input type="number" step="0.01" min="0" value={prospValorContrato} onChange={(e) => setProspValorContrato(e.target.value)} placeholder="0,00" />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={prospValorContrato}
+                    onChange={(e) => setProspValorContrato(e.target.value)}
+                    placeholder="0,00"
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Data do Contrato</Label>
-                  <Input type="date" value={prospDataContrato} onChange={(e) => setProspDataContrato(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={prospDataContrato}
+                    onChange={(e) => setProspDataContrato(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Data da Assinatura</Label>
-                  <Input type="date" value={prospDataAssinatura} onChange={(e) => setProspDataAssinatura(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={prospDataAssinatura}
+                    onChange={(e) => setProspDataAssinatura(e.target.value)}
+                  />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label>Observações do Contrato</Label>
-                <Textarea value={prospObsContrato} onChange={(e) => setProspObsContrato(e.target.value)} placeholder="Cláusulas especiais, condições..." rows={3} />
+                <Textarea
+                  value={prospObsContrato}
+                  onChange={(e) => setProspObsContrato(e.target.value)}
+                  placeholder="Cláusulas especiais, condições..."
+                  rows={3}
+                />
               </div>
             </TabsContent>
           </Tabs>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProspDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveProsp}>{editingProsp ? "Salvar" : "Criar"}</Button>
+            <Button variant="outline" onClick={() => setProspDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                void handleSaveProsp();
+              }}
+            >
+              {editingProsp ? "Salvar" : "Criar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Critérios de Elegibilidade Dialog */}
       <Dialog open={!!criteriosAcaoId} onOpenChange={(v) => !v && setCriteriosAcaoId(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="font-heading">
-              Critérios de Elegibilidade
-            </DialogTitle>
+            <DialogTitle className="font-heading">Critérios de Elegibilidade</DialogTitle>
           </DialogHeader>
           {criteriosAcaoId && (
             <CriteriosAdmin

@@ -1,4 +1,5 @@
 // Helpers para propostas: shape de seções, contexto de variáveis e renderização.
+import DOMPurify from "dompurify";
 
 export interface ProposalSection {
   ordem: number;
@@ -52,7 +53,9 @@ export const ESCRITORIO_DEFAULT = {
 function fmtBRL(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("pt-BR", {
-    style: "currency", currency: "BRL", maximumFractionDigits: 2,
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 2,
   }).format(n);
 }
 
@@ -61,9 +64,22 @@ function fmtPct(n: number | null | undefined): string {
   return `${Number(n).toFixed(0)}`;
 }
 
+/** Escapa caracteres HTML perigosos. Usado ao substituir variáveis em templates
+ *  Tiptap pra impedir XSS via empresa.nome contendo "<script>" etc. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
  * Substitui {{path.to.var}} por valores do contexto.
  * Numéricos formatados em BRL/percentual quando aplicável.
+ * Valores string são HTML-escaped — interpolação em template HTML do Tiptap
+ * sem escape permitiria XSS armazenado (empresa.nome com <script>).
  */
 export function renderVariaveis(html: string, ctx: ProposalContext): string {
   if (!html) return "";
@@ -78,11 +94,26 @@ export function renderVariaveis(html: string, ctx: ProposalContext): string {
       }
     }
     if (v == null) return "—";
-    // Formatação especial por chave
+    // Formatação especial por chave (números são seguros, não precisam escape)
     if (path === "honorarios.entrada") return fmtBRL(v as number);
     if (path === "honorarios.exito_percentual") return fmtPct(v as number);
     if (path === "prospeccao.valor_potencial") return fmtBRL(v as number);
-    return String(v);
+    // ctx é tipado mas v percorre via index dinâmico → typeof guard
+    // garante que não chamamos String() em objeto (que viraria "[object Object]")
+    if (typeof v === "string") return escapeHtml(v);
+    if (typeof v === "number" || typeof v === "boolean") return escapeHtml(String(v));
+    return `{{${path}}}`; // valor não-primitivo é tratado como path não encontrado
+  });
+}
+
+/** Sanitiza HTML antes de render via dangerouslySetInnerHTML.
+ *  Permite tags/atributos comuns de rich text (Tiptap), remove scripts/eventos.
+ *  Sempre chamar nos callers que renderizam conteúdo de proposta. */
+export function sanitizeProposalHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    // Não permite javascript: nem data: URIs em href/src
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
   });
 }
 
@@ -97,16 +128,28 @@ export function renderSecoes(secoes: ProposalSection[], ctx: ProposalContext): P
 
 /** Lista de variáveis disponíveis pra mostrar no editor (ajuda). */
 export const VARIAVEIS_DISPONIVEIS: Array<{ key: string; label: string; exemplo: string }> = [
-  { key: "{{empresa.nome}}",                label: "Nome da empresa",        exemplo: "Unimed Santa Bárbara" },
-  { key: "{{empresa.razao_social}}",        label: "Razão social",           exemplo: "UNIMED COOPERATIVA…" },
-  { key: "{{empresa.cnpj}}",                label: "CNPJ",                   exemplo: "12.345.678/0001-90" },
-  { key: "{{contato.nome}}",                label: "Nome do contato",        exemplo: "Dr. Roberto" },
-  { key: "{{contato.cargo}}",               label: "Cargo do contato",       exemplo: "Diretor Financeiro" },
-  { key: "{{contato.email}}",               label: "E-mail do contato",      exemplo: "roberto@unimed.com.br" },
-  { key: "{{acao.nome}}",                   label: "Nome da ação/tese",      exemplo: "Lucro Presumido (LC 224)" },
-  { key: "{{honorarios.entrada}}",          label: "Honorários de entrada (formatado R$)", exemplo: "R$ 10.000,00" },
+  { key: "{{empresa.nome}}", label: "Nome da empresa", exemplo: "Unimed Santa Bárbara" },
+  { key: "{{empresa.razao_social}}", label: "Razão social", exemplo: "UNIMED COOPERATIVA…" },
+  { key: "{{empresa.cnpj}}", label: "CNPJ", exemplo: "12.345.678/0001-90" },
+  { key: "{{contato.nome}}", label: "Nome do contato", exemplo: "Dr. Roberto" },
+  { key: "{{contato.cargo}}", label: "Cargo do contato", exemplo: "Diretor Financeiro" },
+  { key: "{{contato.email}}", label: "E-mail do contato", exemplo: "roberto@unimed.com.br" },
+  { key: "{{acao.nome}}", label: "Nome da ação/tese", exemplo: "Lucro Presumido (LC 224)" },
+  {
+    key: "{{honorarios.entrada}}",
+    label: "Honorários de entrada (formatado R$)",
+    exemplo: "R$ 10.000,00",
+  },
   { key: "{{honorarios.exito_percentual}}", label: "% de êxito (sem o símbolo)", exemplo: "20" },
-  { key: "{{prospeccao.valor_potencial}}",  label: "Valor potencial estimado", exemplo: "R$ 56.000,00" },
-  { key: "{{escritorio.nome}}",             label: "Nome do escritório",     exemplo: ESCRITORIO_DEFAULT.nome },
-  { key: "{{escritorio.advogado}}",         label: "Advogado responsável",   exemplo: ESCRITORIO_DEFAULT.advogado },
+  {
+    key: "{{prospeccao.valor_potencial}}",
+    label: "Valor potencial estimado",
+    exemplo: "R$ 56.000,00",
+  },
+  { key: "{{escritorio.nome}}", label: "Nome do escritório", exemplo: ESCRITORIO_DEFAULT.nome },
+  {
+    key: "{{escritorio.advogado}}",
+    label: "Advogado responsável",
+    exemplo: ESCRITORIO_DEFAULT.advogado,
+  },
 ];
