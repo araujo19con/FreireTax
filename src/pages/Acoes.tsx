@@ -785,9 +785,12 @@ export default function Acoes() {
         detalhes: payload,
       });
     } else {
+      const eleg = elegibilidades.find((e) => e.id === procElegId);
       const { error } = await supabase.from("processos").insert({
         ...payload,
         elegibilidade_id: procElegId,
+        empresa_id: eleg?.empresa_id ?? null,
+        acao_id: eleg?.acao_id ?? null,
         user_id: user.id,
       });
       if (error) {
