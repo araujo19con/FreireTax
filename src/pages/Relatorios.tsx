@@ -37,12 +37,8 @@ interface ProspRow {
   valor_contrato: number | null;
   data_assinatura: string | null;
   responsavel_id: string | null;
-  elegibilidade_id: string;
-}
-interface ElegRow {
-  id: string;
-  empresa_id: string;
-  acao_id: string;
+  empresa_id: string | null;
+  acao_id: string | null;
 }
 interface AcaoRow {
   id: string;
@@ -62,15 +58,14 @@ function useRelatorioData() {
     queryKey: ["relatorio-data"],
     staleTime: 60_000,
     queryFn: async () => {
-      const [prospRes, elegRes, acaoRes, empRes, profRes] = await Promise.all([
+      const [prospRes, acaoRes, empRes, profRes] = await Promise.all([
         fetchAllRows<ProspRow>(
           supabase
             .from("prospeccoes")
             .select(
-              "id, status_prospeccao, valor_contrato, data_assinatura, responsavel_id, elegibilidade_id"
+              "id, status_prospeccao, valor_contrato, data_assinatura, responsavel_id, empresa_id, acao_id"
             )
         ),
-        fetchAllRows<ElegRow>(supabase.from("elegibilidade").select("id, empresa_id, acao_id")),
         fetchAllRows<AcaoRow>(
           supabase.from("acoes_tributarias").select("id, nome").eq("ativo", true)
         ),
@@ -79,7 +74,6 @@ function useRelatorioData() {
       ]);
       return {
         prospeccoes: prospRes,
-        elegibilidades: elegRes,
         acoes: acaoRes,
         empresas: empRes,
         profiles: profRes,
@@ -99,12 +93,6 @@ export default function Relatorios() {
 
   const { data, isLoading } = useRelatorioData();
 
-  const elegMap = useMemo(() => {
-    const m = new Map<string, ElegRow>();
-    (data?.elegibilidades ?? []).forEach((e) => m.set(e.id, e));
-    return m;
-  }, [data?.elegibilidades]);
-
   const acaoMap = useMemo(() => {
     const m = new Map<string, string>();
     (data?.acoes ?? []).forEach((a) => m.set(a.id, a.nome));
@@ -123,20 +111,17 @@ export default function Relatorios() {
     return m;
   }, [data?.profiles]);
 
-  // Enriquece prospecções com empresa_id e acao_id via elegibilidade_id
+  // empresa_id e acao_id são colunas diretas desde migration 20260527
   const enriched = useMemo(() => {
     return (data?.prospeccoes ?? []).map((p) => {
-      const eleg = elegMap.get(p.elegibilidade_id);
       return {
         ...p,
-        empresa_id: eleg?.empresa_id ?? null,
-        acao_id: eleg?.acao_id ?? null,
-        empresa_nome: eleg ? (empresaMap.get(eleg.empresa_id) ?? "—") : "—",
-        acao_nome: eleg ? (acaoMap.get(eleg.acao_id) ?? "—") : "—",
+        empresa_nome: p.empresa_id ? (empresaMap.get(p.empresa_id) ?? "—") : "—",
+        acao_nome: p.acao_id ? (acaoMap.get(p.acao_id) ?? "—") : "—",
         responsavel_nome: p.responsavel_id ? (profileMap.get(p.responsavel_id) ?? "—") : "—",
       };
     });
-  }, [data?.prospeccoes, elegMap, acaoMap, empresaMap, profileMap]);
+  }, [data?.prospeccoes, acaoMap, empresaMap, profileMap]);
 
   // Filtros
   const filtered = useMemo(() => {

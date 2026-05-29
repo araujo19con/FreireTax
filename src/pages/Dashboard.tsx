@@ -270,9 +270,11 @@ export default function Dashboard() {
       };
     });
 
-    // Eligible without prospecção
-    const prospElegIds = new Set(filtProsp.map((p) => p.elegibilidade_id));
-    const semProspeccao = elegiveis.filter((e) => !prospElegIds.has(e.id)).length;
+    // Eligible without prospecção — usa empresa_id+acao_id diretos
+    const prospEmpAcao = new Set(filtProsp.map((p) => `${p.empresa_id}:${p.acao_id}`));
+    const semProspeccao = elegiveis.filter(
+      (e) => !prospEmpAcao.has(`${e.empresa_id}:${e.acao_id}`)
+    ).length;
 
     // Time evolution data - last 12 months (use data_processo when available, fallback to created_at)
     const now = new Date();

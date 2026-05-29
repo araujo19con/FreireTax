@@ -536,9 +536,12 @@ export default function Prospeccao() {
 
   const elegiveisForCreate = useMemo(() => {
     if (!createAcaoId) return [];
-    const prospElegIds = new Set(prospeccoes.map((p) => p.elegibilidade_id));
+    // Empresas que já têm prospecção nesta ação (via empresa_id direto)
+    const prospEmpIds = new Set(
+      prospeccoes.filter((p) => p.acao_id === createAcaoId).map((p) => p.empresa_id)
+    );
     return elegibilidades
-      .filter((e) => e.acao_id === createAcaoId && e.elegivel && !prospElegIds.has(e.id))
+      .filter((e) => e.acao_id === createAcaoId && e.elegivel && !prospEmpIds.has(e.empresa_id))
       .sort(
         (a, b) => Number(b.valor_potencial_estimado ?? 0) - Number(a.valor_potencial_estimado ?? 0)
       );
