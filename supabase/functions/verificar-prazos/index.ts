@@ -96,6 +96,12 @@ Deno.serve(async (_req) => {
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+    // Atualiza status dos honorários que venceram desde o último cron.
+    // A função retorna o nº de lançamentos marcados como atrasado.
+    const { data: marcados } = await admin.rpc("marcar_honorarios_atrasados");
+    if (marcados)
+      console.log(`[verificar-prazos] ${marcados} honorário(s) marcados como atrasado.`);
+
     // Busca prazos a alertar hoje via RPC (service_role apenas)
     const { data: prazos, error } = await admin.rpc("prazos_a_alertar_hoje");
     if (error) {
