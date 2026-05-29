@@ -859,8 +859,8 @@ export default function Importacao() {
         const ids = updRows.map((r) => r.existing_id).filter(Boolean);
         for (let i = 0; i < ids.length; i += 500) {
           const slice = ids.slice(i, i + 500);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: stale } = await (supabase.from("empresas") as any)
+          const { data: stale } = await supabase
+            .from("empresas")
             .select("id, receita_atualizada_em")
             .in("id", slice);
           for (const row of (stale ?? []) as Array<{
@@ -1081,8 +1081,8 @@ export default function Importacao() {
         const elegExistente = new Map<string, string>(); // empresa_id → eleg_id
         for (let i = 0; i < empresaIds.length; i += 500) {
           const slice = empresaIds.slice(i, i + 500);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const { data: existing } = await (supabase.from("elegibilidade") as any)
+          const { data: existing } = await supabase
+            .from("elegibilidade")
             .select("id, empresa_id")
             .eq("acao_id", acaoId)
             .in("empresa_id", slice);

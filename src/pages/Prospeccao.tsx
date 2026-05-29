@@ -448,10 +448,7 @@ export default function Prospeccao() {
       eh_decisor: editEhDecisor,
       responsavel_id: editResponsavelId || null,
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from("prospeccoes") as any)
-      .update(payload)
-      .eq("id", editProsp.id);
+    const { error } = await supabase.from("prospeccoes").update(payload).eq("id", editProsp.id);
     if (error) {
       toast.error("Erro ao atualizar: " + error.message);
       return;
@@ -493,8 +490,8 @@ export default function Prospeccao() {
       toast.info("Para marcar como Perdido, preencha o motivo no formulário.");
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from("prospeccoes") as any)
+    const { error } = await supabase
+      .from("prospeccoes")
       .update({ status_prospeccao: newStatus })
       .eq("id", prosp.id);
     if (error) {
@@ -569,8 +566,7 @@ export default function Prospeccao() {
       contato_email: createContatoEmail,
       contato_cargo: createContatoCargo,
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from("prospeccoes") as any).insert(payload);
+    const { error } = await supabase.from("prospeccoes").insert(payload);
     if (error) {
       toast.error("Erro ao criar prospecção");
       console.error(error);
