@@ -146,7 +146,8 @@ export default function Dashboard() {
     if (selectedTribunal !== "all") {
       filtProc = filtProc.filter((p) => (p.tribunal || "Não informado") === selectedTribunal);
     }
-    const filtProsp = prospeccoes.filter((p) => filtElegIds.has(p.elegibilidade_id));
+    const filtProsp =
+      selectedAcao === "all" ? prospeccoes : prospeccoes.filter((p) => p.acao_id === selectedAcao);
 
     const elegiveis = filtEleg.filter((e) => e.elegivel);
     const elegiveisIds = new Set(elegiveis.map((e) => e.id));
@@ -255,7 +256,7 @@ export default function Dashboard() {
       const acaoElegs = elegibilidades.filter((e) => e.acao_id === a.id);
       const acaoElegIds = new Set(acaoElegs.map((e) => e.id));
       const acaoProc = processos.filter((p) => acaoElegIds.has(p.elegibilidade_id));
-      const acaoProsp = prospeccoes.filter((p) => acaoElegIds.has(p.elegibilidade_id));
+      const acaoProsp = prospeccoes.filter((p) => p.acao_id === a.id);
       return {
         nome: a.nome.length > 20 ? a.nome.slice(0, 18) + "…" : a.nome,
         empresas: acaoElegs.length,

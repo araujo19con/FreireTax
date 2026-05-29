@@ -303,33 +303,24 @@ export default function Prospeccao() {
     fetchAll();
   }, []);
 
-  // prospeccoes liga a empresa/ação só via elegibilidade_id (sem FK direta).
-  const elegDe = (p: Prospeccao) => elegibilidades.find((e) => e.id === p.elegibilidade_id);
+  // prospeccoes tem empresa_id + acao_id desnormalizados (migration 20260527).
+  // elegibilidade_id permanece para lookup de valor_potencial_estimado.
+  const getEmpresa = (p: Prospeccao) =>
+    p.empresa_id ? (empresas.find((emp) => emp.id === p.empresa_id) ?? null) : null;
 
-  const getEmpresa = (p: Prospeccao) => {
-    const eleg = elegDe(p);
-    return eleg ? (empresas.find((emp) => emp.id === eleg.empresa_id) ?? null) : null;
-  };
-
-  const getAcao = (p: Prospeccao) => {
-    const eleg = elegDe(p);
-    return eleg ? (acoes.find((a) => a.id === eleg.acao_id) ?? null) : null;
-  };
+  const getAcao = (p: Prospeccao) =>
+    p.acao_id ? (acoes.find((a) => a.id === p.acao_id) ?? null) : null;
 
   const getElegibilidade = (elegId: string) => elegibilidades.find((e) => e.id === elegId);
   const getValorPotencial = (elegId: string) =>
     Number(getElegibilidade(elegId)?.valor_potencial_estimado ?? 0);
 
   const filteredProspeccoes = useMemo(() => {
-    // Remove só prospecções realmente órfãs (elegibilidade ou empresa deletada).
+    // Remove só prospecções realmente órfãs (empresa deletada).
     const empresaIdSet = new Set(empresas.map((e) => e.id));
-    const elegMap = new Map(elegibilidades.map((e) => [e.id, e]));
-    let items = prospeccoes.filter((p) => {
-      const eleg = elegMap.get(p.elegibilidade_id);
-      return !!eleg && empresaIdSet.has(eleg.empresa_id);
-    });
+    let items = prospeccoes.filter((p) => !!p.empresa_id && empresaIdSet.has(p.empresa_id));
     if (filterAcao !== "all") {
-      items = items.filter((p) => elegMap.get(p.elegibilidade_id)?.acao_id === filterAcao);
+      items = items.filter((p) => p.acao_id === filterAcao);
     }
     // Filtro por responsável: 'all' | '_me' (logado) | '_none' (sem) | <profile_id>
     if (filterResponsavel === "_me") {
