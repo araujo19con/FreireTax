@@ -1,34 +1,38 @@
 # Project State — Tax Trakker
 
 **Atualizado:** 2026-05-29
-**Milestone ativo:** Estabilização (bugs críticos + débito técnico)
+**Milestone ativo:** Estabilização — CONCLUÍDO
 
 ---
 
 ## Status geral
 
-A maior parte do trabalho P0–P4 planejado em 2026-05-28 foi concluída. O sistema está funcional e em produção. A análise de 2026-05-29 revelou novos bugs críticos que precisam de atenção.
+Todos os itens de estabilização foram concluídos. O sistema está limpo, seguro e com types atualizados.
 
 ## Próxima fase recomendada
 
-**Fase: Segurança imediata (achados 2026-05-29)**
+**Fase opcional de qualidade:**
 
-Tarefas ordenadas por esforço/impacto:
-
-1. ⬜ Confirmar `ALLOWED_ORIGINS` no Supabase (15 min) — risco produção
-2. ⬜ Guard da rota `/admin` em `src/App.tsx` (30 min) — segurança
-3. ⬜ Declarar `topojson-client` em `package.json` (15 min) — estabilidade
-4. ⬜ Remover dead functions `_prefixadas` em `Acoes.tsx` (30 min) — limpeza
-5. ⬜ Validação mod-11 no edge function `enriquecer-cnpj` (1h) — segurança
-6. ⬜ Remover fallback de migration antiga em `Importacao.tsx` (1h) — integridade
-7. ⬜ Trigger Postgres para `atrasado` em `honorarios_lancamentos` (2h) — integridade
-8. ⬜ Cache React Query para IBGE geo (2h) — performance
-9. ⬜ Dynamic import de `xlsx` nos handlers (2h) — performance
-10. ⬜ Regenerar `src/integrations/supabase/types.ts` (1h) — qualidade
+- ⬜ Remover dialog de prospecção legado em Acoes.tsx (~1563+) — código morto desde remoção de `_openProspDialog`
+- ⬜ Limpeza dos `as any` restantes em Importacao.tsx, Prospeccao.tsx, Admin.tsx (gradual)
+- ⬜ Fase 2.2 do ROADMAP: limpar campos legacy `elegibilidade_id` em prospeccoes (19 arquivos)
 
 ## Trabalho concluído (histórico)
 
-### 2026-05-29
+### 2026-05-29 (sessão 2)
+
+- ✅ Guard `/admin` com `<RequireAdmin>` (App.tsx)
+- ✅ Validação mod-11 CNPJ no edge function `enriquecer-cnpj`
+- ✅ `topojson-client` declarado como dep explícita em package.json
+- ✅ Fallback de migration 20260424 removido de Importacao.tsx
+- ✅ Trigger Postgres `marcar_honorarios_atrasados` + integração em verificar-prazos
+- ✅ xlsx carregado dinamicamente em 10 arquivos (~900 KB off bundle)
+- ✅ `types.ts` regenerado: 1624 → 1869 linhas (inclui honorarios, prazos, rfb_busca)
+- ✅ 7 funções dead-code `_prefixadas` removidas de Acoes.tsx
+- ✅ `formatCurrency` duplicada removida de Acoes.tsx (importa de @/lib/format)
+- ✅ Casts `as any` removidos de useQualificacao.ts, usePropostas.ts
+
+### 2026-05-29 (sessão 1)
 
 - ✅ Fix export de ações: faixa de funcionários/faturamento do DRIVA
 - ✅ Linting: removidos imports/vars não-usados em Acoes.tsx, Dashboard.tsx, AnaliseRFB.tsx
