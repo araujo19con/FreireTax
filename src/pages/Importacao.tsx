@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
+import { ImportarDrivaDialog } from "@/components/ImportarDrivaDialog";
 import { extractErrorMessage } from "@/lib/errors";
 import {
   Select,
@@ -346,6 +347,7 @@ export default function Importacao() {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [fileName, setFileName] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [drivaOpen, setDrivaOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState({ done: 0, total: 0, errors: 0 });
@@ -1212,6 +1214,14 @@ export default function Importacao() {
         description="Importe ou atualize empresas via planilhas CSV ou XLSX"
         icon={<Upload className="h-7 w-7" />}
       />
+
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={() => setDrivaOpen(true)}>
+          <FileSpreadsheet className="mr-2 h-4 w-4" />
+          Importar contatos da DRIVA
+        </Button>
+      </div>
+      <ImportarDrivaDialog open={drivaOpen} onOpenChange={setDrivaOpen} />
 
       <Card className="p-8 shadow-card">
         <div
