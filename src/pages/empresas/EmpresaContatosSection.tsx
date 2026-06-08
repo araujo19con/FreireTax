@@ -22,6 +22,8 @@ import {
   type EmpresaContato,
   humanizePapel,
   papelColor,
+  humanizeOrigem,
+  origemColor,
   rankContatos,
   formatPhoneBR,
   telLink,
@@ -196,6 +198,13 @@ function ContatoCard({
                 contador
               </Badge>
             )}
+            <Badge
+              variant="outline"
+              className={`text-[9px] ${origemColor(c.origem)}`}
+              title={`Procedência: ${humanizeOrigem(c.origem)}`}
+            >
+              {humanizeOrigem(c.origem)}
+            </Badge>
           </div>
           {c.cargo && <p className="mt-0.5 truncate text-xs text-muted-foreground">{c.cargo}</p>}
 

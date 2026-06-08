@@ -68,6 +68,19 @@ export function derivePapel(
   return "outro";
 }
 
+/** Rótulo curto + cor do badge por origem (procedência do canal). */
+export const ORIGEM_CONTATO_META: Record<OrigemContato, { label: string; color: string }> = {
+  driva: { label: "DRIVA", color: "bg-violet-500/10 text-violet-600 border-violet-500/20" },
+  rfb: { label: "Receita", color: "bg-info/10 text-info border-info/20" },
+  manual: { label: "Manual", color: "bg-muted text-muted-foreground border-border" },
+  importacao: { label: "Importação", color: "bg-muted text-muted-foreground border-border" },
+  enriquecimento: {
+    label: "Enriquec.",
+    color: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+  },
+  outro: { label: "Outro", color: "bg-muted text-muted-foreground border-border" },
+};
+
 export const ORIGEM_CONTATO_LABEL: Record<OrigemContato, string> = {
   driva: "DRIVA",
   rfb: "Receita",
@@ -76,6 +89,16 @@ export const ORIGEM_CONTATO_LABEL: Record<OrigemContato, string> = {
   enriquecimento: "Enriquecimento",
   outro: "Outro",
 };
+
+export function humanizeOrigem(o: OrigemContato | null | undefined): string {
+  if (!o) return "—";
+  return ORIGEM_CONTATO_META[o]?.label ?? o;
+}
+
+export function origemColor(o: OrigemContato | null | undefined): string {
+  if (!o) return "bg-muted text-muted-foreground border-border";
+  return ORIGEM_CONTATO_META[o]?.color ?? "bg-muted text-muted-foreground border-border";
+}
 
 // ---------------------------------------------------------------------------
 // Telefone BR
