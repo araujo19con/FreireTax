@@ -13,6 +13,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 // usuário não-autenticado, então não vale penalizar os logados.
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Empresas = lazy(() => import("./pages/Empresas"));
+const Contatos = lazy(() => import("./pages/Contatos"));
 const Acoes = lazy(() => import("./pages/Acoes"));
 const Elegibilidade = lazy(() => import("./pages/Elegibilidade"));
 const Importacao = lazy(() => import("./pages/Importacao"));
@@ -119,6 +120,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/empresas" element={<Empresas />} />
+          <Route path="/contatos" element={<Contatos />} />
           <Route path="/acoes" element={<Acoes />} />
           <Route path="/elegibilidade" element={<Elegibilidade />} />
           <Route path="/prospeccao" element={<Prospeccao />} />

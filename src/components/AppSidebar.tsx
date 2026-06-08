@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   Building2,
+  Contact,
   Scale,
   FileCheck,
   Handshake,
@@ -55,6 +56,7 @@ type ItemDef = {
 const mainItems: ItemDef[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Empresas", url: "/empresas", icon: Building2 },
+  { title: "Contatos", url: "/contatos", icon: Contact },
   { title: "Ações Tributárias", url: "/acoes", icon: Scale },
   { title: "Elegibilidade", url: "/elegibilidade", icon: FileCheck },
   { title: "Prospecção", url: "/prospeccao", icon: Handshake, badgeKey: "prosp_parados" },
