@@ -13,13 +13,15 @@
 -- sobrescreve contatos manuais/DRIVA). Define o principal (prefere
 -- Sócio-Administrador) se a empresa ainda não tiver nenhum.
 --
--- Resultado: toda empresa nova que receber CNPJ + enriquecimento já nasce
--- com os sócios como contatos, sem ação manual.
+-- NOTA: o BACKFILL das empresas já enriquecidas NÃO é feito aqui (era pesado
+-- demais e estourava o timeout do SQL Editor, revertendo a migration). É um
+-- passo operacional rodado em lotes via tools/backfill-contatos-rfb.mjs.
+-- Numa base nova isto é desnecessário (não há empresas enriquecidas ainda).
 -- =========================================================================
 
 -- -------------------------------------------------------------------------
--- Normalização de nome igual à do importador DRIVA (NFD + strip acento +
--- upper + colapsa espaços) para as dedup_keys baterem e dedupar entre fontes.
+-- Normalização de nome igual à do importador DRIVA (strip acento + upper +
+-- colapsa espaços) para as dedup_keys baterem e dedupar entre fontes.
 -- -------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.normaliza_nome_contato(p text)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
@@ -36,31 +38,32 @@ $$;
 CREATE OR REPLACE FUNCTION public.derive_contatos_from_rfb()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
-  v_socio      jsonb;
-  v_nome       text;
-  v_qual       text;
-  v_doc        text;
-  v_dedup      text;
-  v_tel        text;
+  v_socio jsonb;
+  v_nome  text;
+  v_qual  text;
+  v_doc   text;
+  v_dedup text;
+  v_tel   text;
 BEGIN
   -- Sócios do QSA --------------------------------------------------------
   IF NEW.qsa IS NOT NULL AND jsonb_typeof(NEW.qsa) = 'array' THEN
     FOR v_socio IN SELECT * FROM jsonb_array_elements(NEW.qsa)
     LOOP
       v_nome := nullif(btrim(v_socio->>'nome'), '');
-      CONTINUE WHEN v_nome IS NULL;
-      v_qual := nullif(btrim(v_socio->>'qualificacao'), '');
-      v_doc  := nullif(btrim(v_socio->>'documento'), '');
-      v_dedup := 'socio:' || public.normaliza_nome_contato(v_nome);
+      IF v_nome IS NOT NULL THEN
+        v_qual := nullif(btrim(v_socio->>'qualificacao'), '');
+        v_doc  := nullif(btrim(v_socio->>'documento'), '');
+        v_dedup := 'socio:' || public.normaliza_nome_contato(v_nome);
 
-      IF NOT EXISTS (
-        SELECT 1 FROM public.empresa_contatos
-         WHERE empresa_id = NEW.id AND dedup_key = v_dedup
-      ) THEN
-        INSERT INTO public.empresa_contatos
-          (empresa_id, nome, cargo, papel, cpf_mascarado, origem, dedup_key)
-        VALUES
-          (NEW.id, v_nome, v_qual, 'socio', v_doc, 'rfb', v_dedup);
+        IF NOT EXISTS (
+          SELECT 1 FROM public.empresa_contatos
+           WHERE empresa_id = NEW.id AND dedup_key = v_dedup
+        ) THEN
+          INSERT INTO public.empresa_contatos
+            (empresa_id, nome, cargo, papel, cpf_mascarado, origem, dedup_key)
+          VALUES
+            (NEW.id, v_nome, v_qual, 'socio', v_doc, 'rfb', v_dedup);
+        END IF;
       END IF;
     END LOOP;
   END IF;
@@ -123,16 +126,3 @@ CREATE TRIGGER trg_derive_contatos_rfb
   AFTER INSERT OR UPDATE OF qsa, telefone_receita, email_receita
   ON public.empresas
   FOR EACH ROW EXECUTE FUNCTION public.derive_contatos_from_rfb();
-
--- -------------------------------------------------------------------------
--- Backfill: dispara a derivação nas empresas JÁ enriquecidas.
--- "SET col = col" entra no UPDATE OF e aciona o trigger sem mudar valor.
--- Idempotente: pula contatos que já existem (dedup_key).
--- -------------------------------------------------------------------------
-UPDATE public.empresas
-   SET qsa = qsa,
-       telefone_receita = telefone_receita,
-       email_receita = email_receita
- WHERE qsa IS NOT NULL
-    OR telefone_receita IS NOT NULL
-    OR email_receita IS NOT NULL;
