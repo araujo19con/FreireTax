@@ -38,7 +38,14 @@ import {
 import type { DragEvent } from "react";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
-import { waLink, telLink, mailtoLink, mensagemWhatsappPadrao } from "@/lib/contatos";
+import {
+  waLink,
+  telLink,
+  mailtoLink,
+  mensagemWhatsappPadrao,
+  humanizeOrigem,
+  origemColor,
+} from "@/lib/contatos";
 import { funcFatDisplay } from "@/lib/empresaDisplay";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
@@ -144,6 +151,14 @@ function renderContatoCell(e: Empresa) {
           <p className="flex items-center gap-1 truncate text-xs font-medium">
             <UserRound className="h-3 w-3 shrink-0 text-primary" />
             <span className="truncate">{e.contato_principal_nome}</span>
+            {e.contato_principal_origem && (
+              <Badge
+                variant="outline"
+                className={`shrink-0 px-1 py-0 text-[8px] ${origemColor(e.contato_principal_origem)}`}
+              >
+                {humanizeOrigem(e.contato_principal_origem)}
+              </Badge>
+            )}
           </p>
           {e.contato_principal_cargo && (
             <p className="truncate pl-4 text-[10px] text-muted-foreground">

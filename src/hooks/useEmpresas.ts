@@ -116,6 +116,7 @@ export interface Empresa {
   contato_principal_telefone: string | null;
   contato_principal_email: string | null;
   contato_principal_whatsapp: boolean | null;
+  contato_principal_origem: string | null;
 }
 
 // Supabase's PostgrestFilterBuilder typings são verbosos; usamos um tipo relaxado local

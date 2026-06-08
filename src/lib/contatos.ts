@@ -90,14 +90,15 @@ export const ORIGEM_CONTATO_LABEL: Record<OrigemContato, string> = {
   outro: "Outro",
 };
 
-export function humanizeOrigem(o: OrigemContato | null | undefined): string {
+export function humanizeOrigem(o: string | null | undefined): string {
   if (!o) return "—";
-  return ORIGEM_CONTATO_META[o]?.label ?? o;
+  return ORIGEM_CONTATO_META[o as OrigemContato]?.label ?? o;
 }
 
-export function origemColor(o: OrigemContato | null | undefined): string {
-  if (!o) return "bg-muted text-muted-foreground border-border";
-  return ORIGEM_CONTATO_META[o]?.color ?? "bg-muted text-muted-foreground border-border";
+export function origemColor(o: string | null | undefined): string {
+  const fallback = "bg-muted text-muted-foreground border-border";
+  if (!o) return fallback;
+  return ORIGEM_CONTATO_META[o as OrigemContato]?.color ?? fallback;
 }
 
 // ---------------------------------------------------------------------------

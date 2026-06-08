@@ -438,6 +438,7 @@ export type Database = {
           contato_principal_cargo: string | null;
           contato_principal_email: string | null;
           contato_principal_nome: string | null;
+          contato_principal_origem: Database["public"]["Enums"]["origem_contato"] | null;
           contato_principal_telefone: string | null;
           contato_principal_whatsapp: boolean;
           valor_potencial_total: number | null;
@@ -490,6 +491,7 @@ export type Database = {
           contato_principal_cargo?: string | null;
           contato_principal_email?: string | null;
           contato_principal_nome?: string | null;
+          contato_principal_origem?: Database["public"]["Enums"]["origem_contato"] | null;
           contato_principal_telefone?: string | null;
           contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
@@ -542,6 +544,7 @@ export type Database = {
           contato_principal_cargo?: string | null;
           contato_principal_email?: string | null;
           contato_principal_nome?: string | null;
+          contato_principal_origem?: Database["public"]["Enums"]["origem_contato"] | null;
           contato_principal_telefone?: string | null;
           contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
