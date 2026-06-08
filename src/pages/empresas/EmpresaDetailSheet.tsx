@@ -29,6 +29,7 @@ import {
   CheckCircle2,
   ExternalLink,
   ScanSearch,
+  Contact,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ import { cn } from "@/lib/utils";
 import { humanizeRegime, regimeColor } from "@/lib/regimeTributario";
 import { BuscarCNPJDialog } from "@/components/BuscarCNPJDialog";
 import type { CandidatoCNPJ } from "@/hooks/useBuscarCNPJ";
+import { EmpresaContatosSection } from "@/pages/empresas/EmpresaContatosSection";
 
 interface EmpresaDetailSheetProps {
   empresa: Empresa | null;
@@ -392,9 +394,13 @@ export function EmpresaDetailSheet({
         </SheetHeader>
 
         <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="mx-6 mt-3 grid h-9 grid-cols-8">
+          <TabsList className="mx-6 mt-3 grid h-9 grid-cols-9">
             <TabsTrigger value="overview" className="text-xs">
               Overview
+            </TabsTrigger>
+            <TabsTrigger value="contatos" className="text-xs">
+              <Contact className="mr-1 h-3 w-3" />
+              Contatos
             </TabsTrigger>
             <TabsTrigger value="rfb" className="text-xs">
               RFB
@@ -544,6 +550,18 @@ export function EmpresaDetailSheet({
                     </div>
                   )}
                 </Card>
+              </TabsContent>
+
+              {/* CONTATOS */}
+              <TabsContent value="contatos" className="mt-0">
+                <EmpresaContatosSection
+                  empresaId={empresa.id}
+                  empresaNome={empresa.nome}
+                  onChanged={() => {
+                    void qc.invalidateQueries({ queryKey: ["empresas"] });
+                    void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+                  }}
+                />
               </TabsContent>
 
               {/* DADOS RFB */}

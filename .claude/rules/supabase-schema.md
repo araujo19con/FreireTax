@@ -20,15 +20,18 @@ type TarefaStatus = Database["public"]["Enums"]["tarefa_status"];
 
 ## Enums
 
-| Enum                     | Valores                                                                                |
-| ------------------------ | -------------------------------------------------------------------------------------- |
-| `app_role`               | `admin`, `advogado`, `comercial`, `gestor`                                             |
-| `tarefa_prioridade`      | `baixa`, `media`, `alta`, `urgente`                                                    |
-| `tarefa_status`          | `pendente`, `em_andamento`, `concluida`, `cancelada`                                   |
-| `reuniao_status`         | `agendada`, `realizada`, `cancelada`, `no_show`, `reagendada`                          |
-| `situacao_cadastral_rfb` | `ATIVA`, `BAIXADA`, `INAPTA`, `SUSPENSA`, `NULA`                                       |
-| `porte_rfb`              | `ME`, `EPP`, `DEMAIS`, `MEI`                                                           |
-| `qualificacao_estado`    | `nao_avaliada`, `qualificada`, `desqualificada`, `em_prospeccao`, `fechada`, `perdida` |
+| Enum                     | Valores                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `app_role`               | `admin`, `advogado`, `comercial`, `gestor`                                                             |
+| `tarefa_prioridade`      | `baixa`, `media`, `alta`, `urgente`                                                                    |
+| `tarefa_status`          | `pendente`, `em_andamento`, `concluida`, `cancelada`                                                   |
+| `reuniao_status`         | `agendada`, `realizada`, `cancelada`, `no_show`, `reagendada`                                          |
+| `situacao_cadastral_rfb` | `ATIVA`, `BAIXADA`, `INAPTA`, `SUSPENSA`, `NULA`                                                       |
+| `porte_rfb`              | `ME`, `EPP`, `DEMAIS`, `MEI`                                                                           |
+| `qualificacao_estado`    | `nao_avaliada`, `qualificada`, `desqualificada`, `em_prospeccao`, `fechada`, `perdida`                 |
+| `papel_contato`          | `socio`, `decisor`, `financeiro`, `juridico`, `contador`, `comercial`, `operacional`, `geral`, `outro` |
+| `origem_contato`         | `driva`, `rfb`, `manual`, `importacao`, `enriquecimento`, `outro`                                      |
+| `tipo_telefone`          | `fixo`, `movel`, `desconhecido`                                                                        |
 
 Status de prospecção (text, não enum): `"Não iniciado"`, `"Contato inicial"`, `"Qualificação"`, `"Proposta enviada"`, `"Negociação"`, `"Contrato assinado"`, `"Perdido"`.
 
@@ -47,6 +50,17 @@ Status de prospecção (text, não enum): `"Não iniciado"`, `"Contato inicial"`
 Essenciais: `id`, `nome`, `cnpj`, `responsavel_id` (FK profiles)
 RFB: `razao_social`, `nome_fantasia`, `situacao_cadastral` (enum), `porte` (enum), `uf`, `municipio`, `cnae_principal`, `cnae_descricao`, `capital_social` numeric, `opcao_simples` bool, `opcao_mei` bool, `data_abertura` date, `natureza_juridica`, `email_rfb`, `telefone_rfb`, `endereco_*`, `receita_atualizada_em` timestamptz
 Timestamps: `created_at`, `updated_at`
+
+### `empresa_contatos` — diretório de contatos por empresa (mig 20260608)
+
+Pessoas e canais reais de cada empresa (sócios, decisores, financeiro, contador, canais genéricos) — alimentado por DRIVA/RFB/manual. É o "QUEM e COMO falar" da prospecção.
+
+`id`, `empresa_id` (FK CASCADE), `nome` (nullable — canal sem nome), `cargo`, `papel` (enum `papel_contato`), `email`, `telefone`, `tipo_telefone` (enum: fixo/movel/desconhecido), `whatsapp` bool, `linkedin`, `is_contador` bool (DRIVA "Pertence ao Contador" — NÃO é decisor), `principal` bool (1 por empresa, garantido por trigger), `origem` (enum `origem_contato`), `cpf_mascarado`, `faixa_etaria`, `observacoes`, `metadados` jsonb, `dedup_key` (idempotência do importador — UNIQUE parcial `(empresa_id, dedup_key)`), `created_by`, timestamps.
+
+- Trigger `recalc_empresa_contatos_cache` mantém snapshot em `empresas`: `contatos_count`, `contato_principal_nome/cargo/telefone/email/whatsapp`.
+- Trigger `ensure_single_contato_principal` rebaixa os demais ao marcar um principal.
+- **NÃO confundir com `prospeccao_contatos`** (log de toques da cadência) — coisas diferentes.
+- UI: `EmpresaContatosSection` (aba "Contatos" do `EmpresaDetailSheet`) + `ContatoDialog`. Helpers em `src/lib/contatos.ts`. Importador: `tools/import-driva-contatos.mjs`.
 
 ### `acoes_tributarias` — teses jurídicas
 

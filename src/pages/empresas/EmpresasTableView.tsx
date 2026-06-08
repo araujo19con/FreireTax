@@ -30,10 +30,15 @@ import {
   Building2,
   Upload,
   X,
+  Phone,
+  Mail,
+  MessageCircle,
+  UserRound,
 } from "lucide-react";
 import type { DragEvent } from "react";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
+import { waLink, telLink, mailtoLink, mensagemWhatsappPadrao } from "@/lib/contatos";
 import { funcFatDisplay } from "@/lib/empresaDisplay";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
@@ -121,6 +126,77 @@ function renderReceitaBadges(e: Empresa) {
       )}
     </div>
   );
+}
+
+function renderContatoCell(e: Empresa) {
+  if (e.contato_principal_nome) {
+    const waHref = e.contato_principal_whatsapp
+      ? waLink(
+          e.contato_principal_telefone,
+          mensagemWhatsappPadrao(e.nome, e.contato_principal_nome)
+        )
+      : null;
+    const telHref = telLink(e.contato_principal_telefone);
+    const mailHref = mailtoLink(e.contato_principal_email);
+    return (
+      <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1 truncate text-xs font-medium">
+            <UserRound className="h-3 w-3 shrink-0 text-primary" />
+            <span className="truncate">{e.contato_principal_nome}</span>
+          </p>
+          {e.contato_principal_cargo && (
+            <p className="truncate pl-4 text-[10px] text-muted-foreground">
+              {e.contato_principal_cargo}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {waHref && (
+            <a
+              href={waHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-green-600 hover:opacity-70"
+              aria-label="WhatsApp"
+              title="WhatsApp"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+            </a>
+          )}
+          {telHref && (
+            <a
+              href={telHref}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Ligar"
+              title="Ligar"
+            >
+              <Phone className="h-3.5 w-3.5" />
+            </a>
+          )}
+          {mailHref && (
+            <a
+              href={mailHref}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Email"
+              title="Email"
+            >
+              <Mail className="h-3.5 w-3.5" />
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (e.telefone_receita || e.email_receita) {
+    return (
+      <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+        {e.telefone_receita && <span className="truncate">{e.telefone_receita}</span>}
+        {e.email_receita && <span className="truncate">{e.email_receita}</span>}
+      </div>
+    );
+  }
+  return <span className="text-muted-foreground">—</span>;
 }
 
 function TablePagination({
@@ -269,6 +345,9 @@ export function EmpresasTableView({
                 Status
               </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Contato
+              </th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Receita
               </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -290,7 +369,7 @@ export function EmpresasTableView({
               rows.length === 0 &&
               Array.from({ length: 6 }).map((_, i) => (
                 <tr key={`skel-${i}`} className="border-b border-border">
-                  <td colSpan={10} className="p-3">
+                  <td colSpan={11} className="p-3">
                     <Skeleton className="h-8 w-full" />
                   </td>
                 </tr>
@@ -347,6 +426,7 @@ export function EmpresasTableView({
                       {e.status}
                     </span>
                   </td>
+                  <td className="px-3 py-2.5">{renderContatoCell(e)}</td>
                   <td className="px-3 py-2.5">{renderReceitaBadges(e)}</td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-xs">
                     {(() => {

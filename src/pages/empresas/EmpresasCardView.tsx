@@ -32,10 +32,14 @@ import {
   X,
   Users,
   DollarSign,
+  MessageCircle,
+  UserRound,
+  Contact,
 } from "lucide-react";
 import type { DragEvent } from "react";
 import type { Empresa } from "@/hooks/useEmpresas";
 import { formatCNPJ, formatCompactCurrency } from "@/lib/format";
+import { waLink, telLink, mailtoLink, mensagemWhatsappPadrao } from "@/lib/contatos";
 import { funcFatDisplay } from "@/lib/empresaDisplay";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
@@ -125,6 +129,12 @@ export function EmpresasCardView({
           const isSelected = selectedIds.has(e.id);
           const pastaNames = pastaNamesByEmpresa.get(e.id) || [];
           const sit = e.situacao_cadastral;
+          const cTel = e.contato_principal_telefone;
+          const waHref = e.contato_principal_whatsapp
+            ? waLink(cTel, mensagemWhatsappPadrao(e.nome, e.contato_principal_nome))
+            : null;
+          const telHref = telLink(cTel);
+          const mailHref = mailtoLink(e.contato_principal_email);
           return (
             <Card
               key={e.id}
@@ -215,6 +225,15 @@ export function EmpresasCardView({
                     Simples
                   </Badge>
                 )}
+                {e.contatos_count ? (
+                  <Badge
+                    variant="outline"
+                    className="border-primary/30 bg-primary/5 text-[10px] text-primary"
+                  >
+                    <Contact className="mr-0.5 h-2.5 w-2.5" />
+                    {e.contatos_count} contato{e.contatos_count > 1 ? "s" : ""}
+                  </Badge>
+                ) : null}
               </div>
 
               {(() => {
@@ -239,17 +258,77 @@ export function EmpresasCardView({
               })()}
 
               <div className="mt-3 space-y-1">
-                {e.telefone_receita && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Phone className="h-3 w-3" />
-                    <span className="truncate">{e.telefone_receita}</span>
+                {e.contato_principal_nome ? (
+                  <div
+                    className="rounded-md border border-primary/20 bg-primary/5 p-2"
+                    data-card-action
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1 truncate text-[11px] font-medium">
+                          <UserRound className="h-3 w-3 shrink-0 text-primary" />
+                          <span className="truncate">{e.contato_principal_nome}</span>
+                        </p>
+                        {e.contato_principal_cargo && (
+                          <p className="truncate pl-4 text-[10px] text-muted-foreground">
+                            {e.contato_principal_cargo}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {waHref && (
+                          <a
+                            href={waHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(ev) => ev.stopPropagation()}
+                            className="text-green-600 hover:opacity-70"
+                            aria-label="WhatsApp"
+                            title="WhatsApp"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                        {telHref && (
+                          <a
+                            href={telHref}
+                            onClick={(ev) => ev.stopPropagation()}
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label="Ligar"
+                            title="Ligar"
+                          >
+                            <Phone className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                        {mailHref && (
+                          <a
+                            href={mailHref}
+                            onClick={(ev) => ev.stopPropagation()}
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label="Email"
+                            title="Email"
+                          >
+                            <Mail className="h-3.5 w-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-                {e.email_receita && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                    <Mail className="h-3 w-3" />
-                    <span className="truncate">{e.email_receita}</span>
-                  </div>
+                ) : (
+                  <>
+                    {e.telefone_receita && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Phone className="h-3 w-3" />
+                        <span className="truncate">{e.telefone_receita}</span>
+                      </div>
+                    )}
+                    {e.email_receita && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Mail className="h-3 w-3" />
+                        <span className="truncate">{e.email_receita}</span>
+                      </div>
+                    )}
+                  </>
                 )}
                 {e.valor_potencial_total ? (
                   <div className="flex items-center justify-between pt-1 text-xs">

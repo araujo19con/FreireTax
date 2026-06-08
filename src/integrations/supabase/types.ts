@@ -309,6 +309,86 @@ export type Database = {
           },
         ];
       };
+      empresa_contatos: {
+        Row: {
+          cargo: string | null;
+          cpf_mascarado: string | null;
+          created_at: string;
+          created_by: string | null;
+          dedup_key: string | null;
+          email: string | null;
+          empresa_id: string;
+          faixa_etaria: string | null;
+          id: string;
+          is_contador: boolean;
+          linkedin: string | null;
+          metadados: Json;
+          nome: string | null;
+          observacoes: string | null;
+          origem: Database["public"]["Enums"]["origem_contato"];
+          papel: Database["public"]["Enums"]["papel_contato"];
+          principal: boolean;
+          telefone: string | null;
+          tipo_telefone: Database["public"]["Enums"]["tipo_telefone"];
+          updated_at: string;
+          whatsapp: boolean;
+        };
+        Insert: {
+          cargo?: string | null;
+          cpf_mascarado?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          dedup_key?: string | null;
+          email?: string | null;
+          empresa_id: string;
+          faixa_etaria?: string | null;
+          id?: string;
+          is_contador?: boolean;
+          linkedin?: string | null;
+          metadados?: Json;
+          nome?: string | null;
+          observacoes?: string | null;
+          origem?: Database["public"]["Enums"]["origem_contato"];
+          papel?: Database["public"]["Enums"]["papel_contato"];
+          principal?: boolean;
+          telefone?: string | null;
+          tipo_telefone?: Database["public"]["Enums"]["tipo_telefone"];
+          updated_at?: string;
+          whatsapp?: boolean;
+        };
+        Update: {
+          cargo?: string | null;
+          cpf_mascarado?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          dedup_key?: string | null;
+          email?: string | null;
+          empresa_id?: string;
+          faixa_etaria?: string | null;
+          id?: string;
+          is_contador?: boolean;
+          linkedin?: string | null;
+          metadados?: Json;
+          nome?: string | null;
+          observacoes?: string | null;
+          origem?: Database["public"]["Enums"]["origem_contato"];
+          papel?: Database["public"]["Enums"]["papel_contato"];
+          principal?: boolean;
+          telefone?: string | null;
+          tipo_telefone?: Database["public"]["Enums"]["tipo_telefone"];
+          updated_at?: string;
+          whatsapp?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "empresa_contatos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       empresas: {
         Row: {
           bairro: string | null;
@@ -354,6 +434,12 @@ export type Database = {
           uf: string | null;
           updated_at: string;
           user_id: string;
+          contatos_count: number;
+          contato_principal_cargo: string | null;
+          contato_principal_email: string | null;
+          contato_principal_nome: string | null;
+          contato_principal_telefone: string | null;
+          contato_principal_whatsapp: boolean;
           valor_potencial_total: number | null;
         };
         Insert: {
@@ -400,6 +486,12 @@ export type Database = {
           uf?: string | null;
           updated_at?: string;
           user_id: string;
+          contatos_count?: number;
+          contato_principal_cargo?: string | null;
+          contato_principal_email?: string | null;
+          contato_principal_nome?: string | null;
+          contato_principal_telefone?: string | null;
+          contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
         };
         Update: {
@@ -446,6 +538,12 @@ export type Database = {
           uf?: string | null;
           updated_at?: string;
           user_id?: string;
+          contatos_count?: number;
+          contato_principal_cargo?: string | null;
+          contato_principal_email?: string | null;
+          contato_principal_nome?: string | null;
+          contato_principal_telefone?: string | null;
+          contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
         };
         Relationships: [
@@ -1673,6 +1771,17 @@ export type Database = {
         | "sem_interesse"
         | "sem_resposta"
         | "outros";
+      origem_contato: "driva" | "rfb" | "manual" | "importacao" | "enriquecimento" | "outro";
+      papel_contato:
+        | "socio"
+        | "decisor"
+        | "financeiro"
+        | "juridico"
+        | "contador"
+        | "comercial"
+        | "operacional"
+        | "geral"
+        | "outro";
       porte_rfb: "MEI" | "ME" | "EPP" | "DEMAIS" | "NAO_INFORMADO";
       reuniao_status: "agendada" | "realizada" | "cancelada" | "no_show" | "reagendada";
       situacao_cadastral_rfb: "NULA" | "ATIVA" | "SUSPENSA" | "INAPTA" | "BAIXADA";
@@ -1680,6 +1789,7 @@ export type Database = {
       tarefa_status: "pendente" | "em_andamento" | "concluida" | "cancelada";
       tipo_contato: "outbound" | "resposta_lead" | "reuniao" | "breakup";
       tipo_prazo: "rescisoria_24m" | "prescricional_5a" | "decadencial_5a" | "personalizado";
+      tipo_telefone: "fixo" | "movel" | "desconhecido";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -1848,6 +1958,18 @@ export const Constants = {
         "sem_resposta",
         "outros",
       ],
+      origem_contato: ["driva", "rfb", "manual", "importacao", "enriquecimento", "outro"],
+      papel_contato: [
+        "socio",
+        "decisor",
+        "financeiro",
+        "juridico",
+        "contador",
+        "comercial",
+        "operacional",
+        "geral",
+        "outro",
+      ],
       porte_rfb: ["MEI", "ME", "EPP", "DEMAIS", "NAO_INFORMADO"],
       reuniao_status: ["agendada", "realizada", "cancelada", "no_show", "reagendada"],
       situacao_cadastral_rfb: ["NULA", "ATIVA", "SUSPENSA", "INAPTA", "BAIXADA"],
@@ -1855,6 +1977,7 @@ export const Constants = {
       tarefa_status: ["pendente", "em_andamento", "concluida", "cancelada"],
       tipo_contato: ["outbound", "resposta_lead", "reuniao", "breakup"],
       tipo_prazo: ["rescisoria_24m", "prescricional_5a", "decadencial_5a", "personalizado"],
+      tipo_telefone: ["fixo", "movel", "desconhecido"],
     },
   },
 } as const;

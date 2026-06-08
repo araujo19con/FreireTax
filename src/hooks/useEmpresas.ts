@@ -109,6 +109,13 @@ export interface Empresa {
   metadados: Record<string, string> | null;
   /** Regime tributário identificado: simples, mei, lucro_presumido, lucro_real, imune_isento */
   regime_tributario: string | null;
+  /** Snapshot do diretório empresa_contatos (mantido por trigger). */
+  contatos_count: number | null;
+  contato_principal_nome: string | null;
+  contato_principal_cargo: string | null;
+  contato_principal_telefone: string | null;
+  contato_principal_email: string | null;
+  contato_principal_whatsapp: boolean | null;
 }
 
 // Supabase's PostgrestFilterBuilder typings são verbosos; usamos um tipo relaxado local
@@ -167,7 +174,7 @@ function aplicarFiltroFaixa(
   if (temTxt) {
     // metadados->>key com espaços funciona; valores com vírgula viram risco,
     // mas faixas importadas ("500 A 999") não costumam ter vírgula
-    const valores = faixasTexto!.map((v) => `"${v.replace(/"/g, '\\"')}"`).join(",");
+    const valores = faixasTexto.map((v) => `"${v.replace(/"/g, '\\"')}"`).join(",");
     partes.push(`metadados->>${chaveMeta}.in.(${valores})`);
   }
   if (partes.length === 1) {
@@ -178,7 +185,7 @@ function aplicarFiltroFaixa(
       return query;
     }
     if (temTxt && !temNum) {
-      return query.in(`metadados->>${chaveMeta}`, faixasTexto!);
+      return query.in(`metadados->>${chaveMeta}`, faixasTexto);
     }
   }
   return query.or(partes.join(","));
@@ -319,7 +326,7 @@ export function useEmpresas(params: UseEmpresasParams = {}) {
       const { data, error, count } = result;
       if (error) throw error;
 
-      let rows = (data || []) as Empresa[];
+      let rows = data || [];
 
       // 3) Se filtro "não tem ação", remove os que aparecem na tabela elegibilidade
       if (filters.temAcao === false) {
@@ -406,7 +413,7 @@ export async function fetchAllEmpresas(
       error: Error | null;
     }>);
     if (result.error) throw result.error;
-    const batch = (result.data || []) as Empresa[];
+    const batch = result.data || [];
     all.push(...batch);
     if (batch.length < PAGE) break;
     from += PAGE;
@@ -646,7 +653,7 @@ export function useCreateEmpresa() {
       // depender só dele e mantemos consistência caso o trigger seja desabilitado.
       const rawCnpj = typeof input.cnpj === "string" ? input.cnpj : null;
       const cnpj = rawCnpj && rawCnpj.trim() ? maskCNPJ(rawCnpj) : rawCnpj;
-      const payload = { ...input, cnpj, user_id: user!.id };
+      const payload = { ...input, cnpj, user_id: user.id };
       // cast: Supabase's generated types requer Insert shape completo; aceitamos payload parcial aqui.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase.from("empresas") as any)
@@ -759,8 +766,7 @@ export function useEnrichEmpresa() {
       if (error) {
         let realMsg: string | null = null;
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const ctx = (error as any).context;
+          const ctx = error.context;
           if (ctx?.body) {
             const text =
               typeof ctx.body === "string" ? ctx.body : await new Response(ctx.body).text();

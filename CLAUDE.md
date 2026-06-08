@@ -43,6 +43,7 @@ Aliases: `@/` → `src/`.
 
 - `empresas` — cadastro RFB-enriquecido. Campos manuais relevantes: `quantidade_funcionarios`, `faturamento_anual`, `regime_tributario` (simples/mei/lucro_presumido/lucro_real/imune_isento), `metadados jsonb` (campos personalizados). **CNPJ tem UNIQUE constraint** (mig 20260425) e é NULLABLE (mig 20260506).
 - `rfb_estabelecimentos_busca` — slim da RFB pra buscar CNPJ por razão social (mig 20260514). Populado via `tools/import-rfb-slim.mjs` (só ATIVAS, só UFs configuradas — default RN+PB). Consultada via RPC `buscar_rfb_por_nome(termo, uf, limite)` ou edge function `buscar-cnpj-por-nome`.
+- `empresa_contatos` — diretório de contatos (pessoas + canais) por empresa: `nome`, `cargo`, `papel` (enum), `email`, `telefone`/`tipo_telefone`/`whatsapp`, `linkedin`, `is_contador`, `principal`, `origem`. Trigger mantém snapshot em `empresas` (`contatos_count`, `contato_principal_*`). Alimentado por `tools/import-driva-contatos.mjs`. **NÃO é `prospeccao_contatos`** (este é log de toques da cadência).
 - `acoes_tributarias` — teses jurídicas; campo `regras_elegibilidade jsonb` filtra pool
 - `criterios_elegibilidade` — critérios c/ `regra_excludente jsonb` (mig 20260422)
 - `elegibilidade` — qualificação empresa×ação (estados: nao_avaliada/qualificada/desqualificada/em_prospeccao/fechada/perdida)
@@ -62,10 +63,12 @@ Regra de visibilidade no sidebar: `isAdmin`, `canManageAll` (gestor ou admin).
 - `seedTemplates.ts` → templates seed de tarefas
 - `format.ts` → `formatCNPJ`, `formatCurrency`, `formatCompactCurrency`, `formatDate`, `formatRelativeDate`
 - `cnpj.ts` → `validateCNPJ` (mod 11 real), `validateCNPJMessage`, `maskCNPJ`, `unmaskCNPJ`
+- `contatos.ts` → papel labels/cores (`PAPEL_CONTATO`, `humanizePapel`, `papelColor`), `derivePapel`, telefone BR (`formatPhoneBR`, `toE164BR`), links acionáveis (`telLink`, `waLink`, `mailtoLink`, `linkedinUrl`), `rankContatos`
 
 ## Componentes compartilhados (src/components/) — REUSE
 
 - `EmpresaFilterPopover` + `EmpresaFilterChips` — usado em **Empresas** E **Matriz Elegibilidade**. Não duplique a UI de filtros.
+- `EmpresaContatosSection` (`pages/empresas/`) + `ContatoDialog` — gestão de contatos da empresa (lista acionável: ligar/WhatsApp/email/LinkedIn, marcar principal). Usado na aba "Contatos" do `EmpresaDetailSheet`. O contato principal aparece também em `EmpresasCardView` e `EmpresasTableView` (coluna "Contato") via snapshot denormalizado em `empresas`.
 - `EmpresaDialog` — criação/edição com validação CNPJ duplicado embutida + botão "Buscar pelo nome" (via `BuscarCNPJDialog`) pra empresas sem CNPJ
 - `BuscarCNPJDialog` — busca fuzzy de CNPJ pela razão social na base RFB indexada (RN+PB). Usado em `EmpresaDialog` e `EmpresaDetailSheet`.
 - `PropostaDialog` + `RichTextEditor` (Tiptap) — proposta com timbrado, preview e print
