@@ -254,6 +254,7 @@ async function main() {
         .from("empresas")
         .select("id, cnpj")
         .not("cnpj", "is", null)
+        .order("id")
         .range(from, from + PAGE - 1);
       if (error) throw new Error("Falha ao buscar empresas: " + error.message);
       for (const e of data ?? []) {

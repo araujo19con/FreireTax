@@ -71,6 +71,7 @@ async function main() {
         .from("empresas")
         .select("id, qsa, telefone_receita, email_receita")
         .or("qsa.not.is.null,telefone_receita.not.is.null,email_receita.not.is.null")
+        .order("id")
         .range(from, from + PAGE - 1);
       if (error) throw new Error("Falha ao ler empresas: " + error.message);
       empresas.push(...(data ?? []));
@@ -124,6 +125,7 @@ async function main() {
       const { data, error } = await supabase
         .from("empresa_contatos")
         .select("empresa_id, dedup_key")
+        .order("id")
         .range(from, from + PAGE - 1);
       if (error) throw new Error("Falha ao ler contatos existentes: " + error.message);
       for (const c of data ?? []) {
