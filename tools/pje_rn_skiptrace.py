@@ -105,9 +105,12 @@ def cpf_confere(cpf_full, mask):
 # Parsing da qualificação
 # ---------------------------------------------------------------------------
 def limpa(txt):
-    # PJe quebra números com '\n-\n'; junta tudo numa linha por parágrafo
+    # PJe quebra números com espaços/'\n-\n' ("344 - 87", "59.075 - 250",
+    # "99907 - 9637"); junta tudo e cola os números pra os regex baterem.
     t = txt.replace("­", "")
     t = re.sub(r"\s*\n\s*", " ", t)
+    t = re.sub(r"(\d)\s*-\s*(\d)", r"\1-\2", t)   # hífen entre dígitos (CPF/CEP)
+    t = re.sub(r"(\d)\s*\.\s*(\d)", r"\1.\2", t)   # ponto entre dígitos
     t = re.sub(r"\s{2,}", " ", t)
     return t
 
