@@ -42,3 +42,7 @@ bun.lockb
 supabase/.temp/
 supabase/.branches/
 .vercel
+
+# PJe skiptrace (perfil do browser + saída local, nunca versionar)
+.pje-chrome-profile/
+pje_rn_skiptrace.csv
