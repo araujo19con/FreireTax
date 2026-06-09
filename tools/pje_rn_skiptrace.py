@@ -47,8 +47,10 @@ RE_CEP = re.compile(r"\b\d{2}\.?\d{3}-?\d{3}\b")
 RE_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 RE_TEL = re.compile(r"(?<!\d)(?:\(?\d{2}\)?[\s.-]?)?9?\d{4}[\s.-]?\d{4}(?!\d)")
 RE_ADV = re.compile(r"ADVOGADO\(A\)\s+AUTOR:\s*([^\n]+)", re.I)
-# endereço: "residente(s) e domiciliad... na <ENDEREÇO> ... (CEP: NNNNN-NNN)"
+# endereço — dois formatos: petição ("domiciliad... na <END> ... CEP") e
+# execução fiscal/cadastro ("Endereço: <END> ... NNNNN-NNN").
 RE_END = re.compile(r"domiciliad[oa]s?\s+n[ao]s?\s+(.{8,180}?CEP[:\s]*\d{2}\.?\d{3}-?\d{3})", re.I | re.S)
+RE_END2 = re.compile(r"Endere[çc]o[:\s]+(.{8,170}?\d{5}-?\d{3})", re.I)
 
 
 # ---------------------------------------------------------------------------
@@ -118,15 +120,19 @@ def limpa(txt):
 def parse_qualificacao(txt_raw, alvo_nome):
     t = limpa(txt_raw)
     out = {"cpf": "", "endereco": "", "cep": "", "telefone": "", "email": "", "advogado": ""}
-    # janela em torno do nome do alvo (evita pegar dado do réu)
-    i = t.upper().find(alvo_nome.split()[0].upper())
-    jan = t[max(0, i - 50): i + 600] if i >= 0 else t[:700]
-    mcpf = RE_CPF.search(jan)
+    # janela em torno do nome do alvo (evita pegar dado do réu/exequente)
+    up = t.upper()
+    i = up.find(alvo_nome.upper())
+    if i < 0:
+        i = up.find(alvo_nome.split()[0].upper())
+    jan = t[max(0, i - 250): i + 650] if i >= 0 else t[:900]
+    mcpf = RE_CPF.search(jan) or RE_CPF.search(t)
     if mcpf:
         out["cpf"] = mcpf.group(0)
-    mend = RE_END.search(t)
+    # endereço: petição ("domiciliado na...") ou exec. fiscal ("Endereço: ...")
+    mend = RE_END.search(t) or RE_END2.search(jan) or RE_END2.search(t)
     if mend:
-        out["endereco"] = re.sub(r"\s+", " ", mend.group(1)).strip(" .,")
+        out["endereco"] = re.sub(r"\s+", " ", mend.group(1)).strip(" .,;-")
         mcep = RE_CEP.search(out["endereco"])
         if mcep:
             out["cep"] = mcep.group(0)
@@ -229,7 +235,11 @@ def main():
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
                                                     viewport={"width": 1280, "height": 900})
+        # Aceita automaticamente o aviso CNJ Res.121 (acesso a autos) em toda aba.
+        # O acesso é do advogado a empresas que já patrocina/tem acesso (autorizado).
+        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.on("dialog", lambda d: d.accept())
         page.goto(CONSULTA, wait_until="domcontentloaded")
         input("\n>>> Faça login no TJRN com o A3 nessa janela e tecle ENTER aqui pra começar...\n")
 
