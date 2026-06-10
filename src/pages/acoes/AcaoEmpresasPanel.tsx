@@ -199,6 +199,7 @@ export function AcaoEmpresasPanel({
     : null;
   const [filters, setFilters] = useState<AcaoEmpresaFilters>({});
   const [sort, setSort] = useState<AcaoEmpresaSort>("elegibilidade_recente");
+  const [socioFilter, setSocioFilter] = useState<"todos" | "com_contato" | "com_celular">("todos");
   const [exporting, setExporting] = useState(false);
   const [desqOpen, setDesqOpen] = useState<string | null>(null);
   const [desqMotivo, setDesqMotivo] = useState("");
@@ -252,50 +253,9 @@ export function AcaoEmpresasPanel({
     [items]
   );
 
-  const filtered = useMemo(() => {
-    const base = pinnedEmpresaId ? items.filter((i) => i.el.empresa_id === pinnedEmpresaId) : items;
-    return applyAcaoSort(applyAcaoFilters(base, filters, q), sort);
-  }, [items, filters, q, sort, pinnedEmpresaId]);
-
-  // IDs das empresas elegíveis (elegivel=true) desta ação. Usado pelo mapa
-  // para mostrar só o pool elegível.
-  const elegiveisIds = useMemo(
-    () => items.filter((i) => i.el.elegivel).map((i) => i.el.empresa_id),
-    [items]
-  );
-
-  // IDs das empresas com elegibilidade marcada como destaque (estrela). O mapa
-  // pinta a estrela amarela no card e destaca o fundo.
-  const destaqueIds = useMemo(
-    () => new Set(items.filter((i) => i.el.destaque).map((i) => i.el.empresa_id)),
-    [items]
-  );
-
-  // Fetch lazy de empresas full (todos os campos) para alimentar o mapa.
-  // Só dispara quando view === "mapa" e há elegíveis. Cacheado por (acaoId, set de IDs).
-  const idsKey = useMemo(() => [...elegiveisIds].sort().join(","), [elegiveisIds]);
-  const { data: mapaEmpresas = [], isLoading: loadingMapaEmpresas } = useQuery({
-    queryKey: ["acao-map-empresas", acaoId, idsKey],
-    queryFn: async () => {
-      if (elegiveisIds.length === 0) return [] as Empresa[];
-      // Chunk em 1000 (limite seguro de .in())
-      const chunks: string[][] = [];
-      for (let i = 0; i < elegiveisIds.length; i += 1000) {
-        chunks.push(elegiveisIds.slice(i, i + 1000));
-      }
-      const results = await Promise.all(
-        chunks.map((c) => supabase.from("empresas").select("*").in("id", c))
-      );
-      if (results.some((r) => r.error)) throw new Error("Erro ao carregar empresas do mapa");
-      return results.flatMap((r) => (r.data ?? []) as Empresa[]);
-    },
-    enabled: view === "mapa" && elegiveisIds.length > 0,
-    staleTime: 60 * 1000,
-  });
-
-  // Contatos de SÓCIO por empresa — pra mostrar na linha se dá pra falar com o
-  // dono (e se há telefone/celular). Lightweight (só papel=socio, 3 colunas);
-  // pagina por range dentro de cada chunk pra não truncar no teto de 1000.
+  // Contatos de SÓCIO por empresa — sinaliza/filtra empresas onde dá pra falar
+  // com o dono. Lightweight (papel=socio, poucas colunas); pagina por range
+  // dentro de cada chunk de 500 ids pra não truncar no teto de 1000 do PostgREST.
   const allEmpresaIds = useMemo(() => items.map((i) => i.empresa.id), [items]);
   const sociosIdsKey = useMemo(() => [...allEmpresaIds].sort().join(","), [allEmpresaIds]);
   const { data: sociosByEmpresa } = useQuery({
@@ -341,6 +301,55 @@ export function AcaoEmpresasPanel({
       return map;
     },
     enabled: allEmpresaIds.length > 0,
+    staleTime: 60 * 1000,
+  });
+
+  const filtered = useMemo(() => {
+    const base = pinnedEmpresaId ? items.filter((i) => i.el.empresa_id === pinnedEmpresaId) : items;
+    let result = applyAcaoSort(applyAcaoFilters(base, filters, q), sort);
+    if (socioFilter !== "todos" && sociosByEmpresa) {
+      result = result.filter(({ empresa }) => {
+        const ci = sociosByEmpresa.get(empresa.id);
+        if (!ci) return false;
+        return socioFilter === "com_celular" ? ci.comCel > 0 : ci.comTel > 0 || ci.comEmail > 0;
+      });
+    }
+    return result;
+  }, [items, filters, q, sort, pinnedEmpresaId, socioFilter, sociosByEmpresa]);
+
+  // IDs das empresas elegíveis (elegivel=true) desta ação. Usado pelo mapa
+  // para mostrar só o pool elegível.
+  const elegiveisIds = useMemo(
+    () => items.filter((i) => i.el.elegivel).map((i) => i.el.empresa_id),
+    [items]
+  );
+
+  // IDs das empresas com elegibilidade marcada como destaque (estrela). O mapa
+  // pinta a estrela amarela no card e destaca o fundo.
+  const destaqueIds = useMemo(
+    () => new Set(items.filter((i) => i.el.destaque).map((i) => i.el.empresa_id)),
+    [items]
+  );
+
+  // Fetch lazy de empresas full (todos os campos) para alimentar o mapa.
+  // Só dispara quando view === "mapa" e há elegíveis. Cacheado por (acaoId, set de IDs).
+  const idsKey = useMemo(() => [...elegiveisIds].sort().join(","), [elegiveisIds]);
+  const { data: mapaEmpresas = [], isLoading: loadingMapaEmpresas } = useQuery({
+    queryKey: ["acao-map-empresas", acaoId, idsKey],
+    queryFn: async () => {
+      if (elegiveisIds.length === 0) return [] as Empresa[];
+      // Chunk em 1000 (limite seguro de .in())
+      const chunks: string[][] = [];
+      for (let i = 0; i < elegiveisIds.length; i += 1000) {
+        chunks.push(elegiveisIds.slice(i, i + 1000));
+      }
+      const results = await Promise.all(
+        chunks.map((c) => supabase.from("empresas").select("*").in("id", c))
+      );
+      if (results.some((r) => r.error)) throw new Error("Erro ao carregar empresas do mapa");
+      return results.flatMap((r) => (r.data ?? []) as Empresa[]);
+    },
+    enabled: view === "mapa" && elegiveisIds.length > 0,
     staleTime: 60 * 1000,
   });
 
@@ -511,6 +520,29 @@ export function AcaoEmpresasPanel({
                     {opt.label}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={socioFilter}
+              onValueChange={(v) => setSocioFilter(v as typeof socioFilter)}
+            >
+              <SelectTrigger
+                className={`h-8 w-[160px] text-xs ${socioFilter !== "todos" ? "border-success/40 bg-success/5 text-success" : ""}`}
+                title="Filtrar empresas pelo contato do sócio"
+              >
+                <Phone className="mr-1.5 h-3.5 w-3.5" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos" className="text-xs">
+                  Sócio: todos
+                </SelectItem>
+                <SelectItem value="com_contato" className="text-xs">
+                  Sócio c/ contato
+                </SelectItem>
+                <SelectItem value="com_celular" className="text-xs">
+                  Sócio c/ celular
+                </SelectItem>
               </SelectContent>
             </Select>
             <Button
