@@ -517,7 +517,6 @@ export function ImportacaoProspeccaoDialog({
 
           if (!existingProsp) {
             const { error: prospErr } = await supabase.from("prospeccoes").insert({
-              elegibilidade_id: elegId,
               empresa_id: empresaId,
               acao_id: acaoId,
               status_prospeccao: row.statusProspeccao,
@@ -549,12 +548,14 @@ export function ImportacaoProspeccaoDialog({
           const { data: existingProc } = await supabase
             .from("processos")
             .select("id")
-            .eq("elegibilidade_id", elegId)
+            .eq("empresa_id", empresaId)
+            .eq("acao_id", acaoId)
             .maybeSingle();
 
           if (!existingProc) {
             await supabase.from("processos").insert({
-              elegibilidade_id: elegId,
+              empresa_id: empresaId,
+              acao_id: acaoId,
               user_id: user.id,
               numero_processo: row.numeroProcesso,
               fase: "Inicial",

@@ -34,7 +34,6 @@ const STATUS_OPTIONS = [
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  elegId: string;
   empresaId: string;
   acaoId: string;
   empresaNome: string;
@@ -44,7 +43,6 @@ interface Props {
 export function ProspeccaoRapidaDialog({
   open,
   onOpenChange,
-  elegId,
   empresaId,
   acaoId,
   empresaNome,
@@ -71,7 +69,6 @@ export function ProspeccaoRapidaDialog({
       const { error } = await supabase.from("prospeccoes").insert({
         empresa_id: empresaId,
         acao_id: acaoId,
-        elegibilidade_id: elegId || null,
         status_prospeccao: status,
         observacoes: observacoes || null,
         user_id: user?.id,

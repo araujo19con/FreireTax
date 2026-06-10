@@ -312,9 +312,10 @@ export default function Prospeccao() {
   const getAcao = (p: Prospeccao) =>
     p.acao_id ? (acoes.find((a) => a.id === p.acao_id) ?? null) : null;
 
-  const getElegibilidade = (elegId: string) => elegibilidades.find((e) => e.id === elegId);
-  const getValorPotencial = (elegId: string) =>
-    Number(getElegibilidade(elegId)?.valor_potencial_estimado ?? 0);
+  const getElegibilidade = (p: { empresa_id: string | null; acao_id: string | null }) =>
+    elegibilidades.find((e) => e.empresa_id === p.empresa_id && e.acao_id === p.acao_id);
+  const getValorPotencial = (p: { empresa_id: string | null; acao_id: string | null }) =>
+    Number(getElegibilidade(p)?.valor_potencial_estimado ?? 0);
 
   const filteredProspeccoes = useMemo(() => {
     // Remove só prospecções realmente órfãs (empresa deletada).
@@ -348,8 +349,8 @@ export default function Prospeccao() {
     }
     // QW2: ordena por valor_potencial DESC (empresas grandes no topo)
     return [...items].sort((a, b) => {
-      const va = getValorPotencial(a.elegibilidade_id);
-      const vb = getValorPotencial(b.elegibilidade_id);
+      const va = getValorPotencial(a);
+      const vb = getValorPotencial(b);
       return vb - va;
     });
   }, [
@@ -554,8 +555,6 @@ export default function Prospeccao() {
     }
     const eleg = elegibilidades.find((e) => e.id === createElegId);
     const payload = {
-      elegibilidade_id: createElegId,
-      // Desnormaliza empresa_id + acao_id para evitar join via elegibilidade
       empresa_id: eleg?.empresa_id ?? null,
       acao_id: eleg?.acao_id ?? null,
       user_id: user.id,
@@ -575,7 +574,7 @@ export default function Prospeccao() {
     logAudit({
       tabela: "prospeccoes",
       acao: "Criou prospecção",
-      detalhes: { elegibilidade_id: createElegId },
+      detalhes: { empresa_id: eleg?.empresa_id, acao_id: eleg?.acao_id },
     });
     setCreateOpen(false);
     fetchAll();
@@ -586,7 +585,7 @@ export default function Prospeccao() {
   const assinados = filteredProspeccoes.filter((p) => p.status_prospeccao === "Contrato assinado");
   const valorAssinado = assinados.reduce((s, p) => s + (Number(p.valor_contrato) || 0), 0);
   const valorPotencialPipeline = useMemo(
-    () => filteredProspeccoes.reduce((s, p) => s + getValorPotencial(p.elegibilidade_id), 0),
+    () => filteredProspeccoes.reduce((s, p) => s + getValorPotencial(p), 0),
     [filteredProspeccoes, elegibilidades]
   );
   const semContato7d = filteredProspeccoes.filter((p) => {
@@ -804,7 +803,7 @@ export default function Prospeccao() {
                           {items.map((p, index) => {
                             const emp = getEmpresa(p);
                             const acao = getAcao(p);
-                            const valorPot = getValorPotencial(p.elegibilidade_id);
+                            const valorPot = getValorPotencial(p);
                             const prescricao = prescricaoInfo(acao?.data_limite_prescricao ?? null);
                             const cadencia = cadenciaStatus(p.numero_contatos);
                             const colIdx = statusColumns.findIndex(
@@ -815,11 +814,7 @@ export default function Prospeccao() {
                             const diasSemContato = p.ultimo_contato_em
                               ? differenceInDays(new Date(), parseISO(p.ultimo_contato_em))
                               : null;
-                            // Sinaliza quando a elegibilidade foi marcada como inelegível
-                            // mas a prospecção ainda está ativa — estado misto que existe
-                            // porque "Desqualificar" não cascateia pra prospeccoes.
-                            const elegInativa =
-                              getElegibilidade(p.elegibilidade_id)?.elegivel === false;
+                            const elegInativa = getElegibilidade(p)?.elegivel === false;
 
                             return (
                               <Draggable key={p.id} draggableId={p.id} index={index}>
@@ -1090,11 +1085,11 @@ export default function Prospeccao() {
                     Toques:{" "}
                     <strong className="text-foreground">{editProsp.numero_contatos}/7</strong>
                   </span>
-                  {getValorPotencial(editProsp.elegibilidade_id) > 0 && (
+                  {getValorPotencial(editProsp) > 0 && (
                     <span>
                       Potencial:{" "}
                       <strong className="text-primary">
-                        {formatCompactCurrency(getValorPotencial(editProsp.elegibilidade_id))}
+                        {formatCompactCurrency(getValorPotencial(editProsp))}
                       </strong>
                     </span>
                   )}
@@ -1613,7 +1608,7 @@ export default function Prospeccao() {
         (() => {
           const emp = getEmpresa(editProsp);
           const acao = getAcao(editProsp);
-          const valorPot = getValorPotencial(editProsp.elegibilidade_id);
+          const valorPot = getValorPotencial(editProsp);
           const dias = acao?.data_limite_prescricao
             ? differenceInDays(parseISO(acao.data_limite_prescricao), new Date())
             : null;
@@ -1640,7 +1635,7 @@ export default function Prospeccao() {
         (() => {
           const emp = getEmpresa(propostaProsp);
           const acao = getAcao(propostaProsp);
-          const valorPot = getValorPotencial(propostaProsp.elegibilidade_id);
+          const valorPot = getValorPotencial(propostaProsp);
           return (
             <PropostaDialog
               open={propostaOpen}

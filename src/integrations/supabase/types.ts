@@ -627,7 +627,7 @@ export type Database = {
           acao_id: string;
           created_at: string;
           data_processo: string | null;
-          elegibilidade_id: string;
+          elegibilidade_id: string | null;
           empresa_id: string;
           fase: string;
           id: string;
@@ -644,7 +644,7 @@ export type Database = {
           acao_id: string;
           created_at?: string;
           data_processo?: string | null;
-          elegibilidade_id: string;
+          elegibilidade_id?: string | null;
           empresa_id: string;
           fase?: string;
           id?: string;
@@ -661,7 +661,7 @@ export type Database = {
           acao_id?: string;
           created_at?: string;
           data_processo?: string | null;
-          elegibilidade_id?: string;
+          elegibilidade_id?: string | null;
           empresa_id?: string;
           fase?: string;
           id?: string;
@@ -961,7 +961,7 @@ export type Database = {
           decisor_confirmado: boolean;
           dor_identificada: string | null;
           eh_decisor: boolean;
-          elegibilidade_id: string;
+          elegibilidade_id: string | null;
           empresa_id: string;
           id: string;
           motivo_perdido: Database["public"]["Enums"]["motivo_perdido"] | null;
@@ -994,7 +994,7 @@ export type Database = {
           decisor_confirmado?: boolean;
           dor_identificada?: string | null;
           eh_decisor?: boolean;
-          elegibilidade_id: string;
+          elegibilidade_id?: string | null;
           empresa_id: string;
           id?: string;
           motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null;
@@ -1027,7 +1027,7 @@ export type Database = {
           decisor_confirmado?: boolean;
           dor_identificada?: string | null;
           eh_decisor?: boolean;
-          elegibilidade_id?: string;
+          elegibilidade_id?: string | null;
           empresa_id?: string;
           id?: string;
           motivo_perdido?: Database["public"]["Enums"]["motivo_perdido"] | null;

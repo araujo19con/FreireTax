@@ -188,7 +188,6 @@ export default function Acoes() {
 
   // Dialog rápido de prospecção
   const [prospRapidaOpen, setProspRapidaOpen] = useState(false);
-  const [prospRapidaElegId, setProspRapidaElegId] = useState("");
   const [prospRapidaEmpresaId, setProspRapidaEmpresaId] = useState("");
 
   // Elegibilidade dialog
@@ -288,8 +287,7 @@ export default function Acoes() {
     });
   }, [urlAcaoId, acoes]);
 
-  const handleProspectar = (elegId: string, empresaId: string) => {
-    setProspRapidaElegId(elegId);
+  const handleProspectar = (_elegId: string, empresaId: string) => {
     setProspRapidaEmpresaId(empresaId);
     setProspRapidaOpen(true);
   };
@@ -1036,7 +1034,6 @@ export default function Acoes() {
       <ProspeccaoRapidaDialog
         open={prospRapidaOpen}
         onOpenChange={setProspRapidaOpen}
-        elegId={prospRapidaElegId}
         empresaId={prospRapidaEmpresaId}
         acaoId={expandedAcao ?? ""}
         empresaNome={empresas.find((e) => e.id === prospRapidaEmpresaId)?.nome ?? ""}
