@@ -25,6 +25,9 @@ import {
   Loader2,
   XCircle,
   Star,
+  Phone,
+  Smartphone,
+  Mail,
   Map as MapIcon,
   Table as TableIcon,
 } from "lucide-react";
@@ -287,6 +290,57 @@ export function AcaoEmpresasPanel({
       return results.flatMap((r) => (r.data ?? []) as Empresa[]);
     },
     enabled: view === "mapa" && elegiveisIds.length > 0,
+    staleTime: 60 * 1000,
+  });
+
+  // Contatos de SÓCIO por empresa — pra mostrar na linha se dá pra falar com o
+  // dono (e se há telefone/celular). Lightweight (só papel=socio, 3 colunas);
+  // pagina por range dentro de cada chunk pra não truncar no teto de 1000.
+  const allEmpresaIds = useMemo(() => items.map((i) => i.empresa.id), [items]);
+  const sociosIdsKey = useMemo(() => [...allEmpresaIds].sort().join(","), [allEmpresaIds]);
+  const { data: sociosByEmpresa } = useQuery({
+    queryKey: ["acao-socios-contato", acaoId, sociosIdsKey],
+    queryFn: async () => {
+      const map = new Map<
+        string,
+        { socios: number; comTel: number; comCel: number; comEmail: number }
+      >();
+      for (let i = 0; i < allEmpresaIds.length; i += 500) {
+        const chunk = allEmpresaIds.slice(i, i + 500);
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await supabase
+            .from("empresa_contatos")
+            .select("empresa_id, telefone, tipo_telefone, email")
+            .eq("papel", "socio")
+            .in("empresa_id", chunk)
+            .order("empresa_id")
+            .range(offset, offset + 999);
+          if (error) throw new Error(error.message);
+          const rows = (data ?? []) as {
+            empresa_id: string;
+            telefone: string | null;
+            tipo_telefone: string | null;
+            email: string | null;
+          }[];
+          for (const row of rows) {
+            const cur = map.get(row.empresa_id) ?? {
+              socios: 0,
+              comTel: 0,
+              comCel: 0,
+              comEmail: 0,
+            };
+            cur.socios += 1;
+            if (row.telefone) cur.comTel += 1;
+            if (row.tipo_telefone === "movel") cur.comCel += 1;
+            if (row.email) cur.comEmail += 1;
+            map.set(row.empresa_id, cur);
+          }
+          if (rows.length < 1000) break;
+        }
+      }
+      return map;
+    },
+    enabled: allEmpresaIds.length > 0,
     staleTime: 60 * 1000,
   });
 
@@ -569,6 +623,38 @@ export function AcaoEmpresasPanel({
                               <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                                 {empresa.cnpj}
                               </div>
+                              {(() => {
+                                const ci = sociosByEmpresa?.get(empresa.id);
+                                // Só sinaliza quando há um CANAL do sócio (tel/cel/email).
+                                // Sócio só-nome (QSA) existe em quase toda empresa = ruído.
+                                if (!ci || (ci.comTel === 0 && ci.comEmail === 0)) return null;
+                                const Icon =
+                                  ci.comCel > 0 ? Smartphone : ci.comTel > 0 ? Phone : Mail;
+                                const cls =
+                                  ci.comCel > 0
+                                    ? "bg-success/10 text-success"
+                                    : "bg-info/10 text-info";
+                                const txt =
+                                  ci.comCel > 0
+                                    ? "Sócio c/ celular"
+                                    : ci.comTel > 0
+                                      ? "Sócio c/ telefone"
+                                      : "Sócio c/ email";
+                                const tip =
+                                  `${ci.socios} sócio${ci.socios > 1 ? "s" : ""} cadastrado${ci.socios > 1 ? "s" : ""}` +
+                                  (ci.comTel ? ` · ${ci.comTel} c/ telefone` : "") +
+                                  (ci.comEmail ? ` · ${ci.comEmail} c/ email` : "");
+                                return (
+                                  <Badge
+                                    variant="outline"
+                                    className={`mt-1 inline-flex w-fit items-center gap-1 border-0 px-1.5 py-0 text-[9px] font-medium ${cls}`}
+                                    title={tip}
+                                  >
+                                    <Icon className="h-2.5 w-2.5 shrink-0" />
+                                    {txt}
+                                  </Badge>
+                                );
+                              })()}
                             </>
                           ) : (
                             <>
