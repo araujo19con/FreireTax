@@ -18,6 +18,7 @@ import {
   Contact,
   Search,
   Phone,
+  Smartphone,
   PhoneCall,
   MessageCircle,
   Mail,
@@ -25,8 +26,12 @@ import {
   Building2,
   UserRound,
   Crown,
+  Gavel,
+  Download,
+  Loader2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { EmpresaContato, PapelContato, OrigemContato } from "@/lib/contatos";
 import {
   PAPEL_CONTATO,
@@ -45,6 +50,17 @@ import {
 
 type ContatoRow = EmpresaContato & {
   empresas: { id: string; nome: string; uf: string | null; municipio: string | null } | null;
+};
+
+// PostgrestFilterBuilder é profundo demais pra encadear vários filtros
+// condicionais (TS 2589 "type instantiation excessively deep"). Tipo relaxado
+// local só com os métodos usados — mesmo padrão de useEmpresas.ts.
+type QB = {
+  or: (filter: string) => QB;
+  eq: (c: string, v: unknown) => QB;
+  not: (c: string, op: string, v: unknown) => QB;
+  neq: (c: string, v: unknown) => QB;
+  ilike: (c: string, v: string) => QB;
 };
 
 const PAGE_SIZE = 30;
@@ -86,6 +102,10 @@ export default function Contatos() {
   const [origem, setOrigem] = useState<OrigemContato | "todos">("todos");
   const [uf, setUf] = useState<string>("todas");
   const [soWhats, setSoWhats] = useState(false);
+  const [comTel, setComTel] = useState(false);
+  const [soCel, setSoCel] = useState(false);
+  const [soPje, setSoPje] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(0);
 
   // debounce da busca
@@ -99,19 +119,21 @@ export default function Contatos() {
 
   useEffect(() => {
     setPage(0);
-  }, [papel, origem, uf, soWhats]);
+  }, [papel, origem, uf, soWhats, comTel, soCel, soPje]);
 
   const filtros = useMemo(
-    () => ({ search, papel, origem, uf, soWhats, page }),
-    [search, papel, origem, uf, soWhats, page]
+    () => ({ search, papel, origem, uf, soWhats, comTel, soCel, soPje, page }),
+    [search, papel, origem, uf, soWhats, comTel, soCel, soPje, page]
   );
+
+  const usaUf = uf !== "todas";
+  const termoBusca = search.replace(/[%,()*]/g, " ").trim();
 
   const { data, isFetching } = useQuery({
     queryKey: ["contatos-global", filtros],
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const from = page * PAGE_SIZE;
-      const usaUf = uf !== "todas";
       let q = supabase
         .from("empresa_contatos")
         .select(
@@ -122,27 +144,135 @@ export default function Contatos() {
         )
         .order("principal", { ascending: false })
         .order("nome", { ascending: true, nullsFirst: false })
-        .range(from, from + PAGE_SIZE - 1);
+        .range(from, from + PAGE_SIZE - 1) as unknown as QB;
 
-      const s = search.replace(/[%,()*]/g, " ").trim();
-      if (s)
-        q = q.or(`nome.ilike.*${s}*,email.ilike.*${s}*,telefone.ilike.*${s}*,cargo.ilike.*${s}*`);
+      if (termoBusca)
+        q = q.or(
+          `nome.ilike.*${termoBusca}*,email.ilike.*${termoBusca}*,telefone.ilike.*${termoBusca}*,cargo.ilike.*${termoBusca}*`
+        );
       if (papel !== "todos") q = q.eq("papel", papel);
       if (origem !== "todos") q = q.eq("origem", origem);
       if (soWhats) q = q.eq("whatsapp", true);
+      if (comTel) q = q.not("telefone", "is", null).neq("telefone", "");
+      if (soCel) q = q.eq("tipo_telefone", "movel");
+      if (soPje) q = q.ilike("observacoes", "%PJe/TJRN%");
       if (usaUf) q = q.eq("empresas.uf", uf);
 
-      const { data, error, count } = await q;
-      if (error) throw error;
-      return { rows: (data ?? []) as unknown as ContatoRow[], count: count ?? 0 };
+      const { data, error, count } = await (q as unknown as PromiseLike<{
+        data: ContatoRow[] | null;
+        error: { message: string } | null;
+        count: number | null;
+      }>);
+      if (error) throw new Error(error.message);
+      return { rows: data ?? [], count: count ?? 0 };
     },
   });
+
+  const exportarCsv = async () => {
+    setExporting(true);
+    try {
+      const PG = 1000;
+      const all: ContatoRow[] = [];
+      for (let offset = 0; ; offset += PG) {
+        let q = supabase
+          .from("empresa_contatos")
+          .select(
+            `nome, cargo, papel, email, telefone, tipo_telefone, whatsapp, linkedin, origem,
+             empresas${usaUf ? "!inner" : ""}(nome, uf, municipio)`
+          )
+          .order("nome", { ascending: true, nullsFirst: false })
+          .range(offset, offset + PG - 1) as unknown as QB;
+
+        if (termoBusca)
+          q = q.or(
+            `nome.ilike.*${termoBusca}*,email.ilike.*${termoBusca}*,telefone.ilike.*${termoBusca}*,cargo.ilike.*${termoBusca}*`
+          );
+        if (papel !== "todos") q = q.eq("papel", papel);
+        if (origem !== "todos") q = q.eq("origem", origem);
+        if (soWhats) q = q.eq("whatsapp", true);
+        if (comTel) q = q.not("telefone", "is", null).neq("telefone", "");
+        if (soCel) q = q.eq("tipo_telefone", "movel");
+        if (soPje) q = q.ilike("observacoes", "%PJe/TJRN%");
+        if (usaUf) q = q.eq("empresas.uf", uf);
+
+        const { data, error } = await (q as unknown as PromiseLike<{
+          data: ContatoRow[] | null;
+          error: { message: string } | null;
+        }>);
+        if (error) throw new Error(error.message);
+        const batch = data ?? [];
+        all.push(...batch);
+        if (batch.length < PG) break;
+      }
+      if (!all.length) {
+        toast.info("Nenhum contato para exportar com esses filtros.");
+        return;
+      }
+      const head = [
+        "Nome",
+        "Empresa",
+        "UF",
+        "Município",
+        "Papel",
+        "Origem",
+        "Cargo",
+        "Telefone",
+        "Tipo",
+        "WhatsApp",
+        "Email",
+        "LinkedIn",
+      ];
+      const esc = (v: string | null | undefined) => {
+        const s = v ?? "";
+        return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = all.map((c) =>
+        [
+          c.nome,
+          c.empresas?.nome,
+          c.empresas?.uf,
+          c.empresas?.municipio,
+          humanizePapel(c.papel),
+          humanizeOrigem(c.origem),
+          c.cargo,
+          formatPhoneBR(c.telefone),
+          c.tipo_telefone,
+          c.whatsapp ? "sim" : "",
+          c.email,
+          c.linkedin,
+        ]
+          .map(esc)
+          .join(";")
+      );
+      const csv = "﻿" + [head.join(";"), ...lines].join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contatos_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${all.length} contato${all.length === 1 ? "" : "s"} exportado(s).`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erro ao exportar contatos.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const rows = data?.rows ?? [];
   const total = data?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const temFiltro =
-    !!search || papel !== "todos" || origem !== "todos" || uf !== "todas" || soWhats;
+    !!search ||
+    papel !== "todos" ||
+    origem !== "todos" ||
+    uf !== "todas" ||
+    soWhats ||
+    comTel ||
+    soCel ||
+    soPje;
 
   const limpar = () => {
     setSearchInput("");
@@ -151,6 +281,9 @@ export default function Contatos() {
     setOrigem("todos");
     setUf("todas");
     setSoWhats(false);
+    setComTel(false);
+    setSoCel(false);
+    setSoPje(false);
     setPage(0);
   };
 
@@ -226,13 +359,58 @@ export default function Contatos() {
             <MessageCircle className="mr-1 h-3.5 w-3.5" /> Só WhatsApp
           </Button>
 
+          <Button
+            variant={comTel ? "default" : "outline"}
+            size="sm"
+            className="h-8"
+            onClick={() => setComTel((v) => !v)}
+          >
+            <Phone className="mr-1 h-3.5 w-3.5" /> Com telefone
+          </Button>
+
+          <Button
+            variant={soCel ? "default" : "outline"}
+            size="sm"
+            className="h-8"
+            onClick={() => setSoCel((v) => !v)}
+            title="Só celulares (DDD + 9 dígitos) — separa o WhatsApp possível do fixo/switchboard"
+          >
+            <Smartphone className="mr-1 h-3.5 w-3.5" /> Só celular
+          </Button>
+
+          <Button
+            variant={soPje ? "default" : "outline"}
+            size="sm"
+            className="h-8"
+            onClick={() => setSoPje((v) => !v)}
+            title="Sócios enriquecidos via PJe (CPF/endereço/telefone das petições)"
+          >
+            <Gavel className="mr-1 h-3.5 w-3.5" /> Só PJe
+          </Button>
+
           {temFiltro && (
             <Button variant="ghost" size="sm" className="h-8" onClick={limpar}>
               <X className="mr-1 h-3.5 w-3.5" /> Limpar
             </Button>
           )}
 
-          <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-8"
+            onClick={() => void exportarCsv()}
+            disabled={exporting || total === 0}
+            title="Exportar a lista filtrada em CSV"
+          >
+            {exporting ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="mr-1 h-3.5 w-3.5" />
+            )}
+            Exportar
+          </Button>
+
+          <span className="text-xs tabular-nums text-muted-foreground">
             {total} contato{total === 1 ? "" : "s"}
           </span>
         </div>
