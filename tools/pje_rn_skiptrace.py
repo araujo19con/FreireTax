@@ -35,22 +35,34 @@ from pathlib import Path
 import urllib.request, urllib.parse
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 CONSULTA = "https://pje1g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam"
 PROFILE = str(ROOT / ".pje-chrome-profile")
+LEDGER = ROOT / "pje_rn_ledger.jsonl"  # registro do que JÁ foi varrido (hit ou miss)
 
 RE_CPF = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")
 RE_CEP = re.compile(r"\b\d{2}\.?\d{3}-?\d{3}\b")
 RE_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 RE_TEL = re.compile(r"(?<!\d)(?:\(?\d{2}\)?[\s.-]?)?9?\d{4}[\s.-]?\d{4}(?!\d)")
+# telefone ROTULADO ("Tel/Fone/Celular/Contato/WhatsApp: (XX) 9XXXX-XXXX") —
+# alta precisão: o rótulo praticamente garante que é o contato da parte.
+RE_TEL_LABEL = re.compile(
+    r"(?:tel(?:efone)?|fone|celular|cel|contato|whats\s*app|whatsapp|zap)"
+    r"\s*(?:para\s+contato\s*)?[\s.:)\-]*"
+    r"(\(?\d{2}\)?[\s.-]?9?\d{4}[\s.-]?\d{4})", re.I)
 RE_ADV = re.compile(r"ADVOGADO\(A\)\s+AUTOR:\s*([^\n]+)", re.I)
-# endereço — dois formatos: petição ("domiciliad... na <END> ... CEP") e
-# execução fiscal/cadastro ("Endereço: <END> ... NNNNN-NNN").
-RE_END = re.compile(r"domiciliad[oa]s?\s+n[ao]s?\s+(.{8,180}?CEP[:\s]*\d{2}\.?\d{3}-?\d{3})", re.I | re.S)
+# endereço — formatos: petição ("residente/domiciliad... na <END> ... CEP"),
+# "com endereço na", "estabelecid... na", e exec. fiscal ("Endereço: <END> CEP").
+RE_END = re.compile(
+    r"(?:residente\s+e\s+)?domiciliad[oa]s?\s+n[ao]s?\s+"
+    r"(.{8,180}?(?:CEP[:\s]*)?\d{2}\.?\d{3}-?\d{3})", re.I | re.S)
 RE_END2 = re.compile(r"Endere[çc]o[:\s]+(.{8,170}?\d{5}-?\d{3})", re.I)
+RE_END3 = re.compile(
+    r"(?:residente|estabelecid[oa]s?|com\s+endere[çc]o|sede)\s+"
+    r"(?:e\s+domiciliad[oa]s?\s+)?n[ao]s?\s+(.{8,180}?\d{5}-?\d{3})", re.I | re.S)
 
 
 # ---------------------------------------------------------------------------
@@ -69,24 +81,81 @@ def sb(path, method="GET", body=None, prefer=None):
         return json.loads(txt) if txt.strip() else None
 
 
+# Tokens que denunciam pessoa JURÍDICA figurando como "sócio" (holding sócia de
+# outra empresa). Não têm CPF a conferir e só poluem a fila — pulamos.
+_PJ_TOKENS = (
+    " LTDA", " S/A", " S.A", " S A ", "EIRELI", " EPP", " MEI ", " ME ",
+    "HOLDING", "EMPREENDIMENT", "INCORPORA", "PARTICIPAC", "PARTICIPAÇ",
+    " S/S", "ASSOCIAD", "CONSTRUC", "CONSTRUÇ", "SERVIC", "SERVIÇ",
+    "COMERC", "COMÉRC", "INDUSTR", "INDÚSTR", "CONSULTOR", "ARQUITET",
+    "ENGENHAR", "IMOBILIAR", "AGROPEC", "TRANSPORT", "EMPRESA", "COMPANHIA",
+    " CIA ", "SOCIEDADE", "NEGOCIO", "NEGÓCIO", "INVESTIMENT", "GESTAO",
+    "GESTÃO", "FRANQUIA", "GRUPO ", "CONDOMINIO", "CONDOMÍNIO", "ESPOLIO",
+    "ESPÓLIO", "MASSA FALIDA", "FUNDO ", "COOPERATIV",
+)
+
+
+def parece_pj(nome):
+    """True se o nome aparenta ser empresa (dígito ou token corporativo)."""
+    n = f" {(nome or '').upper().strip()} "
+    if any(ch.isdigit() for ch in n):
+        return True
+    return any(tok in n for tok in _PJ_TOKENS)
+
+
+def ledger_nomes():
+    """Nomes (UPPER) já varridos numa execução REAL (hit ou miss) — pula no resume."""
+    s = set()
+    if LEDGER.exists():
+        for line in open(LEDGER, encoding="utf-8"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                s.add((json.loads(line).get("nome") or "").upper())
+            except Exception:
+                pass
+    return s
+
+
+def ledger_add(nome, mask, result, flags=""):
+    """Anexa o resultado da varredura de um sócio (só em runs reais)."""
+    with open(LEDGER, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"nome": nome, "mask": mask, "result": result,
+                            "flags": flags}, ensure_ascii=False) + "\n")
+
+
+# query base dos alvos (sócio PF do RN com CPF mascarado) — usada aqui e no painel
+ALVOS_QUERY = ("empresa_contatos?select=id,empresa_id,nome,cpf_mascarado,telefone,email,"
+               "observacoes,empresas!inner(uf)&papel=eq.socio&cpf_mascarado=not.is.null"
+               "&cpf_mascarado=like.*%2A*&empresas.uf=eq.RN&order=nome.asc")
+
+
 def carregar_socios(limit):
-    """Sócios RN pessoa-física (cpf mascarado), ainda sem enriquecimento PJe."""
-    q = ("empresa_contatos?select=id,empresa_id,nome,cpf_mascarado,telefone,email,observacoes,"
-         "empresas!inner(uf)&papel=eq.socio&cpf_mascarado=not.is.null"
-         "&cpf_mascarado=like.*%2A*&empresas.uf=eq.RN&order=nome.asc")
-    rows = sb(q + f"&limit={limit*3}") or []
-    # dedup por nome (mesmo sócio em várias empresas), pula já enriquecidos
-    vistos, alvos = set(), []
-    for r in rows:
-        nome = (r.get("nome") or "").strip()
-        if not nome or nome.upper() in vistos:
-            continue
-        if "PJe/TJRN" in (r.get("observacoes") or ""):
-            continue
-        vistos.add(nome.upper())
-        alvos.append(r)
-        if len(alvos) >= limit:
+    """Sócios RN pessoa-física ainda não varridos. Pagina o banco pulando os já
+    varridos (ledger), já enriquecidos (marcador) e PJ — o lote avança de verdade."""
+    done = ledger_nomes()
+    vistos, alvos, offset, page = set(), [], 0, 1000
+    while len(alvos) < limit:
+        rows = sb(ALVOS_QUERY + f"&limit={page}&offset={offset}") or []
+        if not rows:
             break
+        offset += page
+        for r in rows:
+            nome = (r.get("nome") or "").strip()
+            if not nome:
+                continue
+            up = nome.upper()
+            if up in vistos or up in done:
+                continue
+            if "PJe/TJRN" in (r.get("observacoes") or ""):
+                continue
+            if parece_pj(nome):
+                continue
+            vistos.add(up)
+            alvos.append(r)
+            if len(alvos) >= limit:
+                break
     return alvos
 
 
@@ -117,30 +186,93 @@ def limpa(txt):
     return t
 
 
-def parse_qualificacao(txt_raw, alvo_nome):
+_RE_RUA = re.compile(
+    r"\b(RUA|R\.|AV\.?|AVENIDA|TRAVESSA|TRAV\.?|ROD\.?|RODOVIA|ESTRADA|"
+    r"PRA[CÇ]A|QUADRA|QD\.?|CONJUNTO|CONJ\.?|SETOR|ST\.?|LOTEAMENTO|LOT\.?|"
+    r"VILA|ALAMEDA|AL\.?|LARGO|BECO|PASSAGEM)\b", re.I)
+
+
+def _janela_alvo(t, alvo_nome):
+    """Janela no bloco de QUALIFICAÇÃO do alvo (onde nome e CPF coexistem).
+    Evita pegar dado do réu/exequente e ancora telefone/endereço no alvo."""
+    up = t.upper()
+    nome_up = alvo_nome.upper().strip()
+    starts = [m.start() for m in re.finditer(re.escape(nome_up), up)]
+    if not starts:
+        toks = [w for w in nome_up.split() if len(w) > 2]
+        if toks:
+            starts = [m.start() for m in re.finditer(re.escape(toks[0]), up)]
+    if not starts:
+        return t[:1000]
+    # prefere a ocorrência cuja janela à frente contém CPF (= qualificação)
+    for s in starts:
+        if RE_CPF.search(t[s: s + 750]):
+            return t[max(0, s - 80): s + 900]
+    return t[max(0, starts[0] - 80): starts[0] + 900]
+
+
+def _ctx_advogado(txt, start):
+    """True se o trecho logo antes da posição é de advogado/OAB (telefone alheio)."""
+    ctx = txt[max(0, start - 40): start].upper()
+    return "OAB" in ctx or "ADVOGAD" in ctx
+
+
+def _telefone(jan, full):
+    # 1) rotulado na janela do alvo (mais confiável)
+    for m in RE_TEL_LABEL.finditer(jan):
+        if len(re.sub(r"\D", "", m.group(1))) in (10, 11) and not _ctx_advogado(jan, m.start()):
+            return m.group(1).strip()
+    # 2) cru na janela do alvo, evitando telefone colado em OAB/advogado
+    for m in RE_TEL.finditer(jan):
+        if len(re.sub(r"\D", "", m.group(0))) in (10, 11) and not _ctx_advogado(jan, m.start()):
+            return m.group(0).strip()
+    # 3) rotulado no documento todo (último recurso; ainda evita advogado)
+    for m in RE_TEL_LABEL.finditer(full):
+        if len(re.sub(r"\D", "", m.group(1))) in (10, 11) and not _ctx_advogado(full, m.start()):
+            return m.group(1).strip()
+    return ""
+
+
+def _limpa_endereco(end):
+    end = re.sub(r"\s+", " ", end).strip(" .,;-")
+    # corta prefixo lixo antes do logradouro ("...na cidade de X, na RUA ...")
+    m = _RE_RUA.search(end)
+    if m and m.start() < 70:
+        end = end[m.start():].strip(" .,;-")
+    return end
+
+
+def parse_qualificacao(txt_raw, alvo_nome, mask=None):
     t = limpa(txt_raw)
     out = {"cpf": "", "endereco": "", "cep": "", "telefone": "", "email": "", "advogado": ""}
-    # janela em torno do nome do alvo (evita pegar dado do réu/exequente)
-    up = t.upper()
-    i = up.find(alvo_nome.upper())
-    if i < 0:
-        i = up.find(alvo_nome.split()[0].upper())
-    jan = t[max(0, i - 250): i + 650] if i >= 0 else t[:900]
-    mcpf = RE_CPF.search(jan) or RE_CPF.search(t)
-    if mcpf:
-        out["cpf"] = mcpf.group(0)
-    # endereço: petição ("domiciliado na...") ou exec. fiscal ("Endereço: ...")
-    mend = RE_END.search(t) or RE_END2.search(jan) or RE_END2.search(t)
+    # Âncora preferida: a CPF do documento que CONFIRMA a máscara do alvo.
+    # Resolve docs com vários CPFs (autor + terceiros) e nome longe da
+    # qualificação — ancora endereço/telefone no bloco da pessoa certa.
+    anchor = None
+    if mask:
+        for mm in RE_CPF.finditer(t):
+            if cpf_confere(mm.group(0), mask):
+                out["cpf"] = mm.group(0)
+                anchor = mm.start()
+                break
+    if anchor is not None:
+        jan = t[max(0, anchor - 380): anchor + 520]
+    else:
+        jan = _janela_alvo(t, alvo_nome)
+        mcpf = RE_CPF.search(jan) or RE_CPF.search(t)
+        if mcpf:
+            out["cpf"] = mcpf.group(0)
+    # endereço: PRIORIZA a janela do alvo (evita o do réu/exequente);
+    # só cai pro texto todo se a janela não tiver endereço.
+    mend = (RE_END.search(jan) or RE_END3.search(jan) or RE_END2.search(jan)
+            or RE_END.search(t) or RE_END3.search(t) or RE_END2.search(t))
     if mend:
-        out["endereco"] = re.sub(r"\s+", " ", mend.group(1)).strip(" .,;-")
+        out["endereco"] = _limpa_endereco(mend.group(1))
         mcep = RE_CEP.search(out["endereco"])
         if mcep:
             out["cep"] = mcep.group(0)
-    # telefone/email só do trecho do autor (jan), pra não pegar o do réu/advogado
-    tels = [m.group(0) for m in RE_TEL.finditer(jan)
-            if len(re.sub(r"\D", "", m.group(0))) in (10, 11)]
-    if tels:
-        out["telefone"] = tels[0]
+    out["telefone"] = _telefone(jan, t)
+    # email só ancorado no alvo (no texto todo pegaria o do advogado/cartório)
     em = RE_EMAIL.search(jan)
     if em and "latam" not in em.group(0).lower():
         out["email"] = em.group(0)
@@ -156,6 +288,9 @@ def parse_qualificacao(txt_raw, alvo_nome):
 def pesquisar(page, nome):
     page.goto(CONSULTA, wait_until="domcontentloaded", timeout=60000)
     page.wait_for_timeout(1200)
+    # detecta sessão caída na hora (form ausente = deslogou) — não espera 30s
+    if not page.query_selector("input[id*='nomeParte']"):
+        raise RuntimeError("sessao expirada (form de consulta ausente)")
     # campo Nome da Parte + botão Pesquisar (PJe 2.x)
     page.fill("input[id*='nomeParte']", nome)
     page.click("input[value='Pesquisar'], button:has-text('Pesquisar')")
@@ -180,10 +315,24 @@ def pesquisar(page, nome):
     }""")
 
 
+def _fechar_abas_extras(page):
+    """Fecha abas órfãs de autos (que não fecharam), deixa só a consulta —
+    evita acúmulo de abas que trava a abertura de novos processos."""
+    try:
+        for pg in list(page.context.pages):
+            if pg is not page:
+                try:
+                    pg.close()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 def abrir_e_extrair(page, proc):
     """Clica no link do processo (abre nova aba), vai ao 1º doc, extrai texto, fecha."""
     ctx = page.context
-    with ctx.expect_page(timeout=30000) as pinfo:
+    with ctx.expect_page(timeout=20000) as pinfo:
         page.evaluate("""(proc) => {
           const tr=[...document.querySelectorAll('table tr')].find(t=>t.innerText.includes(proc));
           const a=tr && [...tr.querySelectorAll('a')].find(x=>x.textContent.includes(proc));
@@ -197,9 +346,9 @@ def abrir_e_extrair(page, proc):
         autos.click("a[title='Primeiro documento'], [aria-label='Primeiro documento']", timeout=8000)
     except Exception:
         pass
-    autos.wait_for_timeout(2500)
+    autos.wait_for_timeout(2000)
     txt = ""
-    for _ in range(12):
+    for k in range(16):
         txt = autos.evaluate(r"""() => {
           const ifr=[...document.querySelectorAll('iframe')].find(f=>/pdfjs|viewer\.html/.test(f.src||''));
           if(!ifr) return '';
@@ -207,9 +356,15 @@ def abrir_e_extrair(page, proc):
             let t=''; d.querySelectorAll('.textLayer').forEach(l=>t+=l.innerText+'\n');
             return t || (d.body?d.body.innerText:''); } catch(e){ return ''; }
         }""")
-        if txt and len(txt) > 150:
+        # a toolbar do PDF.js sozinha tem ~220 chars; só aceita conteúdo real
+        # (texto longo OU com CPF) — senão segue esperando o textLayer renderizar.
+        if txt and (len(txt) > 600 or RE_CPF.search(txt)):
             break
-        autos.wait_for_timeout(800)
+        # bail rápido (~7s): PDF imagem/escaneado nunca renderiza textLayer —
+        # se travou no tamanho da toolbar, não adianta esperar os 14s.
+        if k >= 7 and len(txt or "") < 300:
+            break
+        autos.wait_for_timeout(900)
     try:
         autos.close()
     except Exception:
@@ -221,9 +376,17 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=30)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--dump", action="store_true",
+                    help="salva o texto cru dos autos em pje_rn_dump.jsonl (corpus p/ reparse)")
+    ap.add_argument("--reparse", metavar="JSONL",
+                    help="reprocessa um corpus salvo (SEM browser) e mostra o rendimento")
     args = ap.parse_args()
+    # modo offline: afina o parser sobre o corpus salvo, zero requisição ao TJRN
+    if args.reparse:
+        return reparse_main(args.reparse)
     if not SUPABASE_URL or not SERVICE_KEY:
         print("ERRO: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."); sys.exit(1)
+    dump_path = ROOT / "pje_rn_dump.jsonl"  # corpus só é resetado após login OK
 
     from playwright.sync_api import sync_playwright
 
@@ -241,16 +404,75 @@ def main():
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.on("dialog", lambda d: d.accept())
         page.goto(CONSULTA, wait_until="domcontentloaded")
-        input("\n>>> Faça login no TJRN com o A3 nessa janela e tecle ENTER aqui pra começar...\n")
+        # Auto-detecta o login (não precisa teclar ENTER). NÃO navega enquanto
+        # você ainda está na tela de login — só confirma quando o form da
+        # consulta aparecer (carrega apenas autenticado). Até ~10 min.
+        print(">>> Faça LOGIN no TJRN com o A3 na janela do Chrome que abriu.", flush=True)
+        print(">>> (é a janela que foi direto para pje1g.tjrn.jus.br). Aguardando autenticação...", flush=True)
+        LOGIN_MARKERS = ("sso", "/login", "login.seam", "auth", "openid",
+                         "saml", "keycloak", "acesso.gov", "certificado")
+        ok = False
+        for it in range(300):  # ~10 min
+            try:
+                # 1) form presente em QUALQUER aba? (login pode redirecionar p/
+                #    outra aba; usa essa aba dali pra frente)
+                for pg in list(ctx.pages):
+                    try:
+                        if pg.query_selector("input[id*='nomeParte']"):
+                            page = pg
+                            ok = True
+                            break
+                    except Exception:
+                        pass
+                if ok:
+                    break
+                # 2) alguma aba já está no PJe TJRN fora da tela de login?
+                #    navega ela pra consulta e confirma o form.
+                alvo = None
+                for pg in list(ctx.pages):
+                    u = (pg.url or "").lower()
+                    if ("tjrn.jus.br" in u) and not any(m in u for m in LOGIN_MARKERS):
+                        alvo = pg
+                        break
+                # re-tenta a cada ~16s mesmo que pareça login (caso tenha caído
+                # em painel/aba que não bate os markers), sem recarregar a toda hora
+                if alvo is None and it % 8 == 7:
+                    alvo = page
+                if alvo is not None:
+                    alvo.goto(CONSULTA, wait_until="domcontentloaded", timeout=30000)
+                    alvo.wait_for_timeout(1500)
+                    if alvo.query_selector("input[id*='nomeParte']"):
+                        page = alvo
+                        ok = True
+                        break
+            except Exception:
+                pass
+            time.sleep(2)
+        if not ok:
+            print("Timeout aguardando login. Saindo."); ctx.close(); return
+        print(">>> Autenticado. Iniciando varredura.", flush=True)
+        if args.dump and dump_path.exists():
+            dump_path.unlink()  # reseta corpus só agora (login falho não apaga)
 
+        erros_seguidos = 0
         for i, s in enumerate(alvos, 1):
             nome, mask = s["nome"], s["cpf_mascarado"]
             try:
                 rows = pesquisar(page, nome)
+                erros_seguidos = 0
             except Exception as e:
-                print(f"[{i}/{len(alvos)}] {nome[:30]:30} ERRO busca: {str(e)[:60]}"); continue
+                erros_seguidos += 1
+                print(f"[{i}/{len(alvos)}] {nome[:30]:30} ERRO busca: {str(e)[:60]}")
+                if erros_seguidos >= 4:
+                    print(">>> 4 erros seguidos — sessão provavelmente caiu. "
+                          "Abortando lote (resumível, nada perdido). Relogue e rode de novo.")
+                    break
+                continue
             if not rows:
-                print(f"[{i}/{len(alvos)}] {nome[:30]:30} sem processo"); continue
+                print(f"[{i}/{len(alvos)}] {nome[:30]:30} sem processo")
+                if not args.dry_run:
+                    ledger_add(nome, mask, "sem_processo")
+                continue
             # prioriza processos onde o nome aparece no POLO ATIVO
             def ativo(r):
                 cells = r.get("cells") or []
@@ -259,10 +481,21 @@ def main():
             rows.sort(key=lambda r: (0 if ativo(r) else 1))
             got = None
             for r in rows[:4]:  # tenta até 4 processos
-                txt = abrir_e_extrair(page, r["proc"])
+                try:
+                    txt = abrir_e_extrair(page, r["proc"])
+                except Exception as e:
+                    # um processo que não abre (popup não veio, aba travou) não
+                    # pode derrubar o lote — pula pro próximo processo.
+                    print(f"     (falha ao abrir {r['proc'][:25]}: {str(e)[:40]})")
+                    _fechar_abas_extras(page)
+                    continue
                 if not txt:
                     continue
-                q = parse_qualificacao(txt, nome)
+                if args.dump:
+                    with open(dump_path, "a", encoding="utf-8") as df:
+                        df.write(json.dumps({"nome": nome, "mask": mask, "proc": r["proc"],
+                                             "ativo": ativo(r), "texto": txt}, ensure_ascii=False) + "\n")
+                q = parse_qualificacao(txt, nome, mask)
                 if q["cpf"] and cpf_confere(q["cpf"], mask):
                     q["proc"] = r["proc"]
                     got = q
@@ -275,7 +508,16 @@ def main():
                 flags = "".join(c for c, k in [("#", "cpf"), ("E", "endereco"), ("T", "telefone"), ("@", "email")] if got.get(k))
                 resultados.append({"nome": nome, "mask": mask, **got})
                 if not args.dry_run:
-                    gravar(s, got)
+                    try:
+                        gravar(s, got)
+                    except Exception as e:
+                        # erro de rede na gravação não pode derrubar lote longo —
+                        # NÃO ledgeriza (retoma esse sócio depois).
+                        print(f"     (falha ao gravar {nome[:20]}: {str(e)[:40]})")
+                        time.sleep(1)
+                        continue
+            if not args.dry_run:
+                ledger_add(nome, mask, "hit" if got else "sem_match", flags)
             print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> {flags or 'sem match'}")
             time.sleep(0.5)
         ctx.close()
@@ -287,8 +529,57 @@ def main():
     print(f"\n> {len(resultados)} sócios enriquecidos (telefone:{com_tel}). CSV: {out_csv.name}")
 
 
+def avaliar_socio(cands, nome, mask):
+    """Replica a escolha do loop ao vivo sobre candidatos JÁ extraídos.
+    cands: lista de {proc, ativo, texto}. Retorna o melhor `got` ou None."""
+    got = None
+    for c in sorted(cands, key=lambda r: 0 if r.get("ativo") else 1):
+        txt = c.get("texto") or ""
+        if not txt:
+            continue
+        q = parse_qualificacao(txt, nome, mask)
+        if q["cpf"] and cpf_confere(q["cpf"], mask):
+            q["proc"] = c["proc"]
+            return q
+        if not got and c.get("ativo") and (q["endereco"] or q["telefone"]):
+            q["proc"] = c["proc"]; q["fraco"] = True; got = q
+    return got
+
+
+def reparse_main(path):
+    """Roda o parser atual sobre o corpus salvo (--dump) — sem browser.
+    Permite iterar a extração e medir o rendimento em segundos."""
+    import collections
+    cands = collections.OrderedDict()
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            d = json.loads(line)
+            cands.setdefault((d["nome"], d["mask"]), []).append(d)
+    n_cpf = n_end = n_tel = n_mail = n_match = 0
+    for (nome, mask), cs in cands.items():
+        got = avaliar_socio(cs, nome, mask)
+        if not got:
+            print(f"  {nome[:32]:32} {len(cs):2}d -> sem match")
+            continue
+        flags = "".join(c for c, k in [("#", "cpf"), ("E", "endereco"),
+                                        ("T", "telefone"), ("@", "email")] if got.get(k))
+        n_match += 1
+        n_cpf += bool(got.get("cpf")); n_end += bool(got.get("endereco"))
+        n_tel += bool(got.get("telefone")); n_mail += bool(got.get("email"))
+        tel = got.get("telefone", "") or ""
+        end = (got.get("endereco", "") or "")[:46]
+        print(f"  {nome[:32]:32} {len(cs):2}d -> {flags:4} {tel:16} {end}")
+    tot = len(cands)
+    print(f"\n> REPARSE {tot} sócios | match {n_match} | CPF {n_cpf} | "
+          f"end {n_end} | TEL {n_tel} | email {n_mail}")
+
+
 def gravar(socio, q):
-    """Atualiza TODOS os contatos desse sócio (mesmo nome) no CRM."""
+    """Atualiza o contato do sócio no CRM, escopado por nome E máscara de CPF
+    (não sobrescreve homônimo com máscara diferente)."""
     nome = socio["nome"]
     obs = (f"PJe/TJRN (proc {q.get('proc','')}): "
            + (f"{q['endereco']}. " if q.get("endereco") else "")
@@ -299,8 +590,11 @@ def gravar(socio, q):
         patch["telefone"] = q["telefone"]
     if q.get("email"):
         patch["email"] = q["email"]
-    nome_enc = urllib.parse.quote(nome)
-    sb(f"empresa_contatos?nome=eq.{nome_enc}", method="PATCH", body=patch, prefer="return=minimal")
+    flt = f"empresa_contatos?nome=eq.{urllib.parse.quote(nome)}"
+    mask = socio.get("cpf_mascarado")
+    if mask:
+        flt += f"&cpf_mascarado=eq.{urllib.parse.quote(mask)}"
+    sb(flt, method="PATCH", body=patch, prefer="return=minimal")
 
 
 if __name__ == "__main__":

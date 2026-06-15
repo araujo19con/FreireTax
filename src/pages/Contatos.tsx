@@ -3,10 +3,12 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
+import { ContatosCoverageCard } from "@/components/ContatosCoverageCard";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -30,6 +32,7 @@ import {
   Download,
   Loader2,
   X,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { EmpresaContato, PapelContato, OrigemContato } from "@/lib/contatos";
@@ -107,6 +110,7 @@ export default function Contatos() {
   const [soPje, setSoPje] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState(new Set<string>());
 
   // debounce da busca
   useEffect(() => {
@@ -287,6 +291,67 @@ export default function Contatos() {
     setPage(0);
   };
 
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelected(new Set(rows.map((r) => r.id)));
+    } else {
+      setSelected(new Set());
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    const newSelected = new Set(selected);
+    if (checked) {
+      newSelected.add(id);
+    } else {
+      newSelected.delete(id);
+    }
+    setSelected(newSelected);
+  };
+
+  const copiarTelefones = () => {
+    const selectedRows = rows.filter((r) => selected.has(r.id));
+    const telefones = selectedRows
+      .filter((r) => r.telefone)
+      .map((r) => `${r.nome}: ${formatPhoneBR(r.telefone)}`)
+      .join("\n");
+    if (!telefones) {
+      toast.info("Nenhum contato selecionado com telefone.");
+      return;
+    }
+    void navigator.clipboard.writeText(telefones);
+    toast.success(`${selectedRows.filter((r) => r.telefone).length} telefone(s) copiado(s).`);
+  };
+
+  const copiarEmails = () => {
+    const selectedRows = rows.filter((r) => selected.has(r.id));
+    const emails = selectedRows
+      .filter((r) => r.email)
+      .map((r) => r.email)
+      .join("; ");
+    if (!emails) {
+      toast.info("Nenhum contato selecionado com email.");
+      return;
+    }
+    void navigator.clipboard.writeText(emails);
+    toast.success(`${selectedRows.filter((r) => r.email).length} email(s) copiado(s).`);
+  };
+
+  const copiarNomes = () => {
+    const selectedRows = rows.filter((r) => selected.has(r.id));
+    const nomes = selectedRows.map((r) => r.nome).join("\n");
+    if (!nomes) {
+      toast.info("Nenhum contato selecionado.");
+      return;
+    }
+    void navigator.clipboard.writeText(nomes);
+    toast.success(`${selectedRows.length} nome(s) copiado(s).`);
+  };
+
+  const limparSelecao = () => {
+    setSelected(new Set());
+  };
+
   return (
     <div className="animate-fade-in space-y-5">
       <PageHeader
@@ -294,6 +359,9 @@ export default function Contatos() {
         description="Busque e acione qualquer contato — decisores, sócios e canais de todas as empresas."
         icon={<Contact className="h-7 w-7" />}
       />
+
+      {/* Dashboard de cobertura */}
+      <ContatosCoverageCard />
 
       {/* Busca + filtros */}
       <Card className="space-y-3 p-4 shadow-card">
@@ -306,6 +374,48 @@ export default function Contatos() {
             className="pl-9"
           />
         </div>
+
+        {/* Ações em lote */}
+        {selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-md bg-primary/5 p-2">
+            <span className="text-xs font-medium text-primary">{selected.size} selecionado(s)</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={copiarNomes}
+              title="Copiar nomes dos contatos selecionados"
+            >
+              <Copy className="mr-1 h-3 w-3" /> Copiar nomes
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={copiarTelefones}
+              title="Copiar telefones dos contatos selecionados"
+            >
+              <Phone className="mr-1 h-3 w-3" /> Copiar telefones
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={copiarEmails}
+              title="Copiar emails dos contatos selecionados"
+            >
+              <Mail className="mr-1 h-3 w-3" /> Copiar emails
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-7 text-xs"
+              onClick={limparSelecao}
+            >
+              <X className="mr-1 h-3 w-3" /> Limpar
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           <Select value={papel} onValueChange={(v) => setPapel(v as PapelContato | "todos")}>
@@ -430,8 +540,24 @@ export default function Contatos() {
         />
       ) : (
         <div className="space-y-2">
+          {rows.length > 0 && (
+            <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+              <Checkbox
+                checked={selected.size === rows.length && rows.length > 0}
+                indeterminate={selected.size > 0 && selected.size < rows.length}
+                onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
+                aria-label="Selecionar todos da página"
+              />
+              <span>Selecionar todos da página</span>
+            </div>
+          )}
           {rows.map((c) => (
-            <ContatoLinha key={c.id} c={c} />
+            <ContatoLinha
+              key={c.id}
+              c={c}
+              selected={selected.has(c.id)}
+              onSelect={(checked) => handleSelectOne(c.id, checked)}
+            />
           ))}
         </div>
       )}
@@ -466,7 +592,15 @@ export default function Contatos() {
   );
 }
 
-function ContatoLinha({ c }: { c: ContatoRow }) {
+function ContatoLinha({
+  c,
+  selected,
+  onSelect,
+}: {
+  c: ContatoRow;
+  selected?: boolean;
+  onSelect?: (checked: boolean) => void;
+}) {
   const empresaNome = c.empresas?.nome ?? "—";
   const tel = telLink(c.telefone);
   const wa = c.whatsapp ? waLink(c.telefone, mensagemWhatsappPadrao(empresaNome, c.nome)) : null;
@@ -474,7 +608,17 @@ function ContatoLinha({ c }: { c: ContatoRow }) {
   const lkd = linkedinUrl(c.linkedin);
 
   return (
-    <Card className="flex items-center justify-between gap-3 p-3 shadow-card transition-colors hover:bg-muted/30">
+    <Card
+      className={`flex items-center justify-between gap-3 p-3 shadow-card transition-colors hover:bg-muted/30 ${selected ? "bg-primary/5" : ""}`}
+    >
+      {onSelect && (
+        <Checkbox
+          checked={selected}
+          onCheckedChange={onSelect}
+          aria-label={`Selecionar ${c.nome}`}
+          className="shrink-0"
+        />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           {c.principal && (

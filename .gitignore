@@ -46,3 +46,7 @@ supabase/.branches/
 # PJe skiptrace (perfil do browser + saída local, nunca versionar)
 .pje-chrome-profile/
 pje_rn_skiptrace.csv
+pje_rn_dump.jsonl
+pje_rn_ledger.jsonl
+tools/pje-env.local.ps1
+tools/_diag_dump.py
