@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
 Roda o skip-trace PJe em background com monitoramento ao vivo.

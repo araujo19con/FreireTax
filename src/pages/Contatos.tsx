@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { ContatosCoverageCard } from "@/components/ContatosCoverageCard";
+import { ContatosGeographyCard } from "@/components/ContatosGeographyCard";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -360,8 +361,11 @@ export default function Contatos() {
         icon={<Contact className="h-7 w-7" />}
       />
 
-      {/* Dashboard de cobertura */}
-      <ContatosCoverageCard />
+      {/* Dashboards */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <ContatosCoverageCard />
+        <ContatosGeographyCard />
+      </div>
 
       {/* Busca + filtros */}
       <Card className="space-y-3 p-4 shadow-card">
@@ -544,11 +548,15 @@ export default function Contatos() {
             <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
               <Checkbox
                 checked={selected.size === rows.length && rows.length > 0}
-                indeterminate={selected.size > 0 && selected.size < rows.length}
                 onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
                 aria-label="Selecionar todos da página"
               />
-              <span>Selecionar todos da página</span>
+              <span>
+                Selecionar todos da página
+                {selected.size > 0 && selected.size < rows.length && (
+                  <span className="ml-1 text-primary">({selected.size})</span>
+                )}
+              </span>
             </div>
           )}
           {rows.map((c) => (
