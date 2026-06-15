@@ -18,37 +18,40 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-# Mapa de TJs: url, estado, nome do tribunal
+# Mapa de TJs: url, estado, nome, SISTEMA de processo eletrônico.
+# ⚠️ LIÇÃO (verificado 15/06/2026): nem todo TJ usa PJe. O parser do PJe SÓ serve
+# pra estados PJe. RS/SC usam eproc (ver eproc_skiptrace.py); PR abandonou o PJe
+# (virou Projudi). Por isso "system" importa mais que "has_cloudflare".
 TRIBUNALS = {
     "rn": {
         "url": "pje1g.tjrn.jus.br",
         "state": "RN",
         "name": "TJRN",
-        "has_cloudflare": False,  #  Testado, sem CF
+        "system": "pje",  # ✓ acessível, scraper pronto (pje_rn_skiptrace.py)
     },
     "pb": {
         "url": "pje1g.tjpb.jus.br",
         "state": "PB",
         "name": "TJPB",
-        "has_cloudflare": True,  #  Tem CF, tentaremos mesmo assim
+        "system": "pje",  # PJe, mas Cloudflare bloqueia o domínio todo -> inviável
     },
     "pr": {
-        "url": "pje.tjpr.jus.br",
+        "url": "projudi.tjpr.jus.br",
         "state": "PR",
         "name": "TJPR",
-        "has_cloudflare": True,  #  Tem CF
+        "system": "projudi",  # PJe DESATIVADO; processos migrados p/ Projudi
     },
     "rs": {
-        "url": "pje.tjrs.jus.br",
+        "url": "eproc1g.tjrs.jus.br",
         "state": "RS",
         "name": "TJRS",
-        "has_cloudflare": True,  #  Tem CF
+        "system": "eproc",  # eproc (TRF4) -> eproc_skiptrace.py --tj rs
     },
     "sc": {
-        "url": "pje1g.tjsc.jus.br",
+        "url": "eproc1g.tjsc.jus.br",
         "state": "SC",
         "name": "TJSC",
-        "has_cloudflare": True,  #  Tem CF
+        "system": "eproc",  # eproc (TRF4) -> eproc_skiptrace.py --tj sc
     },
 }
 
@@ -196,14 +199,17 @@ def main():
     args = parser.parse_args()
 
     if args.check:
-        print("CHECK Verificando acessibilidade dos Tribunais...\n")
+        print("CHECK Acessibilidade + sistema de cada Tribunal...\n")
+        scraper = {"pje": "pje_rn_skiptrace.py", "eproc": "eproc_skiptrace.py", "projudi": "(TODO)"}
         for tj_code, info in TRIBUNALS.items():
             result = check_tribunal_access(tj_code)
             status = "OK" if result["accessible"] else "FAIL"
             cf = " (Cloudflare)" if result.get("cloudflare") else ""
+            sysname = info.get("system", "?")
             print(
-                f"{status} {info['name']:6} {info['state']:2} "
-                f"http={result.get('status', '?'):3} {cf}"
+                f"{status:4} {info['name']:6} {info['state']:2} "
+                f"sys={sysname:8} scraper={scraper.get(sysname, '?'):22}"
+                f"http={result.get('status', '?')}{cf}"
             )
             if result.get("error"):
                 print(f"       Error: {result['error']}", file=sys.stderr)

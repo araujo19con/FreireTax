@@ -256,23 +256,32 @@ export default function EnriquecimentoProgress() {
         ))}
       </div>
 
-      {/* Roadmap */}
+      {/* Roadmap — sistema de processo eletrônico difere por estado */}
       <Card className="space-y-3 bg-muted/30 p-4 shadow-card">
-        <div className="text-sm font-semibold">Próximos passos sugeridos</div>
+        <div className="text-sm font-semibold">Próximos passos por estado</div>
         <ul className="space-y-1 text-xs text-muted-foreground">
           <li>
-            • <strong>RN (7.052)</strong> → Rodar PJe (794/7052, faltam 6.258)
+            • <strong>RN (7.052)</strong> — PJe ✓ ativo.{" "}
+            <code className="text-[10px]">tools/lote.ps1 150</code> (faltam ~6.258)
           </li>
           <li>
-            • <strong>PR (2.708)</strong> → Testarscrape TJPR (sem Cloudflare)
+            • <strong>RS + SC (4.567)</strong> — usam <strong>eproc</strong> (TRF4), busca por nome.{" "}
+            <code className="text-[10px]">eproc_skiptrace.py --tj rs --inspect</code> → calibra
+            seletores, depois roda igual ao RN
           </li>
           <li>
-            • <strong>RS, SC (4.567)</strong> → Aguardar novo export DRIVA ou API
+            • <strong>PR (2.708)</strong> — usa <strong>Projudi</strong> (PJe foi desativado);
+            scraper à parte ainda não construído
           </li>
           <li>
-            • <strong>PB (988)</strong> → TJPB tem Cloudflare, talvez DRIVA seja mais rápido
+            • <strong>PB (988)</strong> — PJe mas Cloudflare bloqueia o domínio; via DRIVA é mais
+            viável
           </li>
         </ul>
+        <div className="rounded bg-amber-500/10 p-2 text-[10px] text-amber-700">
+          ⚠️ Nem todo TJ usa PJe: RS/SC=eproc, PR=Projudi. O parser de qualificação
+          (CPF/endereço/telefone) é reusado entre sistemas — só os seletores do DOM mudam.
+        </div>
       </Card>
     </div>
   );
