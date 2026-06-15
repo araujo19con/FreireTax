@@ -1,6 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-esaj_skiptrace.py — enriquece CONTATO dos sócios de SP a partir do e-SAJ (TJSP),
+esaj_skiptrace.py — tentativa de enriquecer CONTATO dos sócios de SP via e-SAJ (TJSP).
+
+⛔ VEREDITO (testado 15/06 via CDP+A3): e-SAJ NÃO é viável p/ skip-trace.
+A busca por nome FUNCIONA e os sócios SP TÊM processos no e-SAJ (ex: AGNES=5,
+ALBERTO=2), MAS a página do processo (show.do) mostra só os NOMES das partes —
+SEM CPF/endereço. A qualificação está nos AUTOS ("Visualizar autos" / pasta
+digital), que o e-SAJ só libera a quem é "advogado(a) NESSE processo" (habilitado)
+ou tem a "senha do processo" (dada às partes). Não sendo parte, o CPF é inacessível.
+Isso difere do PJe (RN) e do eproc, onde qualquer advogado logado lê a petição.
+Logo SP não tem caminho judicial: eproc-SP ~0 cobertura + e-SAJ autos bloqueados.
+Script mantido como referência (a busca/listagem funcionam; o que falta é o acesso
+aos autos, que é uma barreira de habilitação, não técnica).
+
+----
+enriquece CONTATO dos sócios de SP a partir do e-SAJ (TJSP),
 reusando a SESSÃO LOGADA (A3) via CDP no Chrome real.
 
 POR QUÊ: TJSP usa e-SAJ (legado, a maior parte dos processos) + eproc (novo, pouco
@@ -202,8 +216,9 @@ def pesquisar(page, nome):
 
 def abrir_e_extrair(page, proc, link):
     """Abre o processo (show.do) e extrai o texto. Tenta a petição/documentos."""
-    root = "https://esaj.tjsp.jus.br"
-    url = link if link.startswith("http") else root + ("" if link.startswith("/") else "/cpopg/") + link.lstrip("/")
+    # urljoin resolve corretamente links relativos ('show.do?...'), absolutos
+    # ('/cpopg/show.do?...') e completos, usando a URL atual (search.do) como base.
+    url = urllib.parse.urljoin(page.url, link)
     page.goto(url, wait_until="domcontentloaded", timeout=40000)
     page.wait_for_timeout(2000)
     # texto da página do processo (partes/movimentações) — já pode ter qualificação

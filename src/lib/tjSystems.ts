@@ -101,11 +101,11 @@ export const TJ_SYSTEMS: Record<string, TJInfo> = {
   SP: {
     uf: "SP",
     system: "esaj",
-    status: "todo",
+    status: "blocked",
     access: "public+a3",
-    scraper: null,
+    scraper: "esaj_skiptrace.py (inviável)",
     base: "https://esaj.tjsp.jus.br/cpopg/open.do",
-    note: "e-SAJ (consulta 1º grau cpopg). Scraper próprio ainda não construído.",
+    note: "INVIÁVEL p/ skip-trace: busca acha os processos, mas o e-SAJ só libera os autos (com CPF/endereço) a advogado HABILITADO no processo. eproc-SP ~0 cobertura. Sem caminho judicial p/ SP.",
   },
   DF: {
     uf: "DF",
