@@ -62,15 +62,21 @@ TJ = {
     },
 }
 
-# --- SELETORES A CALIBRAR via --inspect (palpite a partir do eproc padrão) ----
-# A tela de consulta autenticada do eproc tem um campo "Nome da parte" e um botão
-# "Consultar". Os ids reais costumam ser txtParte/nomeParte e sbmNovo/Consultar.
-SEL_NOME = "input#txtParte, input[name='txtParte'], input[id*='Parte'], input[name*='nome']"
-SEL_PESQUISAR = "input#sbmConsultar, button:has-text('Consultar'), input[value*='Consultar'], input[type='submit']"
-# link/checkbox p/ o 1º documento dentro dos autos (eproc lista os eventos):
-SEL_DOC = "a[href*='acessar_documento'], a[href*='documento'], table a"
+# --- SELETORES (extraídos do HTML real do eproc/TRF4 em 15/06; o eproc estadual
+#     RS/SC usa o MESMO codebase, então estes ids devem bater. Confirme c/ --inspect
+#     se algo falhar — a consulta eproc é: aceita LGPD -> escolhe "Nome da Parte"
+#     no selForma -> digita no txtValor -> clica Pesquisar). -----------------
+SEL_LGPD = "#btnAceitoPoliticaPrivacidade"            # botão "Aceito" (consentimento LGPD)
+SEL_FORMA = "#selFormaI, select[name='selForma']"      # tipo de consulta (value 'NO'=Nome da Parte)
+SEL_VALOR = "#txtValorI, input[name='txtValor']"       # campo onde se digita o nome
+SEL_PESQUISAR = "#botaoEnviar, input[value*='Pesquisar']"
+# detecta "estou na tela de consulta" (qualquer um dos campos acima presente):
+SEL_NOME = SEL_VALOR
+# link p/ o 1º documento dentro dos autos (eproc lista os eventos):
+SEL_DOC = "a[href*='acessar_documento'], a[href*='documento'], a[onclick*='documento'], table a"
 # onde o texto do documento aparece (eproc renderiza PDF em iframe OU HTML inline):
 SEL_TEXTO_IFRAME = "iframe"
+FORMA_NOME = "NO"   # value da option "Nome da Parte" no selForma
 
 
 def cfg(tj):
@@ -158,7 +164,8 @@ def aguardar_login(ctx, base):
     for it in range(300):  # ~10 min
         for pg in list(ctx.pages):
             try:
-                if pg.query_selector(SEL_NOME):
+                _aceitar_lgpd(pg)  # o modal LGPD pode esconder o form
+                if pg.query_selector(SEL_VALOR):
                     return pg
             except Exception:
                 pass
@@ -169,7 +176,8 @@ def aguardar_login(ctx, base):
                 try:
                     pg.goto(base, wait_until="domcontentloaded", timeout=30000)
                     pg.wait_for_timeout(1200)
-                    if pg.query_selector(SEL_NOME):
+                    _aceitar_lgpd(pg)
+                    if pg.query_selector(SEL_VALOR):
                         return pg
                 except Exception:
                     pass
@@ -177,15 +185,35 @@ def aguardar_login(ctx, base):
     return None
 
 
+def _aceitar_lgpd(page):
+    """Clica no 'Aceito' da política de privacidade (LGPD) se estiver presente."""
+    try:
+        el = page.query_selector(SEL_LGPD)
+        if el and el.is_visible():
+            el.click()
+            page.wait_for_timeout(600)
+    except Exception:
+        pass
+
+
 def pesquisar(page, base, nome):
-    """Busca por nome da parte no eproc. Retorna lista de {proc, idx, texto}."""
-    # garante estar na tela de consulta (eproc: consulta processual por parte)
-    if not page.query_selector(SEL_NOME):
+    """Busca por nome da parte no eproc (aceita LGPD -> seleciona 'Nome da Parte'
+    no selForma -> digita no txtValor -> Pesquisar). Retorna [{proc, idx, texto}]."""
+    # garante estar na tela de consulta
+    if not page.query_selector(SEL_VALOR):
         page.goto(base, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(1000)
-    if not page.query_selector(SEL_NOME):
+    _aceitar_lgpd(page)
+    if not page.query_selector(SEL_VALOR):
         raise RuntimeError("sessao expirada (campo de consulta ausente)")
-    page.fill(SEL_NOME, nome)
+    # 1) seleciona "Nome da Parte" no dropdown de tipo (dispara onchange do eproc)
+    try:
+        page.select_option(SEL_FORMA, FORMA_NOME)
+        page.wait_for_timeout(500)
+    except Exception:
+        pass  # se não houver dropdown (layout difere), segue com o campo de valor
+    # 2) digita o nome e pesquisa
+    page.fill(SEL_VALOR, nome)
     page.click(SEL_PESQUISAR)
     page.wait_for_timeout(2500)
     # lê linhas com número CNJ
