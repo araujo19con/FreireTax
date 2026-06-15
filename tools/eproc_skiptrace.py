@@ -60,6 +60,15 @@ TJ = {
         "base": "https://eproc1g.tjsc.jus.br/eproc/",
         "marker": "eproc/TJSC",
     },
+    # TRF4 (Justiça Federal RS/SC/PR): consulta pública SEM captcha/login — usado
+    # p/ TESTAR a mecânica do scraper eproc end-to-end (mesma engine do estadual).
+    # NB: só tem processos FEDERAIS (não acha os sócios, que estão na Justiça
+    # ESTADUAL); serve p/ validar busca/seletores/parsing, não p/ enriquecer.
+    "trf4": {
+        "uf": "--", "nome": "TRF4",
+        "base": "https://consulta.trf4.jus.br/trf4/controlador.php?acao=consulta_processual_pesquisa",
+        "marker": "eproc/TRF4", "public": True,
+    },
 }
 
 # --- SELETORES (extraídos do HTML real do eproc/TRF4 em 15/06; o eproc estadual
@@ -366,6 +375,55 @@ def _dump_frames(page, tag):
             print("    fields:", json.dumps(info["fields"], ensure_ascii=False)[:600], flush=True)
 
 
+def test_publico(tj, sample, headless=True):
+    """Testa a MECÂNICA do scraper eproc contra uma consulta PÚBLICA (TRF4) — sem
+    login/A3. Valida: aceite LGPD, select 'Nome da Parte', busca, parsing das linhas
+    de resultado e abertura do 1º processo. NÃO enriquece (dados federais)."""
+    from playwright.sync_api import sync_playwright
+    c = cfg(tj)
+    sample = sample or "MARIA DA SILVA"
+    print(f">>> TESTE PÚBLICO {c['nome']} (headless={headless}) — busca: '{sample}'", flush=True)
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            _profile(tj), headless=headless, viewport={"width": 1280, "height": 900})
+        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto(c["base"], wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(1500)
+        _aceitar_lgpd(page)
+        # snapshot do form (confirma SEL_FORMA/VALOR)
+        print(">>> [1/3] Campos do form:", flush=True)
+        try:
+            print("   " + json.dumps(_snapshot_campos(page), ensure_ascii=False)[:700], flush=True)
+        except Exception as e:
+            print(f"   (erro snapshot: {e})", flush=True)
+        (ROOT / f"eproc_{tj}_consulta.html").write_text(page.content(), encoding="utf-8")
+        # busca
+        print(f">>> [2/3] Buscando '{sample}'...", flush=True)
+        rows = []
+        try:
+            rows = pesquisar(page, c["base"], sample)
+            print(f"   {len(rows)} processos encontrados.", flush=True)
+            for r in rows[:5]:
+                print(f"     - {r['proc']} | {r['texto'][:60]}", flush=True)
+            (ROOT / f"eproc_{tj}_resultados.html").write_text(page.content(), encoding="utf-8")
+        except Exception as e:
+            print(f"   ERRO na busca: {e}", flush=True)
+        # abre 1º processo
+        if rows:
+            print(f">>> [3/3] Abrindo {rows[0]['proc']}...", flush=True)
+            try:
+                txt = abrir_e_extrair(page, rows[0]["proc"])
+                cpf = "SIM" if RE_CPF.search(txt or "") else "nao"
+                print(f"   texto extraído: {len(txt or '')} chars | tem CPF: {cpf}", flush=True)
+                if txt:
+                    print(f"   amostra: {txt[:200].strip()}", flush=True)
+            except Exception as e:
+                print(f"   ERRO ao abrir/extrair: {e}", flush=True)
+        ctx.close()
+    print(">>> Teste concluído. (snapshots eproc_%s_*.html)" % tj, flush=True)
+
+
 def inspect(tj, sample=None):
     """MODO DESCOBERTA: aguarda login (por URL/menu, NÃO pelo form), dumpa a sessão
     autenticada (home + links + frames + campos) pra mapear o caminho da consulta.
@@ -395,7 +453,16 @@ def inspect(tj, sample=None):
                     pass
             if page_log:
                 break
-            time.sleep(2)
+            # a cada ~16s, mostra as URLs abertas (ajuda a depurar a detecção do login)
+            if it % 8 == 7:
+                urls = []
+                for pg in list(ctx.pages):
+                    try:
+                        urls.append((pg.url or "")[:90])
+                    except Exception:
+                        pass
+                print(f"   [{it*2}s] abas: {urls}", flush=True)
+
         if not page_log:
             print("Timeout aguardando login (12 min). Saindo.", flush=True)
             ctx.close(); return
@@ -554,12 +621,19 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--dump", action="store_true", help="salva texto cru p/ reparse offline")
     ap.add_argument("--inspect", action="store_true", help="loga e dumpa a tela p/ calibrar seletores")
-    ap.add_argument("--sample", metavar="NOME", help="nome p/ a busca de teste do --inspect (default: 1º sócio do estado)")
+    ap.add_argument("--public", action="store_true", help="testa contra consulta pública (TRF4) sem login/A3")
+    ap.add_argument("--headed", action="store_true", help="com --public: abre o browser visível (default headless)")
+    ap.add_argument("--sample", metavar="NOME", help="nome p/ a busca de teste (--inspect/--public)")
     ap.add_argument("--reparse", metavar="JSONL", help="reprocessa corpus salvo (sem browser)")
     args = ap.parse_args()
 
     if args.reparse:
         return reparse_main(args.reparse)
+    # teste público (TRF4) não precisa de Supabase nem A3
+    if args.public:
+        if not args.tj:
+            args.tj = "trf4"
+        return test_publico(args.tj, args.sample, headless=not args.headed)
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.")
     if not args.tj:
