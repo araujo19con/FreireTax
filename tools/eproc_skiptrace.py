@@ -166,6 +166,16 @@ def _profile(tj):
     return str(ROOT / f".eproc-{tj}-chrome-profile")
 
 
+def _ctx_cdp(p, port):
+    """Conecta no Chrome REAL do usuário (já aberto com --remote-debugging-port).
+    Resolve o login Keycloak+A3 que o Chromium do Playwright não consegue: o A3
+    funciona nativamente no Chrome normal (cert store do Windows). Retorna (browser, ctx)."""
+    browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
+    if not browser.contexts:
+        raise RuntimeError("CDP conectou mas não há contexto/aba. Abra uma aba no Chrome.")
+    return browser, browser.contexts[0]
+
+
 def aguardar_login(ctx, base):
     """Espera até a busca por parte estar acessível (logado). Não navega enquanto
     a URL ainda é de login/SSO. Até ~10 min. Retorna a page logada."""
@@ -431,25 +441,34 @@ def test_publico(tj, sample, headless=True):
     print(">>> Teste concluído. (snapshots eproc_%s_*.html)" % tj, flush=True)
 
 
-def inspect(tj, sample=None):
+def inspect(tj, sample=None, cdp=False, port=9222):
     """MODO DESCOBERTA: aguarda login (por URL/menu, NÃO pelo form), dumpa a sessão
     autenticada (home + links + frames + campos) pra mapear o caminho da consulta.
-    Tenta achar/clicar 'Consulta Processual' e re-dumpa. Salva tudo em eproc_disc_*."""
+    Tenta achar/clicar 'Consulta Processual' e re-dumpa. Salva tudo em eproc_disc_*.
+
+    cdp=True: conecta no Chrome REAL do usuário (--remote-debugging-port) — resolve
+    o login Keycloak+A3 que o Chromium do Playwright não consegue apresentar."""
     from playwright.sync_api import sync_playwright
     c = cfg(tj)
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            _profile(tj), headless=False, viewport={"width": 1280, "height": 900})
-        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            page.goto(c["base"], wait_until="domcontentloaded", timeout=60000)
-        except Exception:
-            pass
-        print(">>> Faça LOGIN no eproc-" + tj.upper() + " com o A3 na janela do Chrome.", flush=True)
-        print(">>> (detecto o login automaticamente — SEM PRESSA, espero ~40 min e NÃO fecho a janela)", flush=True)
+        browser = None
+        if cdp:
+            browser, ctx = _ctx_cdp(p, port)
+            print(f">>> Conectado ao Chrome real via CDP (porta {port}).", flush=True)
+            print(f">>> Abra o eproc-{tj.upper()} ({c['base']}) e LOGUE com o A3 nesse Chrome.", flush=True)
+        else:
+            ctx = p.chromium.launch_persistent_context(
+                _profile(tj), headless=False, viewport={"width": 1280, "height": 900})
+            ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
+            page0 = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                page0.goto(c["base"], wait_until="domcontentloaded", timeout=60000)
+            except Exception:
+                pass
+            print(">>> Faça LOGIN no eproc-" + tj.upper() + " com o A3 na janela do Chrome.", flush=True)
+        print(">>> (detecto o login automaticamente — SEM PRESSA, espero ~40 min)", flush=True)
         page_log = None
-        for it in range(1200):  # ~40 min — não fechar a janela na mão do usuário
+        for it in range(1200):  # ~40 min
             for pg in list(ctx.pages):
                 try:
                     _aceitar_lgpd(pg)
@@ -460,7 +479,6 @@ def inspect(tj, sample=None):
                     pass
             if page_log:
                 break
-            # a cada ~16s, mostra as URLs abertas (ajuda a depurar a detecção do login)
             if it % 8 == 7:
                 urls = []
                 for pg in list(ctx.pages):
@@ -471,8 +489,10 @@ def inspect(tj, sample=None):
                 print(f"   [{it*2}s] abas: {urls}", flush=True)
 
         if not page_log:
-            print("Timeout aguardando login (12 min). Saindo.", flush=True)
-            ctx.close(); return
+            print("Timeout aguardando login (~40 min). Saindo.", flush=True)
+            if not cdp:
+                ctx.close()
+            return
         page = page_log
         print(f">>> Autenticado! URL: {page.url}", flush=True)
 
@@ -510,7 +530,12 @@ def inspect(tj, sample=None):
             input(">>> ENTER pra fechar (ou navegue no Chrome até a consulta e veja o HTML).")
         else:
             page.wait_for_timeout(4000)
-        ctx.close()
+        # NUNCA fechar o Chrome do usuário no modo CDP — só desconecta
+        if cdp:
+            if browser:
+                browser.close()  # fecha só a conexão CDP, não o Chrome
+        else:
+            ctx.close()
 
 
 # ---------------------------------------------------------------------------
@@ -630,6 +655,8 @@ def main():
     ap.add_argument("--inspect", action="store_true", help="loga e dumpa a tela p/ calibrar seletores")
     ap.add_argument("--public", action="store_true", help="testa contra consulta pública (TRF4) sem login/A3")
     ap.add_argument("--headed", action="store_true", help="com --public: abre o browser visível (default headless)")
+    ap.add_argument("--cdp", action="store_true", help="conecta no Chrome real (--remote-debugging-port) p/ login A3 Keycloak")
+    ap.add_argument("--port", type=int, default=9222, help="porta CDP do Chrome (default 9222)")
     ap.add_argument("--sample", metavar="NOME", help="nome p/ a busca de teste (--inspect/--public)")
     ap.add_argument("--reparse", metavar="JSONL", help="reprocessa corpus salvo (sem browser)")
     args = ap.parse_args()
@@ -646,7 +673,7 @@ def main():
     if not args.tj:
         sys.exit("ERRO: informe --tj rs|sc (PR usa Projudi — script à parte).")
     if args.inspect:
-        return inspect(args.tj, args.sample)
+        return inspect(args.tj, args.sample, cdp=args.cdp, port=args.port)
     run(args.tj, args.limit, args.dry_run, args.dump)
 
 
