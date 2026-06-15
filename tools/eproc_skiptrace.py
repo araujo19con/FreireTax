@@ -298,9 +298,29 @@ def gravar(tj, socio, q):
 # ---------------------------------------------------------------------------
 # Modo --inspect: 1 passada pra calibrar seletores (loga, screenshot + HTML)
 # ---------------------------------------------------------------------------
-def inspect(tj):
+def _snapshot_campos(page):
+    """Lista inputs/selects/options/botões da página (p/ confirmar seletores)."""
+    return page.evaluate(r"""() => {
+      const inp=[...document.querySelectorAll('input')].map(e=>({
+        tag:'input', id:e.id, name:e.name, type:e.type, ph:e.placeholder}));
+      const sel=[...document.querySelectorAll('select')].map(e=>({
+        tag:'select', id:e.id, name:e.name,
+        options:[...e.options].map(o=>({value:o.value, txt:o.text.trim()})).slice(0,15)}));
+      const btn=[...document.querySelectorAll('button,input[type=submit],input[type=button]')]
+        .map(e=>({tag:e.tagName, id:e.id, name:e.name, val:e.value, txt:(e.innerText||'').slice(0,30)}));
+      return {inputs: inp.slice(0,40), selects: sel, buttons: btn.slice(0,30)};
+    }""")
+
+
+def inspect(tj, sample=None):
+    """Calibração completa em 1 passada: confirma o form de consulta, faz UMA busca
+    de teste (sócio real), captura a página de resultados e abre o 1º processo —
+    pra calibrar SEL_FORMA/SEL_VALOR/SEL_PESQUISAR E o SEL_DOC (abertura do doc)."""
     from playwright.sync_api import sync_playwright
     c = cfg(tj)
+    if not sample:
+        alvos = carregar_socios(tj, 1)
+        sample = alvos[0]["nome"] if alvos else "SILVA"
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             _profile(tj), headless=False, viewport={"width": 1280, "height": 900})
@@ -308,22 +328,48 @@ def inspect(tj):
         page = aguardar_login(ctx, c["base"])
         if not page:
             print("Timeout no login."); ctx.close(); return
-        print(">>> Logado. Salvando snapshot da tela de consulta...", flush=True)
-        html = page.content()
-        (ROOT / f"eproc_{tj}_consulta.html").write_text(html, encoding="utf-8")
+        # 1) snapshot do FORM de consulta
+        print(">>> [1/3] Form de consulta:", flush=True)
+        (ROOT / f"eproc_{tj}_consulta.html").write_text(page.content(), encoding="utf-8")
         page.screenshot(path=str(ROOT / f"eproc_{tj}_consulta.png"), full_page=True)
-        # lista candidatos a campo de nome e botão
-        cand = page.evaluate(r"""() => {
-          const inp=[...document.querySelectorAll('input')].map(e=>({
-            tag:'input', id:e.id, name:e.name, type:e.type, ph:e.placeholder, val:e.value}));
-          const btn=[...document.querySelectorAll('button,input[type=submit],input[type=button]')]
-            .map(e=>({tag:e.tagName, id:e.id, name:e.name, val:e.value, txt:(e.innerText||'').slice(0,30)}));
-          return {inputs: inp.slice(0,40), buttons: btn.slice(0,30)};
-        }""")
-        print(json.dumps(cand, ensure_ascii=False, indent=2))
-        print(f"\n>>> Snapshot salvo: eproc_{tj}_consulta.html / .png", flush=True)
-        print(">>> Ajuste SEL_NOME/SEL_PESQUISAR no topo do script com base nos ids acima.", flush=True)
-        input(">>> ENTER pra fechar (ou inspecione o Chrome antes).")
+        print(json.dumps(_snapshot_campos(page), ensure_ascii=False, indent=1), flush=True)
+
+        # 2) busca de teste com um sócio real -> página de resultados
+        print(f"\n>>> [2/3] Busca de teste: '{sample}'", flush=True)
+        rows = []
+        try:
+            rows = pesquisar(page, c["base"], sample)
+            (ROOT / f"eproc_{tj}_resultados.html").write_text(page.content(), encoding="utf-8")
+            page.screenshot(path=str(ROOT / f"eproc_{tj}_resultados.png"), full_page=True)
+            print(f"    {len(rows)} processos encontrados.", flush=True)
+            # lista os links da 1ª linha com proc (candidatos a SEL_DOC depois)
+            links = page.evaluate(r"""() => [...document.querySelectorAll('table a')]
+              .slice(0,20).map(a=>({txt:(a.innerText||'').slice(0,40),
+              href:(a.getAttribute('href')||'').slice(0,80), onclick:(a.getAttribute('onclick')||'').slice(0,60)}))""")
+            print("    links da tabela:", json.dumps(links, ensure_ascii=False)[:800], flush=True)
+        except Exception as e:
+            print(f"    ERRO na busca: {e}", flush=True)
+
+        # 3) abre o 1º processo -> snapshot dos autos (p/ achar como abrir o doc)
+        if rows:
+            print(f"\n>>> [3/3] Abrindo 1º processo {rows[0]['proc']} ...", flush=True)
+            try:
+                txt = abrir_e_extrair(page, rows[0]["proc"])
+                cpf = "SIM" if RE_CPF.search(txt or "") else "nao"
+                print(f"    texto extraído: {len(txt or '')} chars | tem CPF: {cpf}", flush=True)
+                # salva os autos abertos (última aba) p/ inspeção do viewer
+                for pg in list(ctx.pages):
+                    if pg is not page:
+                        (ROOT / f"eproc_{tj}_autos.html").write_text(pg.content(), encoding="utf-8")
+                        break
+            except Exception as e:
+                print(f"    ERRO ao abrir/extrair: {e}", flush=True)
+
+        print(f"\n>>> Snapshots salvos: eproc_{tj}_consulta/resultados/autos.html (+ .png)", flush=True)
+        if sys.stdin.isatty():
+            input(">>> ENTER pra fechar (ou inspecione o Chrome antes).")
+        else:
+            page.wait_for_timeout(3000)
         ctx.close()
 
 
@@ -442,6 +488,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--dump", action="store_true", help="salva texto cru p/ reparse offline")
     ap.add_argument("--inspect", action="store_true", help="loga e dumpa a tela p/ calibrar seletores")
+    ap.add_argument("--sample", metavar="NOME", help="nome p/ a busca de teste do --inspect (default: 1º sócio do estado)")
     ap.add_argument("--reparse", metavar="JSONL", help="reprocessa corpus salvo (sem browser)")
     args = ap.parse_args()
 
@@ -452,7 +499,7 @@ def main():
     if not args.tj:
         sys.exit("ERRO: informe --tj rs|sc (PR usa Projudi — script à parte).")
     if args.inspect:
-        return inspect(args.tj)
+        return inspect(args.tj, args.sample)
     run(args.tj, args.limit, args.dry_run, args.dump)
 
 
