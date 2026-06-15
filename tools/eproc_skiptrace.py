@@ -179,7 +179,7 @@ def _ctx_cdp(p, port):
 def aguardar_login(ctx, base):
     """Espera até a busca por parte estar acessível (logado). Não navega enquanto
     a URL ainda é de login/SSO. Até ~10 min. Retorna a page logada."""
-    LOGIN = ("login", "sso", "idp", "openid", "saml", "keycloak", "certificad", "auth")
+    LOGIN = _LOGIN_MARK  # mesmos marcadores específicos (evita casar "sso" em "processo")
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     try:
         page.goto(base, wait_until="domcontentloaded", timeout=60000)
@@ -222,35 +222,89 @@ def _aceitar_lgpd(page):
         pass
 
 
+# --- Consulta AUTENTICADA do eproc (logado via A3/CDP) — descoberta no TJSP:
+#     a tela acao=processo_consultar tem campo #strNomeParte (name da parte),
+#     #sbmConsultar (botão). O campo vem disabled (controlado por critério); o
+#     scraper força-habilita via JS e preenche. Diferente do form PÚBLICO
+#     (selForma/txtValor, com captcha). ----------------------------------------
+SEL_CONSULTA_LINK = (r"a[href*='processo_consultar'], a[href*='processo_consulta'], "
+                     r"a[href*='consulta_processual']")
+# critério de pesquisa: select com options NU/NO/CP/OA... — escolher "NO" (Nome da
+# Parte) mostra/habilita o divSet data-campoparaopcao="NO,SN" com o strNomeParte.
+SEL_TIPO_PESQUISA = "#selTipoPesquisa, select[name='tipoPesquisa']"
+TIPO_NOME = "NO"
+SEL_NOME_PARTE = "#strNomeParte, input[name='strNomeParte']"
+SEL_SBM_CONSULTAR = "#sbmConsultar, input[name='sbmConsultar']"
+
+
+def _ir_para_consulta(page):
+    """Navega da home/painel autenticado p/ a tela de Consultar Processos."""
+    if page.query_selector(SEL_NOME_PARTE):
+        return True
+    for f in page.frames:
+        try:
+            href = f.evaluate(r"""() => {
+              const a=[...document.querySelectorAll('a')].find(x=>
+                /processo_consultar|consulta_processual|processo_consulta/.test(x.getAttribute('href')||''));
+              return a ? a.getAttribute('href') : null;
+            }""")
+            if href:
+                root = page.url.split("/controlador.php")[0] + "/"
+                full = href if href.startswith("http") else root + href.lstrip("/")
+                page.goto(full, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(1500)
+                return bool(page.query_selector(SEL_NOME_PARTE))
+        except Exception:
+            pass
+    return bool(page.query_selector(SEL_NOME_PARTE))
+
+
 def pesquisar(page, base, nome):
-    """Busca por nome da parte no eproc (aceita LGPD -> seleciona 'Nome da Parte'
-    no selForma -> digita no txtValor -> Pesquisar). Retorna [{proc, idx, texto}]."""
-    # garante estar na tela de consulta
-    if not page.query_selector(SEL_VALOR):
-        page.goto(base, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(1000)
-    _aceitar_lgpd(page)
-    if not page.query_selector(SEL_VALOR):
-        raise RuntimeError("sessao expirada (campo de consulta ausente)")
-    # 1) seleciona "Nome da Parte" no dropdown de tipo (dispara onchange do eproc)
+    """Busca por nome da parte no eproc AUTENTICADO. Retorna [{proc, idx, texto}].
+    Fluxo: tela processo_consultar -> selTipoPesquisa='NO' (Nome da Parte; mostra/
+    habilita o campo) -> preenche strNomeParte -> Consultar."""
+    if not _ir_para_consulta(page):
+        raise RuntimeError("sessao expirada/consulta indisponivel (consulta ausente)")
+    # 1) escolhe o critério "Nome da Parte" (dispara o JS que mostra o divSet)
     try:
-        page.select_option(SEL_FORMA, FORMA_NOME)
-        page.wait_for_timeout(500)
+        page.select_option(SEL_TIPO_PESQUISA, TIPO_NOME)
+        page.wait_for_timeout(800)
     except Exception:
-        pass  # se não houver dropdown (layout difere), segue com o campo de valor
-    # 2) digita o nome e pesquisa
-    page.fill(SEL_VALOR, nome)
-    page.click(SEL_PESQUISAR)
-    page.wait_for_timeout(2500)
-    # lê linhas com número CNJ
-    return page.evaluate(r"""() => {
-      const rows = [...document.querySelectorAll('table tr')].map((tr, idx) => {
-        const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
-        if (!m) return null;
-        return { proc: m[0], idx, texto: tr.innerText.replace(/\s+/g,' ').trim() };
-      }).filter(Boolean);
-      return rows;
-    }""")
+        pass
+    # 2) preenche o nome. Se ainda vier disabled/oculto, força via JS + eventos.
+    try:
+        page.fill(SEL_NOME_PARTE, nome, timeout=8000)
+    except Exception:
+        page.eval_on_selector(SEL_NOME_PARTE, """(el, v) => {
+          el.disabled = false; el.value = v;
+          el.dispatchEvent(new Event('input', {bubbles:true}));
+          el.dispatchEvent(new Event('change', {bubbles:true}));
+        }""", nome)
+    # 3) submete (botão Consultar); fallback em JS click
+    try:
+        page.click(SEL_SBM_CONSULTAR, timeout=8000)
+    except Exception:
+        page.eval_on_selector(SEL_SBM_CONSULTAR, "el => el.click()")
+    page.wait_for_timeout(3000)
+    # lê linhas com número CNJ (varre todos os frames — eproc pode usar iframe)
+    out = []
+    for f in page.frames:
+        try:
+            rows = f.evaluate(r"""() => {
+              return [...document.querySelectorAll('table tr')].map((tr, idx) => {
+                const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+                if (!m) return null;
+                return { proc: m[0], idx, texto: tr.innerText.replace(/\s+/g,' ').trim() };
+              }).filter(Boolean);
+            }""")
+            out.extend(rows or [])
+        except Exception:
+            pass
+    seen, uniq = set(), []
+    for r in out:
+        if r["proc"] not in seen:
+            seen.add(r["proc"]); uniq.append(r)
+    return uniq
 
 
 def abrir_e_extrair(page, proc):
@@ -338,7 +392,10 @@ def _snapshot_campos(page):
     }""")
 
 
-_LOGIN_MARK = ("login", "sso", "idp", "openid", "saml", "keycloak", "certificad", "auth")
+# marcadores de tela de LOGIN/SSO — específicos p/ NÃO casar dentro de palavras
+# legítimas da URL autenticada (ex: "sso" casava em "proceSSO_consultar"! bug 15/06).
+_LOGIN_MARK = ("sso.", "/login", "login.", "openid-connect", "keycloak",
+               "saml", "realms/", "idp_hint", "certificad")
 
 
 def _logado_eproc(pg):
@@ -500,20 +557,37 @@ def inspect(tj, sample=None, cdp=False, port=9222):
         print("\n>>> [1/2] Sessão autenticada (procurando link de Consulta Processual):", flush=True)
         _dump_frames(page, "home")
 
-        # 2) tenta clicar num link que leve à consulta por nome
+        # 2) navega à consulta por nome. PRIORIZA o link real (acao=processo_consultar)
+        #    sobre o toggle do dropdown ('Consulta Processual' tem href='#').
         print("\n>>> [2/2] Tentando abrir a Consulta Processual...", flush=True)
         clicou = False
+        # 2a) acha o href real do "Consultar Processos" e navega direto (mais robusto)
         for f in page.frames:
             try:
-                el = f.query_selector("a:has-text('Consulta Processual'), a:has-text('Consulta Pública'), "
-                                      "a:has-text('Consultar Processo'), a[href*='consulta']")
-                if el:
-                    el.click()
-                    page.wait_for_timeout(2500)
+                href = f.evaluate(r"""() => {
+                  const a=[...document.querySelectorAll('a')].find(x=>
+                    /processo_consultar|consulta_processual|processo_consulta/.test(x.getAttribute('href')||''));
+                  return a ? a.getAttribute('href') : null;
+                }""")
+                if href:
+                    base_root = page.url.split("/controlador.php")[0] + "/"
+                    full = href if href.startswith("http") else base_root + href.lstrip("/")
+                    page.goto(full, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(2000)
                     clicou = True
+                    print(f"    -> naveguei p/ {href[:60]}", flush=True)
                     break
             except Exception:
                 pass
+        # 2b) fallback: clica por texto
+        if not clicou:
+            for f in page.frames:
+                try:
+                    el = f.query_selector("a:has-text('Consultar Processos'), a[href*='consulta']")
+                    if el:
+                        el.click(); page.wait_for_timeout(2500); clicou = True; break
+                except Exception:
+                    pass
         if clicou:
             _aceitar_lgpd(page)
             _dump_frames(page, "consulta")
@@ -530,18 +604,43 @@ def inspect(tj, sample=None, cdp=False, port=9222):
             input(">>> ENTER pra fechar (ou navegue no Chrome até a consulta e veja o HTML).")
         else:
             page.wait_for_timeout(4000)
-        # NUNCA fechar o Chrome do usuário no modo CDP — só desconecta
-        if cdp:
-            if browser:
-                browser.close()  # fecha só a conexão CDP, não o Chrome
-        else:
+        # NUNCA fechar o Chrome do usuário no modo CDP — sair do `with sync_playwright`
+        # já desconecta sem matar o navegador (browser.close() FECHARIA as abas).
+        if not cdp:
             ctx.close()
 
 
 # ---------------------------------------------------------------------------
 # Lote principal
 # ---------------------------------------------------------------------------
-def run(tj, limit, dry, dump):
+def _aguardar_login_qualquer(ctx, base):
+    """Espera a sessão eproc logada em qualquer aba (usa _logado_eproc). Se não
+    houver aba do eproc, navega UMA aba até a base (o cookie do perfil pode já
+    estar autenticado → restaura a sessão sem novo login)."""
+    navegou = False
+    for it in range(1200):  # ~40 min
+        for pg in list(ctx.pages):
+            try:
+                _aceitar_lgpd(pg)
+                if _logado_eproc(pg):
+                    return pg
+            except Exception:
+                pass
+        # se nenhuma aba está no eproc, leva uma aba pra base (1x) p/ tentar o cookie
+        if not navegou:
+            tem_eproc = any("eproc" in (pg.url or "").lower() for pg in ctx.pages)
+            if not tem_eproc:
+                try:
+                    pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+                    pg.goto(base, wait_until="domcontentloaded", timeout=30000)
+                    navegou = True
+                except Exception:
+                    pass
+        time.sleep(2)
+    return None
+
+
+def run(tj, limit, dry, dump, cdp=False, port=9222):
     from playwright.sync_api import sync_playwright
     c = cfg(tj)
     dump_path = ROOT / f"eproc_{tj}_dump.jsonl"
@@ -552,12 +651,21 @@ def run(tj, limit, dry, dump):
     out_csv = ROOT / f"eproc_{tj}_skiptrace.csv"
     resultados = []
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            _profile(tj), headless=False, viewport={"width": 1280, "height": 900})
-        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
-        page = aguardar_login(ctx, c["base"])
+        browser = None
+        if cdp:
+            browser, ctx = _ctx_cdp(p, port)
+            print(f">>> CDP (porta {port}). Aguardando sessão eproc-{tj.upper()} logada...", flush=True)
+            page = _aguardar_login_qualquer(ctx, c["base"])
+        else:
+            ctx = p.chromium.launch_persistent_context(
+                _profile(tj), headless=False, viewport={"width": 1280, "height": 900})
+            ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
+            page = aguardar_login(ctx, c["base"])
         if not page:
-            print("Timeout aguardando login. Saindo."); ctx.close(); return
+            print("Timeout aguardando login. Saindo.")
+            if not cdp:
+                ctx.close()
+            return
         print(">>> Autenticado. Iniciando varredura.", flush=True)
         if dump and dump_path.exists():
             dump_path.unlink()
@@ -612,7 +720,8 @@ def run(tj, limit, dry, dump):
                 ledger_add(tj, nome, mask, "hit" if got else "sem_match", flags)
             print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> {flags or 'sem match'}")
             time.sleep(0.5)
-        ctx.close()
+        if not cdp:
+            ctx.close()  # CDP: não fechar — sair do `with` desconecta sem matar o Chrome
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         if resultados:
             w = csv.DictWriter(f, fieldnames=list(resultados[0].keys()))
@@ -674,7 +783,7 @@ def main():
         sys.exit("ERRO: informe --tj rs|sc (PR usa Projudi — script à parte).")
     if args.inspect:
         return inspect(args.tj, args.sample, cdp=args.cdp, port=args.port)
-    run(args.tj, args.limit, args.dry_run, args.dump)
+    run(args.tj, args.limit, args.dry_run, args.dump, cdp=args.cdp, port=args.port)
 
 
 if __name__ == "__main__":
