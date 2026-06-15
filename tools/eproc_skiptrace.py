@@ -312,64 +312,130 @@ def _snapshot_campos(page):
     }""")
 
 
+_LOGIN_MARK = ("login", "sso", "idp", "openid", "saml", "keycloak", "certificad", "auth")
+
+
+def _logado_eproc(pg):
+    """Detecta sessão autenticada SEM depender dos seletores da consulta:
+    URL do eproc fora da tela de login + sinais de menu autenticado no texto."""
+    u = (pg.url or "").lower()
+    if "eproc" not in u or any(m in u for m in _LOGIN_MARK):
+        return False
+    # controlador interno (autenticado) já basta; senão procura o menu no texto
+    if "controlador.php" in u and "externo" not in u:
+        return True
+    try:
+        for f in pg.frames:
+            t = f.inner_text("body") or ""
+            if "Consulta Processual" in t or ("Sair" in t and "Painel" in t):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _dump_frames(page, tag):
+    """Salva HTML+screenshot da página e lista links/campos de TODOS os frames —
+    foco nos links que parecem 'Consulta Processual' (pra mapear a navegação)."""
+    try:
+        (ROOT / f"eproc_disc_{tag}.html").write_text(page.content(), encoding="utf-8")
+        page.screenshot(path=str(ROOT / f"eproc_disc_{tag}.png"), full_page=True)
+    except Exception:
+        pass
+    for i, f in enumerate(page.frames):
+        try:
+            info = f.evaluate(r"""() => ({
+              url: location.href,
+              links: [...document.querySelectorAll('a')].map(a=>({
+                txt:(a.innerText||'').trim().slice(0,45),
+                href:(a.getAttribute('href')||'').slice(0,90),
+                onclick:(a.getAttribute('onclick')||'').slice(0,70)})).filter(l=>l.txt||l.href).slice(0,80),
+              fields: [...document.querySelectorAll('input,select')].map(e=>({
+                tag:e.tagName, id:e.id, name:e.name, type:e.type})).slice(0,30)
+            })""")
+        except Exception:
+            continue
+        if not (info.get("links") or info.get("fields")):
+            continue
+        print(f"  frame[{i}] {info['url'][:75]}", flush=True)
+        cl = [l for l in info["links"]
+              if re.search(r"consult|processo|parte|pesquis|partes", l["txt"] + l["href"] + l["onclick"], re.I)]
+        if cl:
+            print("    consulta-links:", json.dumps(cl, ensure_ascii=False)[:700], flush=True)
+        if info["fields"]:
+            print("    fields:", json.dumps(info["fields"], ensure_ascii=False)[:600], flush=True)
+
+
 def inspect(tj, sample=None):
-    """Calibração completa em 1 passada: confirma o form de consulta, faz UMA busca
-    de teste (sócio real), captura a página de resultados e abre o 1º processo —
-    pra calibrar SEL_FORMA/SEL_VALOR/SEL_PESQUISAR E o SEL_DOC (abertura do doc)."""
+    """MODO DESCOBERTA: aguarda login (por URL/menu, NÃO pelo form), dumpa a sessão
+    autenticada (home + links + frames + campos) pra mapear o caminho da consulta.
+    Tenta achar/clicar 'Consulta Processual' e re-dumpa. Salva tudo em eproc_disc_*."""
     from playwright.sync_api import sync_playwright
     c = cfg(tj)
-    if not sample:
-        alvos = carregar_socios(tj, 1)
-        sample = alvos[0]["nome"] if alvos else "SILVA"
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             _profile(tj), headless=False, viewport={"width": 1280, "height": 900})
         ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
-        page = aguardar_login(ctx, c["base"])
-        if not page:
-            print("Timeout no login."); ctx.close(); return
-        # 1) snapshot do FORM de consulta
-        print(">>> [1/3] Form de consulta:", flush=True)
-        (ROOT / f"eproc_{tj}_consulta.html").write_text(page.content(), encoding="utf-8")
-        page.screenshot(path=str(ROOT / f"eproc_{tj}_consulta.png"), full_page=True)
-        print(json.dumps(_snapshot_campos(page), ensure_ascii=False, indent=1), flush=True)
-
-        # 2) busca de teste com um sócio real -> página de resultados
-        print(f"\n>>> [2/3] Busca de teste: '{sample}'", flush=True)
-        rows = []
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            rows = pesquisar(page, c["base"], sample)
-            (ROOT / f"eproc_{tj}_resultados.html").write_text(page.content(), encoding="utf-8")
-            page.screenshot(path=str(ROOT / f"eproc_{tj}_resultados.png"), full_page=True)
-            print(f"    {len(rows)} processos encontrados.", flush=True)
-            # lista os links da 1ª linha com proc (candidatos a SEL_DOC depois)
-            links = page.evaluate(r"""() => [...document.querySelectorAll('table a')]
-              .slice(0,20).map(a=>({txt:(a.innerText||'').slice(0,40),
-              href:(a.getAttribute('href')||'').slice(0,80), onclick:(a.getAttribute('onclick')||'').slice(0,60)}))""")
-            print("    links da tabela:", json.dumps(links, ensure_ascii=False)[:800], flush=True)
-        except Exception as e:
-            print(f"    ERRO na busca: {e}", flush=True)
-
-        # 3) abre o 1º processo -> snapshot dos autos (p/ achar como abrir o doc)
-        if rows:
-            print(f"\n>>> [3/3] Abrindo 1º processo {rows[0]['proc']} ...", flush=True)
-            try:
-                txt = abrir_e_extrair(page, rows[0]["proc"])
-                cpf = "SIM" if RE_CPF.search(txt or "") else "nao"
-                print(f"    texto extraído: {len(txt or '')} chars | tem CPF: {cpf}", flush=True)
-                # salva os autos abertos (última aba) p/ inspeção do viewer
-                for pg in list(ctx.pages):
-                    if pg is not page:
-                        (ROOT / f"eproc_{tj}_autos.html").write_text(pg.content(), encoding="utf-8")
+            page.goto(c["base"], wait_until="domcontentloaded", timeout=60000)
+        except Exception:
+            pass
+        print(">>> Faça LOGIN no eproc-" + tj.upper() + " com o A3 na janela do Chrome.", flush=True)
+        print(">>> (detecto o login automaticamente — pode logar e deixar comigo)", flush=True)
+        page_log = None
+        for it in range(360):  # ~12 min
+            for pg in list(ctx.pages):
+                try:
+                    _aceitar_lgpd(pg)
+                    if _logado_eproc(pg):
+                        page_log = pg
                         break
-            except Exception as e:
-                print(f"    ERRO ao abrir/extrair: {e}", flush=True)
+                except Exception:
+                    pass
+            if page_log:
+                break
+            time.sleep(2)
+        if not page_log:
+            print("Timeout aguardando login (12 min). Saindo.", flush=True)
+            ctx.close(); return
+        page = page_log
+        print(f">>> Autenticado! URL: {page.url}", flush=True)
 
-        print(f"\n>>> Snapshots salvos: eproc_{tj}_consulta/resultados/autos.html (+ .png)", flush=True)
-        if sys.stdin.isatty():
-            input(">>> ENTER pra fechar (ou inspecione o Chrome antes).")
+        # 1) dump da HOME autenticada (acha o link da consulta)
+        print("\n>>> [1/2] Sessão autenticada (procurando link de Consulta Processual):", flush=True)
+        _dump_frames(page, "home")
+
+        # 2) tenta clicar num link que leve à consulta por nome
+        print("\n>>> [2/2] Tentando abrir a Consulta Processual...", flush=True)
+        clicou = False
+        for f in page.frames:
+            try:
+                el = f.query_selector("a:has-text('Consulta Processual'), a:has-text('Consulta Pública'), "
+                                      "a:has-text('Consultar Processo'), a[href*='consulta']")
+                if el:
+                    el.click()
+                    page.wait_for_timeout(2500)
+                    clicou = True
+                    break
+            except Exception:
+                pass
+        if clicou:
+            _aceitar_lgpd(page)
+            _dump_frames(page, "consulta")
+            # mostra os campos/selects do form de consulta (p/ confirmar SEL_*)
+            try:
+                print("  campos do form:", json.dumps(_snapshot_campos(page), ensure_ascii=False)[:900], flush=True)
+            except Exception:
+                pass
         else:
-            page.wait_for_timeout(3000)
+            print("  (não achei link óbvio de consulta — veja eproc_disc_home.html/.png)", flush=True)
+
+        print("\n>>> Snapshots salvos: eproc_disc_home.* e eproc_disc_consulta.* (na raiz do projeto)", flush=True)
+        if sys.stdin.isatty():
+            input(">>> ENTER pra fechar (ou navegue no Chrome até a consulta e veja o HTML).")
+        else:
+            page.wait_for_timeout(4000)
         ctx.close()
 
 
