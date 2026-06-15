@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { MapPin, Download, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
+import { tjInfo, SYSTEM_META, STATUS_META } from "@/lib/tjSystems";
 
 type StateProgress = {
   uf: string;
@@ -203,57 +204,73 @@ export default function EnriquecimentoProgress() {
 
       {/* Por estado */}
       <div className="space-y-3">
-        {data.map((state) => (
-          <Card key={state.uf} className="space-y-2 p-4 shadow-card">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono text-sm font-bold">{state.uf}</span>
-                  <span className="text-xs text-muted-foreground">{state.totalSocios} sócios</span>
+        {data.map((state) => {
+          const tj = tjInfo(state.uf);
+          const sys = SYSTEM_META[tj.system];
+          const st = STATUS_META[tj.status];
+          return (
+            <Card key={state.uf} className="space-y-2 p-4 shadow-card">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <MapPin className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-mono text-sm font-bold">{state.uf}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {state.totalSocios} sócios
+                    </span>
+                    <Badge variant="secondary" className={`text-[10px] ${sys.color}`}>
+                      {sys.label}
+                    </Badge>
+                    <Badge variant="outline" className={`text-[10px] ${st.color}`}>
+                      {st.label}
+                    </Badge>
+                  </div>
+                  <Progress value={state.pctCovered} className="mt-2 h-1.5" />
                 </div>
-                <Progress value={state.pctCovered} className="mt-2 h-1.5" />
-              </div>
-              <div className="text-right">
-                <div className="text-lg font-bold">{state.pctCovered}%</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {state.totalEnriched} / {state.totalSocios}
+                <div className="text-right">
+                  <div className="text-lg font-bold">{state.pctCovered}%</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {state.totalEnriched} / {state.totalSocios}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Breakdown */}
-            <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
-              {state.enrichedPje > 0 && (
-                <Badge variant="outline" className="text-blue-600">
-                  PJe: {state.enrichedPje}
-                </Badge>
-              )}
-              {state.enrichedDriva > 0 && (
-                <Badge variant="outline" className="text-green-600">
-                  DRIVA: {state.enrichedDriva}
-                </Badge>
-              )}
-              {state.enrichedOther > 0 && (
-                <Badge variant="outline" className="text-orange-600">
-                  Outro: {state.enrichedOther}
-                </Badge>
-              )}
-              {state.pendingCount > 0 && (
-                <Badge variant="outline" className="text-red-600">
-                  Pendente: {state.pendingCount}
-                </Badge>
-              )}
-            </div>
-
-            {/* Recomendação */}
-            {state.pctCovered < 50 && (
-              <div className="mt-2 text-[10px] text-orange-600">
-                ⚠️ Baixa cobertura — priorizar DRIVA ou PJe
+              {/* Breakdown */}
+              <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
+                {state.enrichedPje > 0 && (
+                  <Badge variant="outline" className="text-blue-600">
+                    PJe/eproc: {state.enrichedPje}
+                  </Badge>
+                )}
+                {state.enrichedDriva > 0 && (
+                  <Badge variant="outline" className="text-green-600">
+                    DRIVA: {state.enrichedDriva}
+                  </Badge>
+                )}
+                {state.enrichedOther > 0 && (
+                  <Badge variant="outline" className="text-orange-600">
+                    Outro: {state.enrichedOther}
+                  </Badge>
+                )}
+                {state.pendingCount > 0 && (
+                  <Badge variant="outline" className="text-red-600">
+                    Pendente: {state.pendingCount}
+                  </Badge>
+                )}
               </div>
-            )}
-          </Card>
-        ))}
+
+              {/* Scraper + nota do registry */}
+              <div className="flex flex-wrap items-center gap-2 border-t pt-2 text-[10px] text-muted-foreground">
+                {tj.scraper ? (
+                  <code className="rounded bg-muted px-1 py-0.5">{tj.scraper}</code>
+                ) : (
+                  <span className="italic">sem scraper</span>
+                )}
+                {tj.note && <span>· {tj.note}</span>}
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Roadmap — sistema de processo eletrônico difere por estado */}
