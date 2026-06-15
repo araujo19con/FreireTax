@@ -60,6 +60,13 @@ TJ = {
         "base": "https://eproc1g.tjsc.jus.br/eproc/",
         "marker": "eproc/TJSC",
     },
+    "sp": {
+        "uf": "SP", "nome": "TJSP",
+        "base": "https://eproc1g.tjsp.jus.br/eproc/",
+        "marker": "eproc/TJSP",
+        # NB: TJSP roda eproc (novo) + e-SAJ (legado). O eproc só tem processos
+        # mais recentes; casos antigos de SP podem estar no e-SAJ (scraper à parte).
+    },
     # TRF4 (Justiça Federal RS/SC/PR): consulta pública SEM captcha/login — usado
     # p/ TESTAR a mecânica do scraper eproc end-to-end (mesma engine do estadual).
     # NB: só tem processos FEDERAIS (não acha os sócios, que estão na Justiça
@@ -440,9 +447,9 @@ def inspect(tj, sample=None):
         except Exception:
             pass
         print(">>> Faça LOGIN no eproc-" + tj.upper() + " com o A3 na janela do Chrome.", flush=True)
-        print(">>> (detecto o login automaticamente — pode logar e deixar comigo)", flush=True)
+        print(">>> (detecto o login automaticamente — SEM PRESSA, espero ~40 min e NÃO fecho a janela)", flush=True)
         page_log = None
-        for it in range(360):  # ~12 min
+        for it in range(1200):  # ~40 min — não fechar a janela na mão do usuário
             for pg in list(ctx.pages):
                 try:
                     _aceitar_lgpd(pg)
