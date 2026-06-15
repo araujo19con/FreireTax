@@ -124,8 +124,42 @@ def _frame_com_campo(page):
     return page.main_frame if page.query_selector(SEL_NOME) else None
 
 
+# marcadores de login específicos (não casar dentro de palavra — ver bug 'sso'
+# em 'processo' no eproc). Projudi usa login próprio.
+_LOGIN_MARK = ("sso.", "/login", "login.", "openid-connect", "keycloak",
+               "saml", "realms/", "idp_hint", "certificad", "usuario/login")
+
+
+def _ctx_cdp(p, port):
+    """Conecta no Chrome REAL do usuário (--remote-debugging-port). Resolve login
+    A3/Keycloak que o Chromium do Playwright não apresenta."""
+    browser = p.chromium.connect_over_cdp(f"http://localhost:{port}")
+    if not browser.contexts:
+        raise RuntimeError("CDP sem contexto. Abra uma aba no Chrome.")
+    return browser, browser.contexts[0]
+
+
+def _logado_projudi(pg):
+    """Sessão Projudi logada = URL do projudi fora da tela de login + campo de
+    consulta presente em algum frame."""
+    u = (pg.url or "").lower()
+    if "projudi" not in u or any(m in u for m in _LOGIN_MARK):
+        return False
+    if _frame_com_campo(pg):
+        return True
+    # autenticado mas talvez não na tela de consulta: aceita se tiver menu/sair
+    try:
+        for f in pg.frames:
+            t = f.inner_text("body") or ""
+            if "Sair" in t and ("Consulta" in t or "Processo" in t):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def aguardar_login(ctx):
-    LOGIN = ("login", "sso", "idp", "openid", "saml", "keycloak", "certificad", "auth")
+    LOGIN = _LOGIN_MARK
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     try:
         page.goto(BASE, wait_until="domcontentloaded", timeout=60000)
@@ -260,18 +294,49 @@ def gravar(socio, q):
 # ---------------------------------------------------------------------------
 # --inspect: calibração (loga, dumpa cada frame + lista campos)
 # ---------------------------------------------------------------------------
-def inspect(sample=None):
+def _aguardar_cdp(ctx):
+    """Acha a aba do Projudi logada (CDP). Navega 1 aba p/ a base se preciso."""
+    navegou = False
+    for _ in range(1200):  # ~40 min
+        for pg in list(ctx.pages):
+            try:
+                if _logado_projudi(pg):
+                    return pg
+            except Exception:
+                pass
+        if not navegou:
+            if not any("projudi" in (pg.url or "").lower() for pg in ctx.pages):
+                try:
+                    pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+                    pg.goto(BASE, wait_until="domcontentloaded", timeout=30000)
+                    navegou = True
+                except Exception:
+                    pass
+        time.sleep(2)
+    return None
+
+
+def inspect(sample=None, cdp=False, port=9222):
     from playwright.sync_api import sync_playwright
     if not sample:
         alvos = carregar_socios(1)
         sample = alvos[0]["nome"] if alvos else "SILVA"
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            PROFILE, headless=False, viewport={"width": 1280, "height": 900})
-        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
-        page = aguardar_login(ctx)
+        if cdp:
+            _, ctx = _ctx_cdp(p, port)
+            print(f">>> CDP (porta {port}). Abra {BASE} e LOGUE com A3...", flush=True)
+            page = _aguardar_cdp(ctx)
+        else:
+            ctx = p.chromium.launch_persistent_context(
+                PROFILE, headless=False, viewport={"width": 1280, "height": 900})
+            ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
+            page = aguardar_login(ctx)
         if not page:
-            print("Timeout no login."); ctx.close(); return
+            print("Timeout no login.")
+            if not cdp:
+                ctx.close()
+            return
+        print(f">>> Pronto. URL: {page.url}", flush=True)
         print(">>> [1/2] Frames + campos da tela de consulta:", flush=True)
         for i, fr in enumerate(page.frames):
             try:
@@ -304,13 +369,14 @@ def inspect(sample=None):
             input(">>> ENTER pra fechar.")
         else:
             page.wait_for_timeout(3000)
-        ctx.close()
+        if not cdp:
+            ctx.close()  # CDP: não fechar o Chrome do usuário
 
 
 # ---------------------------------------------------------------------------
 # Lote
 # ---------------------------------------------------------------------------
-def run(limit, dry, dump):
+def run(limit, dry, dump, cdp=False, port=9222):
     from playwright.sync_api import sync_playwright
     alvos = carregar_socios(limit)
     print(f"> {len(alvos)} sócios {UF} a processar (PF, sem enriquecimento {MARKER}).")
@@ -319,12 +385,20 @@ def run(limit, dry, dump):
     out_csv = ROOT / "projudi_pr_skiptrace.csv"
     resultados = []
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            PROFILE, headless=False, viewport={"width": 1280, "height": 900})
-        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
-        page = aguardar_login(ctx)
+        if cdp:
+            _, ctx = _ctx_cdp(p, port)
+            print(f">>> CDP (porta {port}). Aguardando sessão Projudi logada...", flush=True)
+            page = _aguardar_cdp(ctx)
+        else:
+            ctx = p.chromium.launch_persistent_context(
+                PROFILE, headless=False, viewport={"width": 1280, "height": 900})
+            ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
+            page = aguardar_login(ctx)
         if not page:
-            print("Timeout aguardando login. Saindo."); ctx.close(); return
+            print("Timeout aguardando login. Saindo.")
+            if not cdp:
+                ctx.close()
+            return
         print(">>> Autenticado. Iniciando varredura.", flush=True)
         if dump and DUMP.exists():
             DUMP.unlink()
@@ -379,7 +453,8 @@ def run(limit, dry, dump):
                 ledger_add(nome, mask, "hit" if got else "sem_match", flags)
             print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> {flags or 'sem match'}")
             time.sleep(0.5)
-        ctx.close()
+        if not cdp:
+            ctx.close()  # CDP: não fechar o Chrome do usuário
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         if resultados:
             w = csv.DictWriter(f, fieldnames=list(resultados[0].keys()))
@@ -418,6 +493,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--dump", action="store_true")
     ap.add_argument("--inspect", action="store_true")
+    ap.add_argument("--cdp", action="store_true", help="conecta no Chrome real (login A3 via CDP)")
+    ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--sample", metavar="NOME")
     ap.add_argument("--reparse", metavar="JSONL")
     args = ap.parse_args()
@@ -427,8 +504,8 @@ def main():
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.")
     if args.inspect:
-        return inspect(args.sample)
-    run(args.limit, args.dry_run, args.dump)
+        return inspect(args.sample, cdp=args.cdp, port=args.port)
+    run(args.limit, args.dry_run, args.dump, cdp=args.cdp, port=args.port)
 
 
 if __name__ == "__main__":
