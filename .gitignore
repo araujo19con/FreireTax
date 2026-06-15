@@ -43,10 +43,24 @@ supabase/.temp/
 supabase/.branches/
 .vercel
 
-# PJe skiptrace (perfil do browser + saída local, nunca versionar)
+# PJe/eproc/Projudi skiptrace (perfil do browser + saída local, nunca versionar)
 .pje-chrome-profile/
+.eproc-*-chrome-profile/
+.projudi-chrome-profile/
+.chrome-cdp-profile/
+*-chrome-profile/
 pje_rn_skiptrace.csv
 pje_rn_dump.jsonl
 pje_rn_ledger.jsonl
+eproc_*.csv
+eproc_*.jsonl
+eproc_*.html
+eproc_*.png
+eproc_disc_*
+projudi_*.csv
+projudi_*.jsonl
+projudi_*.html
+projudi_*.png
+pje_lote_*.log
 tools/pje-env.local.ps1
 tools/_diag_dump.py
