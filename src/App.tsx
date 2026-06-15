@@ -36,6 +36,7 @@ const Financeiro = lazy(() => import("./pages/Financeiro"));
 const Prazos = lazy(() => import("./pages/Prazos"));
 const Tutorial = lazy(() => import("./pages/Tutorial"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const EnriquecimentoProgress = lazy(() => import("./pages/EnriquecimentoProgress"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -121,6 +122,7 @@ function AppRoutes() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/empresas" element={<Empresas />} />
           <Route path="/contatos" element={<Contatos />} />
+          <Route path="/enriquecimento" element={<EnriquecimentoProgress />} />
           <Route path="/acoes" element={<Acoes />} />
           <Route path="/elegibilidade" element={<Elegibilidade />} />
           <Route path="/prospeccao" element={<Prospeccao />} />
