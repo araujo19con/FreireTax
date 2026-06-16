@@ -669,7 +669,10 @@ def run(tj, limit, dry, dump, cdp=False, port=9222):
         print(">>> Autenticado. Iniciando varredura.", flush=True)
         if dump and dump_path.exists():
             dump_path.unlink()
-        erros = 0
+        erros = 0              # falhas seguidas na BUSCA (form ausente = sessão caiu)
+        aberturas_falhas = 0   # sócios seguidos com processos mas NENHUM autos abriu
+        enriquecidos = 0       # hits efetivamente gravados neste lote
+        LIMITE_ABERTURA = 5    # autos não abrem N× seguidas = limite diário do tribunal
         for i, s in enumerate(alvos, 1):
             nome, mask = s["nome"], s["cpf_mascarado"]
             try:
@@ -679,7 +682,7 @@ def run(tj, limit, dry, dump, cdp=False, port=9222):
                 erros += 1
                 print(f"[{i}/{len(alvos)}] {nome[:30]:30} ERRO busca: {str(e)[:50]}")
                 if erros >= 4:
-                    print(">>> 4 erros seguidos — sessão caiu ou limite. Abortando (resumível).")
+                    print(">>> 4 erros seguidos na BUSCA — sessão A3 caiu. Relogue e rode de novo (resumível).")
                     break
                 continue
             if not rows:
@@ -688,14 +691,18 @@ def run(tj, limit, dry, dump, cdp=False, port=9222):
                     ledger_add(tj, nome, mask, "sem_processo")
                 continue
             got = None
+            abriu_algum = False      # algum processo realmente abriu e rendeu texto?
+            falha_abertura = False   # algum open lançou exceção (popup/aba não veio)
             for r in rows[:4]:
                 try:
                     txt = abrir_e_extrair(page, r["proc"])
                 except Exception as e:
                     print(f"     (falha ao abrir {r['proc'][:25]}: {str(e)[:40]})")
+                    falha_abertura = True
                     continue
                 if not txt:
                     continue
+                abriu_algum = True
                 if dump:
                     with open(dump_path, "a", encoding="utf-8") as df:
                         df.write(json.dumps({"nome": nome, "mask": mask, "proc": r["proc"],
@@ -705,6 +712,22 @@ def run(tj, limit, dry, dump, cdp=False, port=9222):
                     q["proc"] = r["proc"]; got = q; break
                 if not got and (q["endereco"] or q["telefone"]):
                     q["proc"] = r["proc"]; q["fraco"] = True; got = q
+
+            # LIMITE DIÁRIO vs QUEDA DE SESSÃO: TINHA processos na busca mas NENHUM
+            # autos abriu (todos deram erro) — não é "sem match", os autos foram
+            # bloqueados. Como a busca segue OK (sessão viva), é o limite diário do
+            # tribunal. Não ledgeriza (re-tenta noutro dia) e conta como falha seguida.
+            if not got and not abriu_algum and falha_abertura:
+                aberturas_falhas += 1
+                print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> AUTOS NÃO ABRIRAM (não gravado)")
+                if aberturas_falhas >= LIMITE_ABERTURA:
+                    print(f">>> {aberturas_falhas} sócios seguidos: processos existem mas NENHUM autos abriu.")
+                    print(">>> A BUSCA ainda funciona (sessão A3 viva) => é o LIMITE DIÁRIO do tribunal, não a sessão.")
+                    print(">>> Relogar NÃO resolve. Pare hoje e retome amanhã (resumível; nada gravado errado).")
+                    break
+                continue
+            aberturas_falhas = 0  # abriu algo (ou foi teto real de extração) -> zera
+
             flags = ""
             if got:
                 flags = "".join(ch for ch, k in [("#", "cpf"), ("E", "endereco"),
@@ -716,6 +739,7 @@ def run(tj, limit, dry, dump, cdp=False, port=9222):
                     except Exception as e:
                         print(f"     (falha ao gravar {nome[:20]}: {str(e)[:40]})")
                         time.sleep(1); continue
+                enriquecidos += 1
             if not dry:
                 ledger_add(tj, nome, mask, "hit" if got else "sem_match", flags)
             print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> {flags or 'sem match'}")
@@ -727,7 +751,8 @@ def run(tj, limit, dry, dump, cdp=False, port=9222):
             w = csv.DictWriter(f, fieldnames=list(resultados[0].keys()))
             w.writeheader(); w.writerows(resultados)
     com_tel = sum(1 for r in resultados if r.get("telefone"))
-    print(f"\n> {len(resultados)} sócios enriquecidos (telefone:{com_tel}). CSV: {out_csv.name}")
+    grav = enriquecidos if not dry else 0
+    print(f"\n> {len(resultados)} sócios com match (telefone:{com_tel}) | {grav} gravados no CRM. CSV: {out_csv.name}")
 
 
 def reparse_main(path):

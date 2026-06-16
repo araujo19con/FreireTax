@@ -454,7 +454,10 @@ def main():
         if args.dump and dump_path.exists():
             dump_path.unlink()  # reseta corpus só agora (login falho não apaga)
 
-        erros_seguidos = 0
+        erros_seguidos = 0     # falhas seguidas na BUSCA (form ausente = sessão caiu)
+        aberturas_falhas = 0   # sócios seguidos com processos mas NENHUM autos abriu
+        enriquecidos = 0       # hits efetivamente gravados neste lote
+        LIMITE_ABERTURA = 5    # autos não abrem N× seguidas = limite diário do TJRN
         for i, s in enumerate(alvos, 1):
             nome, mask = s["nome"], s["cpf_mascarado"]
             try:
@@ -480,6 +483,8 @@ def main():
                 return nome.split()[0].upper() in (pa or "").upper()
             rows.sort(key=lambda r: (0 if ativo(r) else 1))
             got = None
+            abriu_algum = False      # algum processo realmente abriu e rendeu texto?
+            falha_abertura = False   # algum open lançou exceção (popup/aba não veio)
             for r in rows[:4]:  # tenta até 4 processos
                 try:
                     txt = abrir_e_extrair(page, r["proc"])
@@ -488,9 +493,11 @@ def main():
                     # pode derrubar o lote — pula pro próximo processo.
                     print(f"     (falha ao abrir {r['proc'][:25]}: {str(e)[:40]})")
                     _fechar_abas_extras(page)
+                    falha_abertura = True
                     continue
                 if not txt:
                     continue
+                abriu_algum = True
                 if args.dump:
                     with open(dump_path, "a", encoding="utf-8") as df:
                         df.write(json.dumps({"nome": nome, "mask": mask, "proc": r["proc"],
@@ -503,6 +510,23 @@ def main():
                 # se não achou CPF mas é claramente o polo ativo dele, guarda como fraco
                 if not got and ativo(r) and (q["endereco"] or q["telefone"]):
                     q["proc"] = r["proc"]; q["fraco"] = True; got = q
+
+            # LIMITE DIÁRIO vs QUEDA DE SESSÃO: o sócio TINHA processos na busca,
+            # mas NENHUM autos abriu (todos deram erro). Isso NÃO é "sem match" —
+            # os autos foram bloqueados. Como a busca segue funcionando (sessão A3
+            # viva), é o LIMITE DIÁRIO do TJRN, não a sessão caída. Não ledgeriza
+            # (re-tenta noutro dia) e conta como falha de abertura seguida.
+            if not got and not abriu_algum and falha_abertura:
+                aberturas_falhas += 1
+                print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> AUTOS NÃO ABRIRAM (não gravado)")
+                if aberturas_falhas >= LIMITE_ABERTURA:
+                    print(f">>> {aberturas_falhas} sócios seguidos: processos existem mas NENHUM autos abriu.")
+                    print(">>> A BUSCA ainda funciona (sessão A3 viva) => é o LIMITE DIÁRIO do TJRN, não a sessão.")
+                    print(">>> Relogar NÃO resolve. Pare hoje e retome amanhã (resumível; nada gravado errado).")
+                    break
+                continue
+            aberturas_falhas = 0  # abriu algo (ou foi teto real de extração) -> zera
+
             flags = ""
             if got:
                 flags = "".join(c for c, k in [("#", "cpf"), ("E", "endereco"), ("T", "telefone"), ("@", "email")] if got.get(k))
@@ -516,6 +540,7 @@ def main():
                         print(f"     (falha ao gravar {nome[:20]}: {str(e)[:40]})")
                         time.sleep(1)
                         continue
+                enriquecidos += 1
             if not args.dry_run:
                 ledger_add(nome, mask, "hit" if got else "sem_match", flags)
             print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> {flags or 'sem match'}")
@@ -526,7 +551,8 @@ def main():
         if resultados:
             w = csv.DictWriter(f, fieldnames=list(resultados[0].keys())); w.writeheader(); w.writerows(resultados)
     com_tel = sum(1 for r in resultados if r.get("telefone"))
-    print(f"\n> {len(resultados)} sócios enriquecidos (telefone:{com_tel}). CSV: {out_csv.name}")
+    grav = enriquecidos if not args.dry_run else 0
+    print(f"\n> {len(resultados)} sócios com match (telefone:{com_tel}) | {grav} gravados no CRM. CSV: {out_csv.name}")
 
 
 def avaliar_socio(cands, nome, mask):
