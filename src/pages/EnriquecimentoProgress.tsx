@@ -27,7 +27,9 @@ export default function EnriquecimentoProgress() {
       // Busca sócios PF por UF + status de enriquecimento
       const { data: rows, error } = await supabase
         .from("empresa_contatos")
-        .select("id, papel, empresas!inner(uf), origem, observacoes", { head: false });
+        .select("id, papel, cpf_mascarado, empresas!inner(uf), origem, observacoes", {
+          head: false,
+        });
 
       if (error) throw error;
 
@@ -37,11 +39,17 @@ export default function EnriquecimentoProgress() {
         (row: {
           empresas: { uf: string } | null;
           papel: string;
+          cpf_mascarado?: string;
           observacoes?: string;
           origem?: string;
         }) => {
           const uf = row.empresas?.uf;
+          // Universo enriquecível = só sócios PF com CPF realmente mascarado (com
+          // "*"). O skip-trace só alcança esses — é o mesmo recorte do registry
+          // tjSystems e da medição por SQL. Contar sócios sem máscara inflava o
+          // denominador e jogava a cobertura pra baixo de forma irreal.
           if (!uf || row.papel !== "socio") return;
+          if (!(row.cpf_mascarado || "").includes("*")) return;
 
           if (!byUf[uf]) {
             byUf[uf] = {
@@ -58,7 +66,10 @@ export default function EnriquecimentoProgress() {
 
           byUf[uf].totalSocios++;
 
-          if ((row.observacoes || "").includes("PJe")) {
+          // Enriquecido via tribunal = tem marcador de qualquer um dos 3 scrapers:
+          // PJe/TJxx (RN), eproc/TJxx (RS/SC/SP), Projudi/TJPR (PR). O check antigo
+          // só pegava "PJe" e zerava o progresso de eproc/Projudi.
+          if (/(PJe|eproc|Projudi)\//.test(row.observacoes || "")) {
             byUf[uf].enrichedPje++;
             byUf[uf].totalEnriched++;
           } else if (row.origem === "driva") {
@@ -101,6 +112,8 @@ export default function EnriquecimentoProgress() {
         const csv =
           "UF,Nome,CPF Mascarado,Empresa,Email,Telefone\n" +
           (rows ?? [])
+            // só os pendentes que o skip-trace alcança (CPF mascarado com "*")
+            .filter((r: { cpf_mascarado?: string }) => (r.cpf_mascarado || "").includes("*"))
             .map(
               (r: {
                 empresas: { uf: string; nome: string } | null;
@@ -239,7 +252,7 @@ export default function EnriquecimentoProgress() {
               <div className="flex flex-wrap gap-1 pt-1 text-[10px]">
                 {state.enrichedPje > 0 && (
                   <Badge variant="outline" className="text-blue-600">
-                    PJe/eproc: {state.enrichedPje}
+                    Tribunal: {state.enrichedPje}
                   </Badge>
                 )}
                 {state.enrichedDriva > 0 && (
