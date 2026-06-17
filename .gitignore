@@ -61,6 +61,14 @@ projudi_*.csv
 projudi_*.jsonl
 projudi_*.html
 projudi_*.png
+esaj_*.csv
+esaj_*.jsonl
+esaj_*.html
+esaj_*.png
 pje_lote_*.log
 tools/pje-env.local.ps1
 tools/_diag_dump.py
+
+# Python build artifacts (scrapers em tools/)
+__pycache__/
+*.py[cod]
