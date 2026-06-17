@@ -22,65 +22,77 @@ from datetime import datetime
 # ⚠️ LIÇÃO (verificado 15/06/2026): nem todo TJ usa PJe. O parser do PJe SÓ serve
 # pra estados PJe. RS/SC usam eproc (ver eproc_skiptrace.py); PR abandonou o PJe
 # (virou Projudi). Por isso "system" importa mais que "has_cloudflare".
+# Fonte de verdade canônica dos sistemas = src/lib/tjSystems.ts (frontend); mantido em sincronia.
+# viable: True=expõe petição a advogado não-parte | False=inviável | None=a confirmar.
 TRIBUNALS = {
     "rn": {
-        "url": "pje1g.tjrn.jus.br",
-        "state": "RN",
-        "name": "TJRN",
-        "system": "pje",  # ✓ acessível, scraper pronto (pje_rn_skiptrace.py)
-    },
-    "pb": {
-        "url": "pje1g.tjpb.jus.br",
-        "state": "PB",
-        "name": "TJPB",
-        "system": "pje",  # PJe, mas Cloudflare bloqueia o domínio todo -> inviável
-    },
-    "pr": {
-        "url": "projudi.tjpr.jus.br",
-        "state": "PR",
-        "name": "TJPR",
-        "system": "projudi",  # PJe DESATIVADO; processos migrados p/ Projudi
+        "url": "pje1g.tjrn.jus.br", "state": "RN", "name": "TJRN", "system": "pje",
+        "scraper": "pje_rn_skiptrace.py", "viable": True,
+        "note": "ativo; sessao persistente (sem CDP)",
     },
     "rs": {
-        "url": "eproc1g.tjrs.jus.br",
-        "state": "RS",
-        "name": "TJRS",
-        "system": "eproc",  # eproc (TRF4) -> eproc_skiptrace.py --tj rs
+        "url": "eproc1g.tjrs.jus.br", "state": "RS", "name": "TJRS", "system": "eproc",
+        "scraper": "eproc_skiptrace.py --tj rs --cdp", "viable": True,
+        "note": "pronto; precisa A3 via CDP (--inspect 1x p/ calibrar)",
     },
     "sc": {
-        "url": "eproc1g.tjsc.jus.br",
-        "state": "SC",
-        "name": "TJSC",
-        "system": "eproc",  # eproc (TRF4) -> eproc_skiptrace.py --tj sc
+        "url": "eproc1g.tjsc.jus.br", "state": "SC", "name": "TJSC", "system": "eproc",
+        "scraper": "eproc_skiptrace.py --tj sc --cdp", "viable": True,
+        "note": "pronto; precisa A3 via CDP (--inspect 1x p/ calibrar)",
+    },
+    "pr": {
+        "url": "projudi.tjpr.jus.br", "state": "PR", "name": "TJPR", "system": "projudi",
+        "scraper": "projudi_skiptrace.py --cdp", "viable": None,
+        "note": "scaffold; seletores a confirmar via --inspect (A3)",
+    },
+    "pb": {
+        "url": "pje1g.tjpb.jus.br", "state": "PB", "name": "TJPB", "system": "pje",
+        "scraper": "(bloqueado)", "viable": False,
+        "note": "Cloudflare protege o dominio todo -> inviavel",
+    },
+    "sp": {
+        "url": "esaj.tjsp.jus.br", "state": "SP", "name": "TJSP", "system": "esaj",
+        "scraper": "(bloqueado)", "viable": False,
+        "note": "e-SAJ nao expoe autos a nao-parte; eproc-SP ~0 pendente -> inviavel",
     },
 }
 
 
 def check_tribunal_access(tj_code: str) -> dict:
-    """Testa acessibilidade do tribunal (sem Playwright, só HTTP).
+    """Testa acessibilidade do tribunal (sem Playwright, só HTTP GET).
 
-    Retorna: { accessible: bool, cloudflare: bool, error: str or None }
+    'No ar' = QUALQUER resposta HTTP (200/302/403/405...). PJe/eproc respondem
+    403/405 a um GET na raiz sem rota/método — isso é NORMAL, não bloqueio.
+    Só conta como Cloudflare se vier o desafio anti-bot real (cf-ray/cf-mitigated/
+    "Just a moment"/challenge-platform). Por isso GET (não HEAD) e leitura do corpo.
+
+    Retorna: { reachable: bool, cloudflare: bool|None, status: int|None, error: str|None }
     """
     import requests
 
     if tj_code not in TRIBUNALS:
-        return {"accessible": False, "error": f"TJ desconhecido: {tj_code}"}
+        return {"reachable": False, "cloudflare": None, "status": None,
+                "error": f"TJ desconhecido: {tj_code}"}
 
-    info = TRIBUNALS[tj_code]
-    url = f"https://{info['url']}"
-
+    url = f"https://{TRIBUNALS[tj_code]['url']}"
+    ua = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
     try:
-        # HEAD request rápido
-        resp = requests.head(url, timeout=5, allow_redirects=True)
-        has_cf = "cf" in resp.headers.get("server", "").lower() or resp.status_code == 403
-        return {
-            "accessible": resp.status_code in (200, 302),
-            "cloudflare": has_cf,
-            "status": resp.status_code,
-            "error": None,
-        }
+        resp = requests.get(url, headers=ua, timeout=8, allow_redirects=True)
+        h = {k.lower(): v for k, v in resp.headers.items()}
+        body = (resp.text[:2000] or "").lower()
+        # CF na frente (CDN) != CF bloqueando. Gov BR usa CF como CDN e PASSA o trafego
+        # (RS = server:cloudflare + cf-ray, mas devolve 200 com a pagina de login real).
+        cf_present = bool(h.get("cf-ray") or h.get("cf-mitigated")
+                          or "cloudflare" in h.get("server", "").lower())
+        challenge = any(m in body for m in ("just a moment", "cf-browser-verification",
+                                            "/cdn-cgi/challenge-platform"))
+        # Bloqueio REAL = desafio no corpo OU status de bloqueio servido pelo CF.
+        cf_blocked = challenge or (cf_present and resp.status_code in (403, 429, 503))
+        return {"reachable": True, "cf_present": cf_present, "cloudflare": cf_blocked,
+                "status": resp.status_code, "final_url": resp.url, "error": None}
     except Exception as e:
-        return {"accessible": False, "cloudflare": None, "error": str(e)}
+        return {"reachable": False, "cloudflare": None, "status": None, "error": str(e)}
 
 
 def list_tj_targets(tj_code: str, limit: int = 100) -> list:
@@ -142,41 +154,31 @@ def list_tj_targets(tj_code: str, limit: int = 100) -> list:
 
 
 def run_pje_skiptrace(tj_code: str, limit: int):
-    """Dispara o skiptrace PJe pra um TJ específico.
+    """Dispara o skip-trace do TJ no scraper certo p/ o SISTEMA dele.
 
-    Usa o script existente pje_rn_skiptrace.py, mas adaptado pra multi-TJ.
-    Por enquanto, só RN está totalmente testado.
+    RN (pje) roda direto (sessão persistente, sem CDP). eproc/Projudi precisam de
+    login A3 no Chrome real via CDP -> não dá p/ orquestrar headless aqui; o script
+    imprime o comando exato. TJs inviáveis (PB Cloudflare, SP e-SAJ) são pulados.
     """
-
     info = TRIBUNALS[tj_code]
 
-    if tj_code != "rn":
-        print(f"WARN {info['name']} ({tj_code.upper()}) - TJ com Cloudflare, pode falhar.", file=sys.stderr)
-        print(f"       Tentaremos mesmo assim, mas sem garantia.", file=sys.stderr)
-
-    print(f"\nTRACE Iniciando skip-trace: {info['name']} ({info['state']}) - limit {limit}", flush=True)
-
-    # Lista de alvos
-    targets = list_tj_targets(tj_code, limit)
-
-    if not targets:
-        print(f" Nenhum sócio pendente em {tj_code.upper()}", flush=True)
+    if info.get("viable") is False:
+        print(f"SKIP {info['name']} ({tj_code.upper()}) inviavel: {info['note']}", file=sys.stderr)
         return 0
 
-    print(f" {len(targets)} sócios pra enriquecer em {info['name']}", flush=True)
-
     if tj_code == "rn":
-        # RN: usar script existente
-        result = subprocess.run(
+        print(f"\nTRACE {info['name']} ({info['state']}) -> pje_rn_skiptrace.py (limit {limit})", flush=True)
+        return subprocess.run(
             ["python", "-u", "tools/pje_rn_skiptrace.py", "--limit", str(limit)],
-            timeout=3600,  # 1h max
-        )
-        return result.returncode
-    else:
-        # Outros TJs: modo "demo" por enquanto (não implementado fully)
-        print(f"  {info['name']} ainda em desenvolvimento.", file=sys.stderr)
-        print(f"   Implementação: adaptar Playwright para URL={info['url']}", file=sys.stderr)
-        return 1
+            timeout=3600,
+        ).returncode
+
+    # eproc (RS/SC) / Projudi (PR): exigem A3 via CDP (login manual) -> não orquestrável aqui.
+    print(f"\nMANUAL {info['name']} ({info['state']}) usa '{info['system']}' e precisa de login A3 via CDP:")
+    print(f"  1) .\\tools\\chrome-cdp.ps1 -Tj {tj_code}   (Chrome real; logue o A3)")
+    print(f"  2) python tools/{info['scraper']} --limit {limit}")
+    print(f"     ({info['note']})", flush=True)
+    return 2
 
 
 def main():
@@ -200,19 +202,24 @@ def main():
 
     if args.check:
         print("CHECK Acessibilidade + sistema de cada Tribunal...\n")
-        scraper = {"pje": "pje_rn_skiptrace.py", "eproc": "eproc_skiptrace.py", "projudi": "(TODO)"}
+        viab_lbl = {True: "viavel", False: "inviavel", None: "a confirmar"}
         for tj_code, info in TRIBUNALS.items():
-            result = check_tribunal_access(tj_code)
-            status = "OK" if result["accessible"] else "FAIL"
-            cf = " (Cloudflare)" if result.get("cloudflare") else ""
-            sysname = info.get("system", "?")
+            r = check_tribunal_access(tj_code)
+            if not r["reachable"]:
+                net = "DNS/down"
+            elif r.get("cloudflare"):
+                net = f"CF-BLOCK {r['status']}"
+            else:
+                net = f"up {r['status']}" + (" (CF)" if r.get("cf_present") else "")
             print(
-                f"{status:4} {info['name']:6} {info['state']:2} "
-                f"sys={sysname:8} scraper={scraper.get(sysname, '?'):22}"
-                f"http={result.get('status', '?')}{cf}"
+                f"{info['name']:6} {info['state']:2} sys={info['system']:8} "
+                f"net={net:13} {viab_lbl[info.get('viable')]:11} -> {info['scraper']}"
             )
-            if result.get("error"):
-                print(f"       Error: {result['error']}", file=sys.stderr)
+            if r.get("error"):
+                print(f"       net error: {r['error']}", file=sys.stderr)
+        print("\nLegenda: 403/405 a GET na raiz e NORMAL no PJe/eproc (nao e bloqueio). "
+              "'(CF)' = Cloudflare na frente mas PASSA (ok com browser+A3). "
+              "CF-BLOCK = desafio/403 do Cloudflare. Rodar cada um exige login A3.")
         return 0
 
     # Parsear TJs
