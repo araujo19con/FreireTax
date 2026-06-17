@@ -131,31 +131,63 @@ ALVOS_QUERY = ("empresa_contatos?select=id,empresa_id,nome,cpf_mascarado,telefon
                "&cpf_mascarado=like.*%2A*&empresas.uf=eq.RN&order=nome.asc")
 
 
-def carregar_socios(limit):
-    """Sócios RN pessoa-física ainda não varridos. Pagina o banco pulando os já
-    varridos (ledger), já enriquecidos (marcador) e PJ — o lote avança de verdade."""
+def engaged_empresa_ids():
+    """empresa_ids onde o escritório está ATIVAMENTE engajado (prospecção, proposta,
+    reunião ou tarefa). Sócios dessas empresas são PRIORIDADE: quando o usuário for
+    trabalhar o caso, o contato (CPF/telefone) já está no CRM em vez de espalhado por
+    semanas de varredura alfabética. Reach pequeno (~dezenas), alto valor; tabela
+    ausente/erro não derruba o lote (cai pro alfabético)."""
+    ids = set()
+    for tbl in ("prospeccoes", "propostas", "reunioes", "tarefas"):
+        try:
+            for r in (sb(f"{tbl}?select=empresa_id&empresa_id=not.is.null&limit=10000") or []):
+                if r.get("empresa_id"):
+                    ids.add(r["empresa_id"])
+        except Exception:
+            pass
+    return ids
+
+
+def carregar_socios(limit, priorizar_engajados=True):
+    """Sócios RN pessoa-física ainda não varridos. Prioriza sócios de empresas
+    engajadas e DEPOIS segue alfabético; pula os já varridos (ledger), já enriquecidos
+    (marcador) e PJ. Ledger+marcador garantem que ninguém é re-processado."""
     done = ledger_nomes()
-    vistos, alvos, offset, page = set(), [], 0, 1000
-    while len(alvos) < limit:
-        rows = sb(ALVOS_QUERY + f"&limit={page}&offset={offset}") or []
-        if not rows:
-            break
-        offset += page
-        for r in rows:
-            nome = (r.get("nome") or "").strip()
-            if not nome:
-                continue
-            up = nome.upper()
-            if up in vistos or up in done:
-                continue
-            if "PJe/TJRN" in (r.get("observacoes") or ""):
-                continue
-            if parece_pj(nome):
-                continue
-            vistos.add(up)
-            alvos.append(r)
-            if len(alvos) >= limit:
+    vistos, alvos = set(), []
+
+    def _coletar(extra=""):
+        offset, page = 0, 1000
+        while len(alvos) < limit:
+            rows = sb(ALVOS_QUERY + extra + f"&limit={page}&offset={offset}") or []
+            if not rows:
                 break
+            offset += page
+            for r in rows:
+                nome = (r.get("nome") or "").strip()
+                if not nome:
+                    continue
+                up = nome.upper()
+                if up in vistos or up in done:
+                    continue
+                if "PJe/TJRN" in (r.get("observacoes") or ""):
+                    continue
+                if parece_pj(nome):
+                    continue
+                vistos.add(up)
+                alvos.append(r)
+                if len(alvos) >= limit:
+                    break
+
+    # 1) prioridade: sócios de empresas engajadas (alto valor, reach pequeno)
+    if priorizar_engajados:
+        eng = engaged_empresa_ids()
+        if eng:
+            _coletar(f"&empresa_id=in.({','.join(str(x) for x in eng)})")
+            if alvos:
+                print(f">>> {len(alvos)} sócio(s) de empresas ENGAJADAS priorizados "
+                      "(prospecção/proposta/reunião/tarefa).", flush=True)
+    # 2) preenche o resto em ordem alfabética
+    _coletar()
     return alvos
 
 
