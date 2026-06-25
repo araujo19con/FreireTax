@@ -115,7 +115,10 @@ interface BrasilAPICNPJ {
   uf?: string;
   cep?: string;
   ddd_telefone_1?: string;
+  ddd_telefone_2?: string;
   email?: string;
+  /** Todos os telefones já coletados (preenchido pelos conversores cnpja/receitaws) */
+  _telefones?: string[];
   qsa?: Array<{
     nome_socio?: string;
     qualificacao_socio?: string;
@@ -276,6 +279,10 @@ async function fetchCNPJa(
 function cnpjaToBrasilAPI(r: CNPJaResponse): BrasilAPICNPJ {
   const phone = r.phones?.[0];
   const ddd = phone ? `${phone.area ?? ""}${phone.number ?? ""}` : undefined;
+  // Todos os telefones do CNPJa (phones[] tipado — é onde costuma vir o CELULAR)
+  const allPhones = (r.phones ?? [])
+    .map((p) => `${p.area ?? ""}${p.number ?? ""}`)
+    .filter((s) => s.replace(/\D/g, "").length >= 10);
   // size.acronym: "ME" | "EPP" | "MEI" | "DEMAIS" — compatível com mapPorte
   const porteRaw = r.company?.size?.acronym ?? r.company?.size?.text;
   return {
@@ -306,6 +313,7 @@ function cnpjaToBrasilAPI(r: CNPJaResponse): BrasilAPICNPJ {
     uf: r.address?.state,
     cep: r.address?.zip,
     ddd_telefone_1: ddd,
+    _telefones: allPhones,
     email: r.emails?.[0]?.address,
     qsa: (r.company?.members ?? []).map((m) => ({
       nome_socio: m.person?.name,
@@ -347,6 +355,10 @@ function receitaWSToBrasilAPI(r: ReceitaWSResponse): BrasilAPICNPJ {
     uf: r.uf,
     cep,
     ddd_telefone_1: r.telefone,
+    _telefones: (r.telefone ?? "")
+      .split(/[/;]/)
+      .map((s) => s.trim())
+      .filter(Boolean),
     email: r.email,
     qsa: (r.qsa ?? []).map((s) => ({
       nome_socio: s.nome,
@@ -381,6 +393,20 @@ function normalizeForDB(raw: BrasilAPICNPJ) {
     uf: raw.uf ?? null,
     cep: raw.cep ?? null,
     telefone_receita: raw.ddd_telefone_1 ?? null,
+    // TODOS os telefones da Receita (dígitos), incl. celular — materializados em
+    // empresa_contatos pelo trigger derive_contatos_from_rfb (tipo classificado lá).
+    // Limpa lixo: tira 55, exige 10/11 díg, descarta repetidos (0000.., 9999..).
+    telefones: Array.from(
+      new Set(
+        [raw.ddd_telefone_1, raw.ddd_telefone_2, ...(raw._telefones ?? [])]
+          .map((p) => {
+            let d = (p ?? "").replace(/\D/g, "");
+            if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
+            return d;
+          })
+          .filter((d) => (d.length === 10 || d.length === 11) && !/^(\d)\1+$/.test(d))
+      )
+    ),
     email_receita: raw.email ?? null,
     qsa: (raw.qsa ?? []).map((s) => ({
       nome: s.nome_socio ?? null,
