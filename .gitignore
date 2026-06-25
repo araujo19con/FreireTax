@@ -52,6 +52,8 @@ supabase/.branches/
 pje_rn_skiptrace.csv
 pje_rn_dump.jsonl
 pje_rn_ledger.jsonl
+pje_rn_names_ledger.jsonl
+pb_cnpjs_socios_target.json
 eproc_*.csv
 eproc_*.jsonl
 eproc_*.html

@@ -71,6 +71,71 @@ cd c:\Users\Gabriel\Desktop\FREIRETAX\tax-trakker
 
 ---
 
+## 🌎 Frentes RS / SC / PR (preparadas 22/06)
+
+**Prontidão: código 100% pronto; falta só seu acesso A3 em cada tribunal.**
+Verificado 22/06: os 3 scrapers compilam, carregam alvos do Supabase pelo próprio
+código (25/25 cada), markers e launcher CDP corretos. 0 enriquecidos nos três.
+
+| Frente | Sistema | Scraper                      | Pendentes | Status                                                          |
+| ------ | ------- | ---------------------------- | --------- | --------------------------------------------------------------- |
+| **RS** | eproc   | `eproc_skiptrace.py --tj rs` | 2.348     | ✅ pronto · A3 (TJRS pede cadastrar 2FA antes) · 1× `--inspect` |
+| **SC** | eproc   | `eproc_skiptrace.py --tj sc` | 2.219     | ✅ pronto · A3 · 1× `--inspect`                                 |
+| **PR** | Projudi | `projudi_skiptrace.py`       | 2.708     | ⚠️ scaffold · seletores a CONFIRMAR via `--inspect` (A3)        |
+
+### Por que é diferente do RN (CDP obrigatório)
+
+RN (PJe) loga A3 direto no Chromium do Playwright. **RS/SC/PR usam Keycloak SSO**,
+que o Chromium do Playwright NÃO consegue apresentar o A3. Solução = **modo CDP**:
+abrir o Chrome REAL (cert store do Windows), logar A3 nele, e o scraper conecta via
+`--cdp`. Perfis isolados por sistema (`.chrome-cdp-profile`, `.eproc-rs-chrome-profile`…).
+
+### Sequência por frente — RS (trocar `rs`→`sc` p/ SC)
+
+```powershell
+cd c:\Users\Gabriel\Desktop\FREIRETAX\tax-trakker
+# 1) abre o Chrome real com porta CDP no eproc do TJ
+.\tools\chrome-cdp.ps1 -Tj rs
+#    -> logue com o A3 na aba que abrir (eproc1g.tjrs.jus.br)
+# 2) noutro terminal — 1a vez: CALIBRAR seletores (dumpa a tela, NAO grava)
+. .\tools\pje-env.local.ps1
+python tools\eproc_skiptrace.py --tj rs --inspect --cdp
+#    -> confirma SEL_VALOR/SEL_FORMA/SEL_DOC no DOM logado; ajustar se algo falhar
+# 3) rodar o lote (grava no CRM)
+python tools\eproc_skiptrace.py --tj rs --limit 150 --cdp
+#    afinar parser offline: por --dump no lote, depois --reparse <jsonl> (sem browser)
+```
+
+### PR (Projudi) — mesma mecânica, scraper à parte
+
+```powershell
+.\tools\chrome-cdp.ps1 -Tj pr      # projudi.tjpr.jus.br
+. .\tools\pje-env.local.ps1
+python tools\projudi_skiptrace.py --inspect --cdp   # FECHA os seletores (e scaffold)
+python tools\projudi_skiptrace.py --limit 150 --cdp
+```
+
+Projudi usa FRAMESETS → `--inspect` dumpa cada frame (`projudi_frame*.html`) e lista
+os ids dos campos, pra fechar SEL_NOME/SEL_PESQUISAR/SEL_DOC.
+
+### Diagnóstico de viabilidade (sem A3, a qualquer momento)
+
+```powershell
+python tools\pje_multi_tj.py --check   # net + sistema + viabilidade por TJ
+```
+
+### Pré-requisitos (seu lado) e expectativas
+
+- [ ] A3 reconhecido no tribunal-alvo (**RS exige cadastrar 2FA** antes de logar)
+- [ ] Chrome instalado (o CDP usa o Chrome real, não o do Playwright)
+- ⚠️ NUNCA fechar o Chrome do CDP pelo scraper (fecharia suas abas — sair do `with` basta)
+- eproc é o sistema PRIMÁRIO de RS/SC → cobertura deve ser boa (≠ SP, onde eproc é novo e rende ~0)
+- Mesmos gotchas do RN: sessão A3 ~30min, possível limite diário, telefone pessoal raro (CPF+endereço é o forte)
+- Marca `eproc/TJRS` · `eproc/TJSC` · `Projudi/TJPR` em `observacoes`; resumível e idempotente
+- PB e SP ficam de fora: PB = Cloudflare bloqueia o domínio; SP = e-SAJ não expõe autos a não-parte
+
+---
+
 ## 📊 Cobertura Atual (estado 10/06)
 
 | Métrica                    | Valor    | %      |

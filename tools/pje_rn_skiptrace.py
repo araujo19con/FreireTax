@@ -412,6 +412,10 @@ def main():
                     help="salva o texto cru dos autos em pje_rn_dump.jsonl (corpus p/ reparse)")
     ap.add_argument("--reparse", metavar="JSONL",
                     help="reprocessa um corpus salvo (SEM browser) e mostra o rendimento")
+    ap.add_argument("--names-file", metavar="JSON",
+                    help="busca uma lista CUSTOM de alvos [{nome,cpf_mascarado}] no TJRN "
+                         "(ex: sócios PB de CNPJs-alvo) em vez do sweep alfabético RN. "
+                         "Usa ledger próprio (pje_rn_names_ledger.jsonl), resumível.")
     args = ap.parse_args()
     # modo offline: afina o parser sobre o corpus salvo, zero requisição ao TJRN
     if args.reparse:
@@ -422,8 +426,20 @@ def main():
 
     from playwright.sync_api import sync_playwright
 
-    alvos = carregar_socios(args.limit)
-    print(f"> {len(alvos)} sócios RN a processar (pessoa física, sem enriquecimento PJe).")
+    if args.names_file:
+        # modo lista-custom: alvos vêm de um JSON (não do sweep RN). Ledger próprio
+        # p/ não misturar com a frente alfabética e ser resumível por conta própria.
+        global LEDGER
+        LEDGER = ROOT / "pje_rn_names_ledger.jsonl"
+        raw = json.load(open(args.names_file, encoding="utf-8"))
+        done = ledger_nomes()
+        alvos = [a for a in raw if a.get("nome") and a.get("cpf_mascarado")
+                 and a["nome"].upper() not in done][:args.limit]
+        print(f"> {len(alvos)} alvos custom (de {len(raw)}; {len(done)} já no ledger próprio) "
+              f"a BUSCAR no TJRN. Ledger: {LEDGER.name}")
+    else:
+        alvos = carregar_socios(args.limit)
+        print(f"> {len(alvos)} sócios RN a processar (pessoa física, sem enriquecimento PJe).")
 
     out_csv = ROOT / "pje_rn_skiptrace.csv"
     resultados = []
