@@ -517,6 +517,24 @@ Deno.serve(async (req) => {
       const ba = await fetchBrasilAPI(cnpj);
       if (ba.ok) {
         raw = ba.data;
+        // MERGE p/ MELHOR DADO: além da BrasilAPI (firmográfico + telefone fixo),
+        // busca o array de telefones TIPADO do CNPJa (onde costuma vir o CELULAR)
+        // e mescla em _telefones. Best-effort: se o CNPJa rate-limitar (429, 5/min)
+        // ou cair, segue só com a BrasilAPI. O resultado mesclado é cacheado, então
+        // não re-bate no CNPJa. (No bulk a 600ms o CNPJa 429 na maioria → benefício
+        // pleno é no enriquecimento avulso; bulk pega parcial.)
+        step = "merge-cnpja-phones";
+        try {
+          const cn = await fetchCNPJa(cnpj);
+          if (cn.ok) {
+            const extra = (cn.data.phones ?? [])
+              .map((p) => `${p.area ?? ""}${p.number ?? ""}`)
+              .filter((s) => s.replace(/\D/g, "").length >= 10);
+            if (extra.length) raw._telefones = [...(raw._telefones ?? []), ...extra];
+          }
+        } catch {
+          /* CNPJa indisponível — mantém só os telefones da BrasilAPI */
+        }
       } else if (ba.status === 404) {
         step = "fetch-cnpja";
         const cn = await fetchCNPJa(cnpj);
