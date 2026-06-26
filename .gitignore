@@ -74,3 +74,4 @@ tools/_diag_dump.py
 # Python build artifacts (scrapers em tools/)
 __pycache__/
 *.py[cod]
+cnpja_phone_ledger.json
