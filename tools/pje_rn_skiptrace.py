@@ -274,6 +274,37 @@ def _limpa_endereco(end):
     return end
 
 
+RE_EMAIL_ADV = re.compile(r"advoc|advogad|\.adv|jurid|\boab\b", re.I)
+
+
+def _sem_acento(s):
+    return "".join(c for c in unicodedata.normalize("NFD", s)
+                   if unicodedata.category(c) != "Mn")
+
+
+def _email_do_alvo(jan, alvo_nome):
+    """E-mail da janela que é do SÓCIO, não do advogado. Rejeita contexto
+    OAB/advogado/procurador (nas ~120 chars anteriores) e domínio jurídico, e
+    exige que o local-part case com um pedaço do nome do sócio — petição quase
+    sempre traz o e-mail do ADVOGADO (endereço de intimação), então só guardamos
+    o que comprovadamente casa o sócio (política 'médio')."""
+    toks = [t for t in re.split(r"[^a-z]+", _sem_acento(alvo_nome).lower()) if len(t) >= 3]
+    for m in RE_EMAIL.finditer(jan):
+        e = m.group(0)
+        low = e.lower()
+        if "latam" in low:
+            continue
+        ctx = jan[max(0, m.start() - 120): m.start()].upper()
+        if "OAB" in ctx or "ADVOGAD" in ctx or "PROCURADOR" in ctx:
+            continue
+        if RE_EMAIL_ADV.search(low):
+            continue
+        local = low.split("@", 1)[0]
+        if any(t in local for t in toks):
+            return e
+    return ""
+
+
 def parse_qualificacao(txt_raw, alvo_nome, mask=None):
     t = limpa(txt_raw)
     out = {"cpf": "", "endereco": "", "cep": "", "telefone": "", "email": "", "advogado": ""}
@@ -304,10 +335,9 @@ def parse_qualificacao(txt_raw, alvo_nome, mask=None):
         if mcep:
             out["cep"] = mcep.group(0)
     out["telefone"] = _telefone(jan, t)
-    # email só ancorado no alvo (no texto todo pegaria o do advogado/cartório)
-    em = RE_EMAIL.search(jan)
-    if em and "latam" not in em.group(0).lower():
-        out["email"] = em.group(0)
+    # email: só o do SÓCIO — rejeita advogado/OAB + domínio jurídico e exige
+    # casar o nome do sócio no local-part (e-mail de petição ~ sempre do adv).
+    out["email"] = _email_do_alvo(jan, alvo_nome)
     madv = RE_ADV.search(txt_raw)
     if madv:
         out["advogado"] = re.sub(r"\s+", " ", madv.group(1)).strip()
