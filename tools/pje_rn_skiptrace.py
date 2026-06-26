@@ -244,9 +244,11 @@ def _janela_alvo(t, alvo_nome):
 
 
 def _ctx_advogado(txt, start):
-    """True se o trecho logo antes da posição é de advogado/OAB (telefone alheio)."""
-    ctx = txt[max(0, start - 40): start].upper()
-    return "OAB" in ctx or "ADVOGAD" in ctx
+    """True se o trecho antes da posição é de advogado/OAB/procurador (telefone
+    alheio). Janela 90 chars (era 40) — pega "advogado(a) Fulano ..., tel:" onde
+    o rótulo fica mais longe do número."""
+    ctx = txt[max(0, start - 90): start].upper()
+    return "OAB" in ctx or "ADVOGAD" in ctx or "PROCURADOR" in ctx
 
 
 def _telefone(jan, full):
