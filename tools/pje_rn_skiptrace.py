@@ -125,10 +125,31 @@ def ledger_add(nome, mask, result, flags=""):
                             "flags": flags}, ensure_ascii=False) + "\n")
 
 
-# query base dos alvos (sócio PF do RN com CPF mascarado) — usada aqui e no painel
-ALVOS_QUERY = ("empresa_contatos?select=id,empresa_id,nome,cpf_mascarado,telefone,email,"
-               "observacoes,empresas!inner(uf)&papel=eq.socio&cpf_mascarado=not.is.null"
-               "&cpf_mascarado=like.*%2A*&empresas.uf=eq.RN&order=nome.asc")
+MARKER = "PJe/TJRN"  # marcador em observacoes; reatribuído por --tj em main()
+
+# Config por tribunal PJe (o parser/busca são padrão PJe; muda só URL/UF/marcador).
+# default 'rn' = TJRN (comportamento atual, sem regressão). 'trf5' = Justiça Federal
+# 5ª Região (RN/PB/PE/CE/AL/SE) — pega os processos FEDERAIS dos sócios do NE
+# (execução fiscal da União/tributário — a tese FreireTax). Mesmo DOM do PJe TJRN.
+TJ = {
+    "rn": {"nome": "TJRN", "ufs": ["RN"],
+           "consulta": "https://pje1g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+           "marker": "PJe/TJRN", "profile": ".pje-chrome-profile", "ledger": "pje_rn_ledger.jsonl"},
+    "trf5": {"nome": "TRF5", "ufs": ["RN", "PB", "PE", "CE", "AL", "SE"],
+             "consulta": "https://pje1g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+             "marker": "PJe/TRF5", "profile": ".pje-trf5-chrome-profile", "ledger": "pje_trf5_ledger.jsonl"},
+}
+
+
+def _alvos_query(ufs):
+    flt = (f"empresas.uf=in.({','.join(ufs)})" if len(ufs) > 1 else f"empresas.uf=eq.{ufs[0]}")
+    return ("empresa_contatos?select=id,empresa_id,nome,cpf_mascarado,telefone,email,"
+            "observacoes,empresas!inner(uf)&papel=eq.socio&cpf_mascarado=not.is.null"
+            f"&cpf_mascarado=like.*%2A*&{flt}&order=nome.asc")
+
+
+# query base dos alvos (default RN) — usada aqui e no painel; reatribuída por --tj
+ALVOS_QUERY = _alvos_query(["RN"])
 
 
 def engaged_empresa_ids():
@@ -169,7 +190,7 @@ def carregar_socios(limit, priorizar_engajados=True):
                 up = nome.upper()
                 if up in vistos or up in done:
                     continue
-                if "PJe/TJRN" in (r.get("observacoes") or ""):
+                if MARKER in (r.get("observacoes") or ""):
                     continue
                 if parece_pj(nome):
                     continue
@@ -445,9 +466,16 @@ def main():
     ap.add_argument("--reparse", metavar="JSONL",
                     help="reprocessa um corpus salvo (SEM browser) e mostra o rendimento")
     ap.add_argument("--names-file", metavar="JSON",
-                    help="busca uma lista CUSTOM de alvos [{nome,cpf_mascarado}] no TJRN "
-                         "(ex: sócios PB de CNPJs-alvo) em vez do sweep alfabético RN. "
-                         "Usa ledger próprio (pje_rn_names_ledger.jsonl), resumível.")
+                    help="busca uma lista CUSTOM de alvos [{nome,cpf_mascarado}] no tribunal "
+                         "(ex: sócios PB de CNPJs-alvo) em vez do sweep por UF. "
+                         "Ledger próprio (pje_<tj>_names_ledger.jsonl), resumível.")
+    ap.add_argument("--tj", default="rn", choices=list(TJ),
+                    help="tribunal PJe: rn (TJRN, default) | trf5 (Justiça Federal 5ª Reg: "
+                         "RN/PB/PE/CE/AL/SE — processos FEDERAIS dos sócios do NE)")
+    ap.add_argument("--cdp", action="store_true",
+                    help="conecta no Chrome REAL (--remote-debugging-port) p/ login A3/PDPJ "
+                         "(federal/Keycloak que o Chromium do Playwright não apresenta o A3)")
+    ap.add_argument("--port", type=int, default=9222, help="porta CDP (default 9222)")
     args = ap.parse_args()
     # modo offline: afina o parser sobre o corpus salvo, zero requisição ao TJRN
     if args.reparse:
@@ -456,28 +484,43 @@ def main():
         print("ERRO: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."); sys.exit(1)
     dump_path = ROOT / "pje_rn_dump.jsonl"  # corpus só é resetado após login OK
 
+    # aplica a config do tribunal (--tj). default 'rn' = comportamento original.
+    global CONSULTA, PROFILE, LEDGER, ALVOS_QUERY, MARKER
+    _c = TJ[args.tj]
+    CONSULTA = _c["consulta"]
+    PROFILE = str(ROOT / _c["profile"])
+    LEDGER = ROOT / _c["ledger"]
+    MARKER = _c["marker"]
+    ALVOS_QUERY = _alvos_query(_c["ufs"])
+
     from playwright.sync_api import sync_playwright
 
     if args.names_file:
-        # modo lista-custom: alvos vêm de um JSON (não do sweep RN). Ledger próprio
-        # p/ não misturar com a frente alfabética e ser resumível por conta própria.
-        global LEDGER
-        LEDGER = ROOT / "pje_rn_names_ledger.jsonl"
+        # modo lista-custom: alvos vêm de um JSON (não do sweep). Ledger próprio
+        # p/ não misturar com a frente por-UF e ser resumível por conta própria.
+        LEDGER = ROOT / f"pje_{args.tj}_names_ledger.jsonl"
         raw = json.load(open(args.names_file, encoding="utf-8"))
         done = ledger_nomes()
         alvos = [a for a in raw if a.get("nome") and a.get("cpf_mascarado")
                  and a["nome"].upper() not in done][:args.limit]
         print(f"> {len(alvos)} alvos custom (de {len(raw)}; {len(done)} já no ledger próprio) "
-              f"a BUSCAR no TJRN. Ledger: {LEDGER.name}")
+              f"a BUSCAR no {_c['nome']}. Ledger: {LEDGER.name}")
     else:
         alvos = carregar_socios(args.limit)
-        print(f"> {len(alvos)} sócios RN a processar (pessoa física, sem enriquecimento PJe).")
+        print(f"> {len(alvos)} sócios ({'/'.join(_c['ufs'])}) a processar no {_c['nome']} "
+              f"(pessoa física, sem enriquecimento {_c['marker']}).")
 
     out_csv = ROOT / "pje_rn_skiptrace.csv"
     resultados = []
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
-                                                    viewport={"width": 1280, "height": 900})
+        if args.cdp:
+            # login A3/PDPJ no Chrome REAL (aberto via chrome-cdp.ps1); o Chromium
+            # do Playwright não apresenta o A3 no SSO Keycloak (federal/PDPJ).
+            browser = p.chromium.connect_over_cdp(f"http://localhost:{args.port}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        else:
+            ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
+                                                        viewport={"width": 1280, "height": 900})
         # Aceita automaticamente o aviso CNJ Res.121 (acesso a autos) em toda aba.
         # O acesso é do advogado a empresas que já patrocina/tem acesso (autorizado).
         ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
@@ -529,7 +572,10 @@ def main():
                 pass
             time.sleep(2)
         if not ok:
-            print("Timeout aguardando login. Saindo."); ctx.close(); return
+            print("Timeout aguardando login. Saindo.")
+            if not args.cdp:
+                ctx.close()
+            return
         print(">>> Autenticado. Iniciando varredura.", flush=True)
         if args.dump and dump_path.exists():
             dump_path.unlink()  # reseta corpus só agora (login falho não apaga)
@@ -625,7 +671,8 @@ def main():
                 ledger_add(nome, mask, "hit" if got else "sem_match", flags)
             print(f"[{i}/{len(alvos)}] {nome[:30]:30} {len(rows)} proc -> {flags or 'sem match'}")
             time.sleep(0.5)
-        ctx.close()
+        if not args.cdp:
+            ctx.close()
 
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         if resultados:
@@ -687,7 +734,7 @@ def gravar(socio, q):
     """Atualiza o contato do sócio no CRM, escopado por nome E máscara de CPF
     (não sobrescreve homônimo com máscara diferente)."""
     nome = socio["nome"]
-    obs = (f"PJe/TJRN (proc {q.get('proc','')}): "
+    obs = (f"{MARKER} (proc {q.get('proc','')}): "
            + (f"{q['endereco']}. " if q.get("endereco") else "")
            + (f"Adv: {q['advogado']}. " if q.get("advogado") else "")
            + ("CPF conferido pela mascara." if q.get("cpf") and not q.get("fraco") else "identidade provável (polo ativo)."))

@@ -75,3 +75,5 @@ tools/_diag_dump.py
 __pycache__/
 *.py[cod]
 cnpja_phone_ledger.json
+pje_*_ledger.jsonl
+pje_*_names_ledger.jsonl
