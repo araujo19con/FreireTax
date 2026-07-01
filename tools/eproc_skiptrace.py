@@ -67,12 +67,30 @@ TJ = {
         # NB: TJSP roda eproc (novo) + e-SAJ (legado). O eproc só tem processos
         # mais recentes; casos antigos de SP podem estar no e-SAJ (scraper à parte).
     },
-    # TRF4 (Justiça Federal RS/SC/PR): consulta pública SEM captcha/login — usado
-    # p/ TESTAR a mecânica do scraper eproc end-to-end (mesma engine do estadual).
-    # NB: só tem processos FEDERAIS (não acha os sócios, que estão na Justiça
-    # ESTADUAL); serve p/ validar busca/seletores/parsing, não p/ enriquecer.
-    "trf4": {
-        "uf": "--", "nome": "TRF4",
+    # --- Justiça Federal (eproc) — camada NOVA sobre a base estadual. Os sócios
+    #     têm processos FEDERAIS (EXECUÇÃO FISCAL DA UNIÃO / tributário — a própria
+    #     tese FreireTax — INSS, etc.) onde a qualificação (CPF/endereço) aparece.
+    #     `ufs` = estados da Região Federal. Base autenticada eproc1g.trf{N};
+    #     CONFIRMAR via --inspect no 1º login (A3/PDPJ) — pode ser eproc.trf4/1g/2g.
+    "trf4": {  # 4ª Região: RS, SC, PR (federal)
+        "ufs": ["RS", "SC", "PR"], "nome": "TRF4",
+        "base": "https://eproc1g.trf4.jus.br/eproc/",
+        "marker": "eproc/TRF4",
+    },
+    "trf2": {  # 2ª Região: RJ, ES (federal)
+        "ufs": ["RJ", "ES"], "nome": "TRF2",
+        "base": "https://eproc1g.trf2.jus.br/eproc/",
+        "marker": "eproc/TRF2",
+    },
+    "trf6": {  # 6ª Região: MG (federal)
+        "ufs": ["MG"], "nome": "TRF6",
+        "base": "https://eproc1g.trf6.jus.br/eproc/",
+        "marker": "eproc/TRF6",
+    },
+    # consulta PÚBLICA do TRF4 (sem login) — só p/ TESTAR a engine do scraper
+    # (mesma do estadual). NÃO enriquece (não busca por qualificação completa).
+    "trf4pub": {
+        "uf": "--", "nome": "TRF4-pub",
         "base": "https://consulta.trf4.jus.br/trf4/controlador.php?acao=consulta_processual_pesquisa",
         "marker": "eproc/TRF4", "public": True,
     },
@@ -131,9 +149,13 @@ def carregar_socios(tj, limit):
     """Sócios PF do estado ainda não varridos (ledger), não enriquecidos (marker)
     e não-PJ. Pagina o banco até juntar `limit`."""
     c = cfg(tj)
+    # estadual = 1 UF; federal (TRF) = vários estados da Região -> uf=in.(...)
+    ufs = c.get("ufs") or [c["uf"]]
+    uf_flt = (f"empresas.uf=in.({','.join(ufs)})" if len(ufs) > 1
+              else f"empresas.uf=eq.{ufs[0]}")
     q = ("empresa_contatos?select=id,empresa_id,nome,cpf_mascarado,telefone,email,"
          "observacoes,empresas!inner(uf)&papel=eq.socio&cpf_mascarado=not.is.null"
-         f"&cpf_mascarado=like.*%2A*&empresas.uf=eq.{c['uf']}&order=nome.asc")
+         f"&cpf_mascarado=like.*%2A*&{uf_flt}&order=nome.asc")
     done = ledger_nomes(tj)
     vistos, alvos, offset, page = set(), [], 0, 1000
     while len(alvos) < limit:

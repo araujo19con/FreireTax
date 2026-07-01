@@ -19,7 +19,7 @@ O perfil e separado (.chrome-cdp-profile) p/ nao mexer no seu Chrome do dia a di
 NUNCA fechar pelo scraper (no CDP nao ha browser.close()) -> fecharia suas abas.
 #>
 param(
-    [ValidateSet("rs", "sc", "sp", "pr")]
+    [ValidateSet("rs", "sc", "sp", "pr", "trf4", "trf2", "trf6")]
     [string]$Tj = "rs",
     [int]$Port = 9222
 )
@@ -31,6 +31,9 @@ $targets = @{
     sc = @{ url = "https://eproc1g.tjsc.jus.br/eproc/"; cmd = "python tools\eproc_skiptrace.py --tj sc --inspect --cdp" }
     sp = @{ url = "https://eproc1g.tjsp.jus.br/eproc/"; cmd = "python tools\eproc_skiptrace.py --tj sp --inspect --cdp" }
     pr = @{ url = "https://projudi.tjpr.jus.br/projudi/"; cmd = "python tools\projudi_skiptrace.py --inspect --cdp" }
+    trf4 = @{ url = "https://eproc1g.trf4.jus.br/eproc/"; cmd = "python tools\eproc_skiptrace.py --tj trf4 --inspect --cdp" }
+    trf2 = @{ url = "https://eproc1g.trf2.jus.br/eproc/"; cmd = "python tools\eproc_skiptrace.py --tj trf2 --inspect --cdp" }
+    trf6 = @{ url = "https://eproc1g.trf6.jus.br/eproc/"; cmd = "python tools\eproc_skiptrace.py --tj trf6 --inspect --cdp" }
 }
 $t = $targets[$Tj]
 
