@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,9 @@ import {
   BookOpen,
   EyeOff,
   Columns2,
+  User,
+  Users,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -137,6 +140,23 @@ interface Acao {
   tipo_prazo: string | null;
 }
 
+// Linha do painel "Progresso geral" — estatísticas agregadas por SDR/responsável.
+interface EquipeRow {
+  id: string;
+  nome: string;
+  isMe: boolean;
+  total: number;
+  contato: number;
+  proposta: number;
+  negociacao: number;
+  assinados: number;
+  iniciados: number;
+  perdidos: number;
+  valorAssinado: number;
+  pipeline: number;
+  conversao: number;
+}
+
 // fetchAllRows movido para src/lib/supabaseFetchAll.ts (compartilhado com
 // Dashboard, Acoes, AnaliseRFB, EmpresasMapView). Importado abaixo.
 
@@ -206,7 +226,21 @@ export default function Prospeccao() {
   const [filterResponsavel, setFilterResponsavel] = useState("all");
   const [hideEmpty, setHideEmpty] = useState(false);
   const [compact, setCompact] = useState(false);
-  const { user } = useAuth();
+  // Visão do Kanban: "meu" (só as prospecções sob minha responsabilidade) x
+  // "geral" (equipe inteira + painel de progresso). SDR (role comercial,
+  // não-gestor) começa em "meu"; gestor/admin começam em "geral".
+  const [viewMode, setViewMode] = useState<"meu" | "geral">("meu");
+  const viewModeInitRef = useRef(false);
+  const { user, roles, canManageAll, loading: authLoading } = useAuth();
+  const isSDR = roles.includes("comercial") && !canManageAll;
+
+  // Define a visão inicial uma única vez, quando as roles resolverem. Depois
+  // disso o usuário controla o toggle manualmente.
+  useEffect(() => {
+    if (viewModeInitRef.current || authLoading) return;
+    viewModeInitRef.current = true;
+    setViewMode(isSDR ? "meu" : "geral");
+  }, [authLoading, isSDR]);
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -317,6 +351,22 @@ export default function Prospeccao() {
   const getValorPotencial = (p: { empresa_id: string | null; acao_id: string | null }) =>
     Number(getElegibilidade(p)?.valor_potencial_estimado ?? 0);
 
+  // Ownership de prospecção — espelha a policy RLS de UPDATE
+  // (auth.uid() = user_id OR responsavel_id OR gestor/admin).
+  const respOf = (p: Prospeccao) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((p as any).responsavel_id ?? null) as string | null;
+  const ownerOf = (p: Prospeccao) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((p as any).user_id ?? null) as string | null;
+  // "Minha": tenho responsabilidade explícita, ou (sem responsável) fui o criador.
+  const isMine = (p: Prospeccao) => {
+    const r = respOf(p);
+    return r ? r === user?.id : ownerOf(p) === user?.id;
+  };
+  // Posso mover/editar? Gestor/admin sempre; SDR só as próprias (senão RLS barra).
+  const canEdit = (p: Prospeccao) => canManageAll || isMine(p);
+
   const filteredProspeccoes = useMemo(() => {
     // Remove só prospecções realmente órfãs (empresa deletada).
     const empresaIdSet = new Set(empresas.map((e) => e.id));
@@ -324,16 +374,19 @@ export default function Prospeccao() {
     if (filterAcao !== "all") {
       items = items.filter((p) => p.acao_id === filterAcao);
     }
-    // Filtro por responsável: 'all' | '_me' (logado) | '_none' (sem) | <profile_id>
-    if (filterResponsavel === "_me") {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      items = items.filter((p) => (p as any).responsavel_id === user?.id);
-    } else if (filterResponsavel === "_none") {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      items = items.filter((p) => !(p as any).responsavel_id);
-    } else if (filterResponsavel !== "all") {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      items = items.filter((p) => (p as any).responsavel_id === filterResponsavel);
+    if (viewMode === "meu") {
+      // "Meu trabalho": só as prospecções sob minha responsabilidade.
+      items = items.filter(isMine);
+    } else {
+      // "Progresso geral": filtro opcional por responsável do dropdown.
+      // 'all' | '_me' (logado) | '_none' (sem) | <profile_id>
+      if (filterResponsavel === "_me") {
+        items = items.filter(isMine);
+      } else if (filterResponsavel === "_none") {
+        items = items.filter((p) => !respOf(p));
+      } else if (filterResponsavel !== "all") {
+        items = items.filter((p) => respOf(p) === filterResponsavel);
+      }
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -360,7 +413,97 @@ export default function Prospeccao() {
     acoes,
     filterAcao,
     filterResponsavel,
+    viewMode,
     search,
+    user?.id,
+    canManageAll,
+  ]);
+
+  // Estatísticas por SDR/responsável — alimenta o painel "Progresso geral".
+  // Base = mesmas prospecções do escopo geral (ação + busca), sem filtrar por
+  // responsável, agrupadas por quem detém a prospecção.
+  const equipeRows = useMemo<EquipeRow[]>(() => {
+    if (viewMode !== "geral") return [];
+    const empresaIdSet = new Set(empresas.map((e) => e.id));
+    let base = prospeccoes.filter((p) => !!p.empresa_id && empresaIdSet.has(p.empresa_id));
+    if (filterAcao !== "all") base = base.filter((p) => p.acao_id === filterAcao);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      base = base.filter((p) => {
+        const emp = getEmpresa(p);
+        const acao = getAcao(p);
+        return (
+          emp?.nome.toLowerCase().includes(q) ||
+          p.contato_nome?.toLowerCase().includes(q) ||
+          acao?.nome.toLowerCase().includes(q)
+        );
+      });
+    }
+    const SEM = "__sem__";
+    const groups = new Map<string, Prospeccao[]>();
+    for (const p of base) {
+      const key = respOf(p) ?? ownerOf(p) ?? SEM;
+      const arr = groups.get(key) ?? [];
+      arr.push(p);
+      groups.set(key, arr);
+    }
+    const nomeDe = (id: string) =>
+      id === SEM ? "Sem responsável" : (profiles.find((x) => x.id === id)?.nome ?? "—");
+    const rows: EquipeRow[] = [...groups.entries()].map(([id, ps]) => {
+      const countBy = (k: string) => ps.filter((p) => p.status_prospeccao === k).length;
+      const assinados = countBy("Contrato assinado");
+      const iniciados = countBy("Serviço iniciado");
+      const perdidos = countBy("Perdido");
+      const ganhos = assinados + iniciados;
+      const decididos = ganhos + perdidos;
+      const valorAssinado = ps
+        .filter(
+          (p) =>
+            p.status_prospeccao === "Contrato assinado" ||
+            p.status_prospeccao === "Serviço iniciado"
+        )
+        .reduce((s, p) => s + (Number(p.valor_contrato) || 0), 0);
+      const pipeline = ps
+        .filter(
+          (p) =>
+            p.status_prospeccao !== "Perdido" &&
+            p.status_prospeccao !== "Contrato assinado" &&
+            p.status_prospeccao !== "Serviço iniciado"
+        )
+        .reduce((s, p) => s + getValorPotencial(p), 0);
+      return {
+        id,
+        nome: nomeDe(id),
+        isMe: id === user?.id,
+        total: ps.length,
+        contato: countBy("Contato feito"),
+        proposta: countBy("Proposta enviada"),
+        negociacao: countBy("Em negociação"),
+        assinados,
+        iniciados,
+        perdidos,
+        valorAssinado,
+        pipeline,
+        conversao: decididos > 0 ? ganhos / decididos : 0,
+      };
+    });
+    // "Sem responsável" vai pro fim; demais por ganhos e pipeline desc.
+    rows.sort((a, b) => {
+      if (a.id === "__sem__") return 1;
+      if (b.id === "__sem__") return -1;
+      return b.assinados + b.iniciados - (a.assinados + a.iniciados) || b.pipeline - a.pipeline;
+    });
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    viewMode,
+    prospeccoes,
+    empresas,
+    acoes,
+    elegibilidades,
+    filterAcao,
+    search,
+    profiles,
     user?.id,
   ]);
 
@@ -407,6 +550,11 @@ export default function Prospeccao() {
 
   const handleSave = async () => {
     if (!editProsp) return;
+
+    if (!canEdit(editProsp)) {
+      toast.info("Você não pode editar uma prospecção de outro responsável.");
+      return;
+    }
 
     // QW1: obriga motivo ao salvar como Perdido
     if (editStatus === "Perdido" && !editMotivoPerdido) {
@@ -478,6 +626,10 @@ export default function Prospeccao() {
 
   // QW1: bloqueia quick-move para Perdido (obriga passar pelo dialog)
   const handleQuickStatusChange = async (prosp: Prospeccao, newStatus: string) => {
+    if (!canEdit(prosp)) {
+      toast.info("Você só pode mover prospecções sob sua responsabilidade.");
+      return;
+    }
     if (newStatus === "Perdido") {
       openEdit({ ...prosp, status_prospeccao: "Perdido" });
       toast.info("Para marcar como Perdido, preencha o motivo no formulário.");
@@ -558,6 +710,9 @@ export default function Prospeccao() {
       empresa_id: eleg?.empresa_id ?? null,
       acao_id: eleg?.acao_id ?? null,
       user_id: user.id,
+      // Criador assume a responsabilidade — a nova prospecção já aparece no
+      // "Meu trabalho" de quem criou (e satisfaz a RLS de UPDATE).
+      responsavel_id: user.id,
       status_prospeccao: "Contato feito",
       contato_nome: createContatoNome,
       contato_telefone: createContatoTel,
@@ -626,6 +781,37 @@ export default function Prospeccao() {
           </Button>
         }
       />
+
+      {/* Alternância: Meu trabalho (SDR) x Progresso geral (equipe) */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+          <Button
+            variant={viewMode === "meu" ? "default" : "ghost"}
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => setViewMode("meu")}
+            aria-pressed={viewMode === "meu"}
+          >
+            <User className="h-3.5 w-3.5" aria-hidden="true" />
+            Meu trabalho
+          </Button>
+          <Button
+            variant={viewMode === "geral" ? "default" : "ghost"}
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => setViewMode("geral")}
+            aria-pressed={viewMode === "geral"}
+          >
+            <Users className="h-3.5 w-3.5" aria-hidden="true" />
+            Progresso geral
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {viewMode === "meu"
+            ? "Mostrando apenas as prospecções sob sua responsabilidade."
+            : "Visão consolidada de toda a equipe de prospecção."}
+        </p>
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -699,22 +885,26 @@ export default function Prospeccao() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={filterResponsavel} onValueChange={setFilterResponsavel}>
-          <SelectTrigger className="w-[220px]">
-            <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-            <SelectValue placeholder="Filtrar por responsável" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos responsáveis</SelectItem>
-            <SelectItem value="_me">Meus (logado)</SelectItem>
-            <SelectItem value="_none">Sem responsável</SelectItem>
-            {profiles.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.nome}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {/* Filtro por responsável só faz sentido na visão geral;
+            no "Meu trabalho" o escopo já é o usuário logado. */}
+        {viewMode === "geral" && (
+          <Select value={filterResponsavel} onValueChange={setFilterResponsavel}>
+            <SelectTrigger className="w-[220px]">
+              <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+              <SelectValue placeholder="Filtrar por responsável" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos responsáveis</SelectItem>
+              <SelectItem value="_me">Meus (logado)</SelectItem>
+              <SelectItem value="_none">Sem responsável</SelectItem>
+              {profiles.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <div className="ml-auto flex items-center gap-1.5">
           <Button
@@ -740,14 +930,23 @@ export default function Prospeccao() {
         </div>
       </div>
 
+      {/* Painel de progresso por SDR — só na visão geral */}
+      {viewMode === "geral" && <EquipeProgressoPanel rows={equipeRows} />}
+
       {filteredProspeccoes.length === 0 &&
       !search &&
       filterAcao === "all" &&
-      filterResponsavel === "all" ? (
+      (viewMode === "geral" ? filterResponsavel === "all" : true) ? (
         <EmptyState
           icon={Handshake}
-          title="Nenhuma prospecção cadastrada"
-          description="Comece criando uma prospecção a partir das empresas elegíveis. As empresas com maior valor potencial aparecem primeiro."
+          title={
+            viewMode === "meu" ? "Você ainda não tem prospecções" : "Nenhuma prospecção cadastrada"
+          }
+          description={
+            viewMode === "meu"
+              ? "Nenhuma prospecção está sob sua responsabilidade ainda. Crie uma nova ou peça ao gestor para atribuir prospecções a você."
+              : "Comece criando uma prospecção a partir das empresas elegíveis. As empresas com maior valor potencial aparecem primeiro."
+          }
           action={{ label: "Nova Prospecção", onClick: openCreateDialog, icon: Plus }}
           secondaryAction={{ label: "Ver tutorial", to: "/tutorial?tab=fluxo", icon: BookOpen }}
         />
@@ -815,9 +1014,18 @@ export default function Prospeccao() {
                               ? differenceInDays(new Date(), parseISO(p.ultimo_contato_em))
                               : null;
                             const elegInativa = getElegibilidade(p)?.elegivel === false;
+                            // Na visão geral, um SDR vê cards de colegas mas não
+                            // pode movê-los/editá-los (a RLS barra). Trava o drag
+                            // e as ações de mutação nesses casos.
+                            const editable = canEdit(p);
 
                             return (
-                              <Draggable key={p.id} draggableId={p.id} index={index}>
+                              <Draggable
+                                key={p.id}
+                                draggableId={p.id}
+                                index={index}
+                                isDragDisabled={!editable}
+                              >
                                 {(dragProvided) => (
                                   <Card
                                     ref={dragProvided.innerRef}
@@ -1001,52 +1209,63 @@ export default function Prospeccao() {
                                         </div>
                                       )}
 
-                                      {/* Action row */}
-                                      <div
-                                        className="flex gap-1 pt-1 opacity-0 transition-opacity group-hover:opacity-100"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
-                                          onClick={() => openContatos(p)}
-                                          title="Registrar toque de contato"
+                                      {/* Action row — só pra quem pode editar.
+                                          Card de colega fica somente leitura. */}
+                                      {editable ? (
+                                        <div
+                                          className="flex gap-1 pt-1 opacity-0 transition-opacity group-hover:opacity-100"
+                                          onClick={(e) => e.stopPropagation()}
                                         >
-                                          <MessageSquare
-                                            className="h-3.5 w-3.5 shrink-0"
-                                            aria-hidden
-                                          />
-                                          <span className="truncate">Contato</span>
-                                        </Button>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
-                                          onClick={() => openProposta(p)}
-                                          title="Criar / editar proposta comercial"
-                                        >
-                                          <FileText className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                                          <span className="truncate">Proposta</span>
-                                        </Button>
-                                        {nextCol && (
                                           <Button
                                             variant="outline"
                                             size="sm"
                                             className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
-                                            onClick={() => {
-                                              void handleQuickStatusChange(p, nextCol.key);
-                                            }}
-                                            title={`Avançar pra: ${nextCol.label}`}
+                                            onClick={() => openContatos(p)}
+                                            title="Registrar toque de contato"
                                           >
-                                            <ArrowRight
+                                            <MessageSquare
                                               className="h-3.5 w-3.5 shrink-0"
                                               aria-hidden
                                             />
-                                            <span className="truncate">Avançar</span>
+                                            <span className="truncate">Contato</span>
                                           </Button>
-                                        )}
-                                      </div>
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
+                                            onClick={() => openProposta(p)}
+                                            title="Criar / editar proposta comercial"
+                                          >
+                                            <FileText
+                                              className="h-3.5 w-3.5 shrink-0"
+                                              aria-hidden
+                                            />
+                                            <span className="truncate">Proposta</span>
+                                          </Button>
+                                          {nextCol && (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-7 min-w-0 flex-1 gap-1 px-2 text-[11px]"
+                                              onClick={() => {
+                                                void handleQuickStatusChange(p, nextCol.key);
+                                              }}
+                                              title={`Avançar pra: ${nextCol.label}`}
+                                            >
+                                              <ArrowRight
+                                                className="h-3.5 w-3.5 shrink-0"
+                                                aria-hidden
+                                              />
+                                              <span className="truncate">Avançar</span>
+                                            </Button>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-1.5 pt-1 text-[10px] text-muted-foreground">
+                                          <Lock className="h-3 w-3 shrink-0" aria-hidden />
+                                          <span>Somente leitura (outro responsável)</span>
+                                        </div>
+                                      )}
                                     </div>
                                   </Card>
                                 )}
@@ -1731,5 +1950,127 @@ function KanbanWithNav({
       </div>
       {children}
     </div>
+  );
+}
+
+// Painel "Progresso geral": uma linha por SDR/responsável com a contagem por
+// etapa do funil, valor em pipeline (potencial), fechado e taxa de conversão.
+function EquipeProgressoPanel({ rows }: { rows: EquipeRow[] }) {
+  if (rows.length === 0) return null;
+
+  const totals = rows.reduce(
+    (acc, r) => ({
+      total: acc.total + r.total,
+      contato: acc.contato + r.contato,
+      proposta: acc.proposta + r.proposta,
+      negociacao: acc.negociacao + r.negociacao,
+      assinados: acc.assinados + r.assinados,
+      iniciados: acc.iniciados + r.iniciados,
+      perdidos: acc.perdidos + r.perdidos,
+      valorAssinado: acc.valorAssinado + r.valorAssinado,
+      pipeline: acc.pipeline + r.pipeline,
+    }),
+    {
+      total: 0,
+      contato: 0,
+      proposta: 0,
+      negociacao: 0,
+      assinados: 0,
+      iniciados: 0,
+      perdidos: 0,
+      valorAssinado: 0,
+      pipeline: 0,
+    }
+  );
+  const ganhosTot = totals.assinados + totals.iniciados;
+  const conversaoTot =
+    ganhosTot + totals.perdidos > 0 ? ganhosTot / (ganhosTot + totals.perdidos) : 0;
+
+  const numCol = "px-3 py-2 text-right tabular-nums";
+  const headCol = "px-3 py-2 text-right font-medium";
+
+  return (
+    <Card className="shadow-card">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Users className="h-4 w-4 text-primary" aria-hidden="true" />
+        <h3 className="text-sm font-semibold">Progresso da equipe</h3>
+        <Badge variant="outline" className="ml-auto text-[10px]">
+          {rows.length} {rows.length === 1 ? "responsável" : "responsáveis"}
+        </Badge>
+      </div>
+      <div className="scrollbar-thin overflow-x-auto">
+        <table className="w-full min-w-[720px] text-xs">
+          <thead>
+            <tr className="border-b border-border text-muted-foreground">
+              <th className="px-3 py-2 text-left font-medium">SDR</th>
+              <th className={headCol}>Contato</th>
+              <th className={headCol}>Proposta</th>
+              <th className={headCol}>Negoc.</th>
+              <th className={headCol}>Fechado</th>
+              <th className={headCol}>Perdido</th>
+              <th className={headCol}>Pipeline</th>
+              <th className={headCol}>Fechado R$</th>
+              <th className={headCol}>Conv.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const ini =
+                r.nome
+                  .split(" ")
+                  .slice(0, 2)
+                  .map((n) => n[0] ?? "")
+                  .join("")
+                  .toUpperCase() || "?";
+              return (
+                <tr
+                  key={r.id}
+                  className={`border-b border-border/50 last:border-0 ${r.isMe ? "bg-primary/5" : ""}`}
+                >
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary">
+                        {r.id === "__sem__" ? "—" : ini}
+                      </div>
+                      <span className="truncate font-medium">{r.nome}</span>
+                      {r.isMe && (
+                        <Badge variant="secondary" className="h-4 px-1.5 text-[9px]">
+                          você
+                        </Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className={numCol}>{r.contato}</td>
+                  <td className={numCol}>{r.proposta}</td>
+                  <td className={numCol}>{r.negociacao}</td>
+                  <td className={`${numCol} text-success`}>{r.assinados + r.iniciados}</td>
+                  <td className={`${numCol} ${r.perdidos > 0 ? "text-destructive" : ""}`}>
+                    {r.perdidos}
+                  </td>
+                  <td className={`${numCol} text-primary`}>{formatCompactCurrency(r.pipeline)}</td>
+                  <td className={numCol}>{formatCompactCurrency(r.valorAssinado)}</td>
+                  <td className={numCol}>{Math.round(r.conversao * 100)}%</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border font-semibold">
+              <td className="px-3 py-2">Total</td>
+              <td className={numCol}>{totals.contato}</td>
+              <td className={numCol}>{totals.proposta}</td>
+              <td className={numCol}>{totals.negociacao}</td>
+              <td className={`${numCol} text-success`}>{ganhosTot}</td>
+              <td className={`${numCol} ${totals.perdidos > 0 ? "text-destructive" : ""}`}>
+                {totals.perdidos}
+              </td>
+              <td className={`${numCol} text-primary`}>{formatCompactCurrency(totals.pipeline)}</td>
+              <td className={numCol}>{formatCompactCurrency(totals.valorAssinado)}</td>
+              <td className={numCol}>{Math.round(conversaoTot * 100)}%</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </Card>
   );
 }
