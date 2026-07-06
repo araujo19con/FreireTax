@@ -75,6 +75,12 @@ async function main() {
     if (error) { console.error("erro busca empresa:", grupo.empresaLike, error.message); continue; }
     if (!empresas || empresas.length === 0) {
       console.log(`[SEM MATCH] (${uf}) ${grupo.empresaLike}`);
+      await supabase.from("empresas_skip_log").insert({
+        empresa_nome: grupo.empresaLike,
+        uf,
+        motivo: "sem_match",
+        tentativas: 1
+      }).catch(() => {}); // ignora erro se tabela não existir
       empresaNaoAchada++;
       continue;
     }
