@@ -138,6 +138,7 @@ export default function Empresas() {
 
   // --- Local UI state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectingAll, setSelectingAll] = useState(false);
   const [detailEmpresa, setDetailEmpresa] = useState<Empresa | null>(null);
   const [empresaToEdit, setEmpresaToEdit] = useState<Empresa | null>(null);
   const [empresaToDelete, setEmpresaToDelete] = useState<Empresa | null>(null);
@@ -216,6 +217,25 @@ export default function Empresas() {
   };
 
   const clearSelection = () => setSelectedIds(new Set());
+
+  // Página inteira selecionada (não necessariamente todas as que casam o filtro).
+  const allPageSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+
+  // Busca TODOS os ids que casam o filtro atual (ignora paginação) e seleciona
+  // — usa a mesma fetchAllEmpresas do export, então nenhuma lógica de filtro nova.
+  const selectAllMatching = async () => {
+    if (selectingAll) return;
+    setSelectingAll(true);
+    try {
+      const all = await fetchAllEmpresas({ search: debouncedSearch, filters, sort });
+      setSelectedIds(new Set(all.map((e) => e.id)));
+      toast.success(`${all.length} empresa(s) selecionada(s)`);
+    } catch (err) {
+      toast.error("Erro ao selecionar todas: " + (err instanceof Error ? err.message : "falha"));
+    } finally {
+      setSelectingAll(false);
+    }
+  };
 
   // --- Drag-drop handlers
   const handleDragStart = (e: DragEvent, id: string) => {
@@ -652,6 +672,11 @@ export default function Empresas() {
             }}
             onClearSelection={clearSelection}
             totalCount={total}
+            allPageSelected={allPageSelected}
+            selectingAll={selectingAll}
+            onSelectAllMatching={() => {
+              void selectAllMatching();
+            }}
           />
 
           {view === "table" && (
