@@ -29,6 +29,7 @@ import {
   User,
   Users,
   Lock,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -42,6 +43,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -280,6 +291,9 @@ export default function Prospeccao() {
   const [editObjecoes, setEditObjecoes] = useState<string[]>([]);
   const [editCargoCat, setEditCargoCat] = useState<CargoCategoria | "">("");
   const [editEhDecisor, setEditEhDecisor] = useState(false);
+
+  // Excluir prospecção (ex: duplicada) — não precisa passar por "Perdido"
+  const [deleteProsp, setDeleteProsp] = useState<Prospeccao | null>(null);
 
   // Contatos (cadência) dialog
   const [contatosOpen, setContatosOpen] = useState(false);
@@ -622,6 +636,32 @@ export default function Prospeccao() {
       // Pequeno timeout pra fechamento do dialog de edição não conflitar
       setTimeout(() => openProposta({ ...editProsp, status_prospeccao: editStatus }), 300);
     }
+  };
+
+  // Exclui a prospecção direto (sem passar por "Perdido") — uso típico:
+  // card duplicado criado por engano. RLS exige dono/responsável/gestor/admin.
+  const handleDeleteConfirm = async () => {
+    if (!deleteProsp) return;
+    if (!canEdit(deleteProsp)) {
+      toast.info("Você só pode excluir prospecções sob sua responsabilidade.");
+      return;
+    }
+    const { error } = await supabase.from("prospeccoes").delete().eq("id", deleteProsp.id);
+    if (error) {
+      toast.error("Erro ao excluir prospecção: " + error.message);
+      return;
+    }
+    toast.success("Prospecção excluída");
+    logAudit({
+      tabela: "prospeccoes",
+      acao: "Excluiu prospecção",
+      registro_id: deleteProsp.id,
+      detalhes: { empresa_id: deleteProsp.empresa_id, acao_id: deleteProsp.acao_id },
+    });
+    // Se a prospecção excluída estava aberta no dialog de edição, fecha também.
+    if (editProsp?.id === deleteProsp.id) setEditOpen(false);
+    setDeleteProsp(null);
+    fetchAll();
   };
 
   // QW1: bloqueia quick-move para Perdido (obriga passar pelo dialog)
@@ -1259,6 +1299,15 @@ export default function Prospeccao() {
                                               <span className="truncate">Avançar</span>
                                             </Button>
                                           )}
+                                          <Button
+                                            variant="outline"
+                                            size="icon"
+                                            className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                            onClick={() => setDeleteProsp(p)}
+                                            title="Excluir prospecção (ex: duplicada) — não precisa marcar como Perdido"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                                          </Button>
                                         </div>
                                       ) : (
                                         <div className="flex items-center gap-1.5 pt-1 text-[10px] text-muted-foreground">
@@ -1810,6 +1859,36 @@ export default function Prospeccao() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmação de exclusão — atalho pra duplicados, sem passar por "Perdido" */}
+      <AlertDialog open={!!deleteProsp} onOpenChange={(v) => !v && setDeleteProsp(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir prospecção?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteProsp && (
+                <>
+                  {getEmpresa(deleteProsp)?.nome ?? "Empresa"} —{" "}
+                  {getAcao(deleteProsp)?.nome ?? "ação"}. Esta ação não pode ser desfeita: os toques
+                  de cadência e a proposta vinculada (se houver) também são removidos. Tarefas e
+                  reuniões vinculadas são mantidas, só desvinculadas.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                void handleDeleteConfirm();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* QW3: Dialog de cadência / contatos */}
       <ProspeccaoContatosDialog

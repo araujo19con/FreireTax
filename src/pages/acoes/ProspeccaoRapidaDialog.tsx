@@ -70,8 +70,11 @@ export function ProspeccaoRapidaDialog({
         empresa_id: empresaId,
         acao_id: acaoId,
         status_prospeccao: status,
-        observacoes: observacoes || null,
+        notas_prospeccao: observacoes || null,
         user_id: user?.id,
+        // Criador assume a responsabilidade — mesmo padrão do create em
+        // Prospeccao.tsx, senão o card não aparece no "Meu trabalho" de ninguém.
+        responsavel_id: user?.id,
       });
       if (error) throw error;
       toast.success(`Prospecção iniciada para ${empresaNome}`);
