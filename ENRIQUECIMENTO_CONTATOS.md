@@ -221,3 +221,60 @@ src/
 ## 💬 Dúvidas?
 
 Consultar memória do projeto: [[project_empresa_contatos]] e [[project_supabase_cli]]
+
+---
+
+## 📝 Changelog — 2026-07-06 · Decisores via pesquisa web (UF=PR)
+
+> Máquina B (esta). **RN segue em paralelo na Máquina A — não tocado.**
+
+### Metodologia (nova frente: `papel=decisor` via web, sem PJe/A3)
+
+1. Alvos: `empresas` `uf=PR`, `porte=DEMAIS`, `capital_social NOT NULL`, ordenado por
+   `capital_social DESC`, **excluindo** quem já tem contato `papel='decisor'`
+   (anti-join com `empresa_contatos`). Script de query: scratchpad `query_targets.mjs`.
+2. Pesquisa em lotes de ~5-6 empresas via subagentes paralelos (WebSearch/WebFetch).
+   Regras dos agentes: **não acessar linkedin.com direto** (só citar snippet), **não
+   inventar nomes** (sem evidência → vazio), sempre com `fonte` + `confianca`.
+3. Clusters de grupo controlador pesquisados uma vez e aplicados às empresas do grupo.
+4. Gravação: **`tools/insert_decisor_gestor.mjs`** (ferramenta PERMANENTE — criada nesta
+   máquina hoje; estava só na Máquina A). Sempre `--dry-run` antes. `papel=decisor`,
+   `origem=outro`, `dedup_key=decisor_web:<nome normalizado>` (idempotente).
+
+### Resultado (PR)
+
+- Universo PR no filtro: **546 empresas** · pendentes no início: 546 (0 tinham decisor).
+- **Lote 1** (top por capital): 18 empresas / **29 contatos** — Grupo Boticário, Copel,
+  Rumo (S.A + Malha Sul), Jordão, EBANX, Electrolux, Britânia, Gazin, Mondelez, Muffato,
+  Leão/Matte Leão, Autopista Litoral Sul (Arteris), Usina Santa Terezinha, Elcontrol,
+  Mata de Santa Genebra.
+- **Lote 2** (próximas por capital): 17 empresas / **25 contatos** — Coamo, C.Vale,
+  Frimesa, Lar, Cresol Baser (cooperativas); Nissei, Sancor Seguros, Horsch, Limagrain,
+  Potencial Agro, Gonçalves & Tortola, Superpão, MLC Infra, Santa Maria Adm., B.O Paper,
+  Novozymes LatAm, Frivatti Industrial.
+- **Lote 3**: 17 empresas / **24 contatos** — Madero (Durski), Grupo Positivo (agora Cruzeiro
+  do Sul), CR Almeida, Greca Asfaltos, Sooro Renner, TMG, Biogénesis Bagó, Interprint, Loram,
+  Multilit, Grupo Irani (Cascavel/Pegoraro), AZX (Grupo Tacla), Tangipar, Mafip, Santa Maria
+  Papel, PS Telematics.
+- **Lote 4**: 18 empresas / **26 contatos** — Condor (Zonta), Ademicon (Reichmann), Morena Rosa
+  (Franzato), Expresso Princesa dos Campos (Gulin), Jaguafrangos, Coonagro, Frivatti (Agro +
+  Genetic/Valiati), Seara-PR, Costa Oeste, Fiscal Tec, Paviservice, DM Construtora, Gulf e AGME
+  (holdings, via QSA), Novozymes BioAg, Master Vigilância, Costa Rica Malhas.
+- **Lote 5**: 16 empresas / **24 contatos** — Condor-tier abaixo: Dr. Schär, Schattdecor,
+  DIP Frangos, Refriko (Grupo RFK), Velsis, American Glass, Ampernet, Batel Logística, CGL,
+  Laboratórios Calbos, M-Extend, Z P Bicaio, Cresol Liderança, Faricon e Dalba (em rec. judicial),
+  UP Eventos. (Rio Benedito e Porto Brasil Investimentos = holdings opacas, retornaram vazio.)
+- **Total gravado até agora: 86 empresas / 128 contatos.** Pendentes PR restantes: ~460
+  (descemos de ~R$37 bi a ~R$40 mi de capital social).
+
+### Ressalvas / pendências
+
+- **VILA CEDRO PARTICIPAÇÕES S/A** e **SCP BLUE SKY - PORTO BELO** (Curitiba) — PULADAS.
+  Holdings/SCP opacas; atribuição de controlador com confiança insuficiente (Vila Cedro cruzava
+  pro Grupo H. Carlos Schneider/Ciser-SC; SCP via sócio ostensivo de CNPJ diferente). Ficam
+  pendentes pra revisão manual.
+- `empresaLike` genérico casa empresa errada (ex.: `%COAMO%` → Associação Recreativa;
+  `%FRIVATTI%` → Agropecuária). **Sempre rodar `--dry-run` e conferir os `(obs: N matches)`**
+  antes de gravar — foi corrigido caso a caso.
+- Credenciais desta máquina: `tools/pje-env.local.ps1` (SUPABASE_URL + SERVICE_ROLE_KEY) — válidas.
+- Próximo: seguir PR (maiores primeiro) → depois RS → depois SC.

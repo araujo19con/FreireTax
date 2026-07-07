@@ -148,13 +148,15 @@ def _logado_projudi(pg):
     if _frame_com_campo(pg):
         return True
     # autenticado mas talvez não na tela de consulta: aceita se tiver menu/sair
-    try:
-        for f in pg.frames:
+    # (try por frame — Projudi usa frameset sem <body> no frame raiz, que lançava
+    # exceção e abortava o loop antes de chegar no frame com o conteúdo real)
+    for f in pg.frames:
+        try:
             t = f.inner_text("body") or ""
-            if "Sair" in t and ("Consulta" in t or "Processo" in t):
-                return True
-    except Exception:
-        pass
+        except Exception:
+            continue
+        if "Sair" in t and ("Consulta" in t or "Processo" in t):
+            return True
     return False
 
 
