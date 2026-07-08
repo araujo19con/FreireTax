@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PageHeader } from "@/components/PageHeader";
+import { CicloMedioEtapaCard } from "@/components/CicloMedioEtapaCard";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/supabaseFetchAll";
 import { formatCurrency } from "@/lib/format";
@@ -343,6 +344,9 @@ export default function Relatorios() {
             </ResponsiveContainer>
           )}
         </Card>
+
+        {/* Ciclo médio por etapa — usa o histórico de transição de etapa */}
+        <CicloMedioEtapaCard />
 
         {/* Tabela de contratos ganhos */}
         <Card className="p-4">

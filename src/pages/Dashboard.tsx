@@ -43,6 +43,7 @@ import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
 import { LoadingState } from "@/components/LoadingState";
 import { FunilHormozi } from "@/components/FunilHormozi";
+import { ContatoCoberturaCard } from "@/components/ContatoCoberturaCard";
 import { TutorialWelcomeBanner } from "@/components/TutorialWelcomeBanner";
 import { fetchAllRows } from "@/lib/supabaseFetchAll";
 
@@ -691,6 +692,9 @@ export default function Dashboard() {
 
       {/* Funil Hormozi — Sprint 2 */}
       <FunilHormozi />
+
+      {/* Cobertura de contatos — enriquecimento autônomo */}
+      <ContatoCoberturaCard />
 
       {/* Charts row */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
