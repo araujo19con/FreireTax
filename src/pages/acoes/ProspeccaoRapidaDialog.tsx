@@ -70,7 +70,7 @@ export function ProspeccaoRapidaDialog({
         empresa_id: empresaId,
         acao_id: acaoId,
         status_prospeccao: status,
-        observacoes: observacoes || null,
+        notas_prospeccao: observacoes || null,
         user_id: user?.id,
       });
       if (error) throw error;
