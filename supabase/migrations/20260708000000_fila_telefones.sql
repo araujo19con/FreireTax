@@ -20,7 +20,9 @@ SELECT e.id AS empresa_id,
        e.cnpj,
        el.valor_potencial_estimado,
        pp.em_pipeline,
-       e.capital_social
+       e.capital_social,
+       e.email_receita,
+       e.nome_fantasia
 FROM public.empresas e
 LEFT JOIN LATERAL (
   SELECT max(el2.valor_potencial_estimado) AS valor_potencial_estimado

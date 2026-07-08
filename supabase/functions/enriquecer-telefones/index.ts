@@ -1,29 +1,28 @@
 // Supabase Edge Function: enriquecer-telefones
 //
-// Enriquecimento de TELEFONE (foco móvel/WhatsApp) — grátis.
-// Fonte primária: Google Places API (New) Text Search — listagens de empresa
-// têm o celular atual que a RFB não tem. 1 chamada Pro por empresa (campo
-// telefone é Pro): 5.000/mês grátis. Fallback sem key: raspa o site da empresa.
+// Enriquecimento de TELEFONE (foco móvel/WhatsApp) — 100% GRÁTIS, sem cartão.
+// Fonte primária: OpenStreetMap via Nominatim (dados abertos) — muitos negócios
+// têm telefone/whatsapp/site nas tags. 1 chamada por empresa (extratags=1).
+// Fallback: raspa o site da empresa (tag website do OSM ou domínio do e-mail RFB).
+//
+// Respeita a política do Nominatim: User-Agent identificável + no máx ~1 req/s
+// (por isso o delay de 1100ms). Mantenha o cron modesto (ex.: limite=50/dia).
 //
 // Consome public.v_fila_telefones. Grava em empresa_contatos (o trigger
 // recalc_empresa_contatos_cache atualiza contatos_count; a view de qualidade
 // sobe o score ao ganhar um móvel).
 //
-// Chamada (service-role no Authorization, igual enriquecer-fila):
+// Chamada (service-role no Authorization):
 //   POST /functions/v1/enriquecer-telefones?limite=20
 //   POST /functions/v1/enriquecer-telefones?dry=1
-//
-// Env:
-//   GOOGLE_PLACES_API_KEY  (opcional) — sem ela, roda só o tier de site.
-//     supabase secrets set GOOGLE_PLACES_API_KEY=... --project-ref <ref>
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.50.0";
 
+const UA = "FreireTaxCRM/1.0 (enriquecimento-contatos; +https://freire-tax.vercel.app)";
+const FREEMAIL = /@(gmail|hotmail|outlook|yahoo|bol|uol|terra|live|icloud|globo|ig|msn)\./i;
+
 function json(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
 function jwtRole(jwt: string): string | null {
@@ -39,102 +38,112 @@ function jwtRole(jwt: string): string | null {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const stripAccents = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-const stripAccents = (s: string) =>
-  s.normalize("NFD").replace(/[̀-ͯ]/g, "");
-
-// Normaliza um telefone BR para dígitos nacionais (10 fixo / 11 móvel).
+// Normaliza telefone BR para dígitos nacionais (10 fixo / 11 móvel).
 function normalizeBRPhone(raw: string): string | null {
   let d = (raw ?? "").replace(/\D/g, "");
   if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
   if (d.length !== 10 && d.length !== 11) return null;
-  if (/^(\d)\1+$/.test(d)) return null; // 0000..., 9999...
+  if (/^(\d)\1+$/.test(d)) return null;
+  return d;
+}
+const isMobile = (d: string) => d.length === 11 && d[2] === "9";
+
+// Tags do OSM podem trazer VÁRIOS telefones num campo ("+55 83 3341 2100;+55 83 3310 6018").
+// Separa, valida cada um e prefere um MÓVEL.
+function pickBRPhone(raw: string): string | null {
+  const cands = (raw ?? "")
+    .split(/[;,/]+/)
+    .map((p) => normalizeBRPhone(p))
+    .filter((d): d is string => !!d);
+  return cands.find(isMobile) ?? cands[0] ?? null;
+}
+function formatBRPhone(d: string): string {
+  if (d.length === 11) return d.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
+  if (d.length === 10) return d.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
   return d;
 }
 
-// Móvel BR: 11 dígitos com o 3º dígito (após DDD) = 9.
-function isMobile(digits: string): boolean {
-  return digits.length === 11 && digits[2] === "9";
+// Nome pra buscar em listagens: a MARCA (fantasia) casa muito melhor que a
+// razão social formal ("Redepharma" acha; "REDEPHARMA LTDA" não). Remove
+// sufixos societários que atrapalham o match.
+function cleanName(s: string): string {
+  return (s ?? "")
+    .replace(/\bEM RECUPERACAO JUDICIAL\b/gi, "")
+    .replace(/\bS[\/.]?A\b/gi, " ")
+    .replace(/\bLTDA\.?\b/gi, " ")
+    .replace(/\bEIRELI\b/gi, " ")
+    .replace(/\s[-–]\s*(ME|EPP)\b/gi, " ")
+    .replace(/\bEPP\b/gi, " ")
+    .replace(/\s+ME\s*$/i, " ")
+    .replace(/[-–\s]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function formatBRPhone(digits: string): string {
-  if (digits.length === 11)
-    return digits.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
-  if (digits.length === 10)
-    return digits.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
-  return digits;
-}
-
-// ---------------------------------------------------------------------------
-// Google Places (New) — Text Search com telefone/website numa chamada só
-// ---------------------------------------------------------------------------
-interface PlacesHit {
+interface OsmHit {
   phone: string | null;
+  phoneFromWhatsapp: boolean; // tag whatsapp/mobile => tratar como móvel/whatsapp
   website: string | null;
   address: string;
 }
 
-async function googlePlaces(
-  key: string,
+// ---------------------------------------------------------------------------
+// OpenStreetMap / Nominatim — telefone + site numa chamada (extratags)
+// ---------------------------------------------------------------------------
+async function nominatim(
   razao: string,
   municipio: string,
   uf: string,
-): Promise<PlacesHit | null> {
+): Promise<{ apiError: boolean; hit: OsmHit | null }> {
   try {
-    const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": key,
-        // Só campos Pro necessários — mantém a chamada no tier grátis Pro.
-        "X-Goog-FieldMask":
-          "places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.formattedAddress,places.displayName",
-      },
-      body: JSON.stringify({
-        textQuery: `${razao} ${municipio} ${uf} Brasil`,
-        regionCode: "BR",
-        languageCode: "pt-BR",
-        maxResultCount: 1,
-      }),
-    });
-    if (!r.ok) return null;
-    const data = await r.json();
-    const p = data?.places?.[0];
-    if (!p) return null;
+    const q = encodeURIComponent(`${razao} ${municipio} ${uf}`);
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&extratags=1&addressdetails=1&limit=1&countrycodes=br&q=${q}`,
+      { headers: { "User-Agent": UA, Accept: "application/json" } },
+    );
+    if (!r.ok) return { apiError: true, hit: null }; // 429/503/etc — não é "sem dado"
+    const arr = await r.json();
+    const p = Array.isArray(arr) ? arr[0] : null;
+    if (!p) return { apiError: false, hit: null };
+    const t = p.extratags ?? {};
+    // Prioriza whatsapp/móvel; depois fixo.
+    const wa = t["contact:whatsapp"] ?? t["whatsapp"] ?? t["contact:mobile"] ?? t["mobile"];
+    const fixo = t["contact:phone"] ?? t["phone"];
+    const website = t["contact:website"] ?? t["website"] ?? t["url"] ?? null;
     return {
-      phone: p.nationalPhoneNumber ?? p.internationalPhoneNumber ?? null,
-      website: p.websiteUri ?? null,
-      address: p.formattedAddress ?? "",
+      apiError: false,
+      hit: {
+        phone: wa ?? fixo ?? null,
+        phoneFromWhatsapp: !!wa,
+        website,
+        address: p.display_name ?? "",
+      },
     };
   } catch {
-    return null;
+    return { apiError: true, hit: null };
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fallback: raspa o site da empresa e extrai o 1º telefone BR plausível
-// ---------------------------------------------------------------------------
+// Fallback: raspa o site e extrai o 1º telefone BR plausível (prioriza móvel).
 async function scrapePhoneFromSite(url: string): Promise<string | null> {
   try {
     const u = url.startsWith("http") ? url : `https://${url}`;
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
-    const r = await fetch(u, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": "Mozilla/5.0 (contact-enrichment)" },
-    });
+    const r = await fetch(u, { signal: ctrl.signal, headers: { "User-Agent": UA } });
     clearTimeout(t);
     if (!r.ok) return null;
     const html = (await r.text()).slice(0, 300_000);
-    // Padrão BR: (DD) 9xxxx-xxxx / (DD) xxxx-xxxx, com ou sem parênteses/traço.
     const re = /\(?\b(\d{2})\)?[\s.-]?(9?\d{4})[\s.-]?(\d{4})\b/g;
     let m: RegExpExecArray | null;
     let firstFixed: string | null = null;
     while ((m = re.exec(html)) !== null) {
-      const digits = normalizeBRPhone(m[1] + m[2] + m[3]);
-      if (!digits) continue;
-      if (isMobile(digits)) return digits; // prioriza móvel
-      if (!firstFixed) firstFixed = digits;
+      const d = normalizeBRPhone(m[1] + m[2] + m[3]);
+      if (!d) continue;
+      if (isMobile(d)) return d;
+      if (!firstFixed) firstFixed = d;
     }
     return firstFixed;
   } catch {
@@ -148,6 +157,8 @@ interface FilaRow {
   municipio: string;
   uf: string;
   cnpj: string;
+  email_receita: string | null;
+  nome_fantasia: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -155,7 +166,6 @@ Deno.serve(async (req) => {
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
   const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const PLACES_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY") ?? "";
   if (!SUPABASE_URL || !SERVICE_ROLE) {
     return json({ error: "env vars missing (SUPABASE_URL / SERVICE_ROLE_KEY)" }, 500);
   }
@@ -167,60 +177,76 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const dry = url.searchParams.get("dry") === "1";
-  const limite = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limite") ?? "20", 10) || 20));
+  const limite = Math.min(60, Math.max(1, parseInt(url.searchParams.get("limite") ?? "20", 10) || 20));
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
   const { data: fila, error: filaErr } = await admin
     .from("v_fila_telefones")
-    .select("empresa_id, razao_social, municipio, uf, cnpj")
+    .select("empresa_id, razao_social, municipio, uf, cnpj, email_receita, nome_fantasia")
     .limit(limite);
   if (filaErr) return json({ error: "falha ao ler fila", detail: filaErr.message }, 500);
-  if (dry) return json({ ok: true, dry: true, tem_places_key: !!PLACES_KEY, fila }, 200);
+  if (dry) return json({ ok: true, dry: true, fila }, 200);
 
   const rows = (fila ?? []) as FilaRow[];
   const res = {
-    processadas: 0, com_telefone: 0, moveis: 0, sem_achar: 0, falhas: 0,
-    tem_places_key: !!PLACES_KEY, detalhes: [] as unknown[],
+    processadas: 0, com_telefone: 0, moveis: 0, sem_achar: 0, erros_api: 0, falhas: 0,
+    osm_com_place: 0, // diagnóstico: quantas o Nominatim retornou um lugar (se ~0, IP do edge bloqueado)
+    detalhes: [] as unknown[],
   };
 
   for (const row of rows) {
     res.processadas++;
     let phone: string | null = null;
+    let waHint = false;
     let website: string | null = null;
-    let fonte = "google_places";
+    let apiError = false;
+    let fonte = "osm";
 
-    // 1) Google Places (se houver key). Guarda: o endereço retornado precisa
-    // conter o município — evita casar com empresa homônima de outra cidade.
-    if (PLACES_KEY) {
-      const hit = await googlePlaces(PLACES_KEY, row.razao_social, row.municipio, row.uf);
-      if (hit) {
-        website = hit.website;
-        const muni = stripAccents(row.municipio).toLowerCase();
-        const addrOk = stripAccents(hit.address).toLowerCase().includes(muni);
-        if (hit.phone && addrOk) phone = hit.phone;
+    // 1) OpenStreetMap. Guarda: o endereço retornado precisa conter o município
+    // (evita casar com empresa homônima de outra cidade).
+    // Busca pela marca (fantasia) — casa melhor que a razão social formal.
+    const searchName = cleanName(row.nome_fantasia || "") || cleanName(row.razao_social);
+    const osm = await nominatim(searchName, row.municipio, row.uf);
+    apiError = osm.apiError;
+    if (osm.hit) {
+      res.osm_com_place++;
+      website = osm.hit.website;
+      const muni = stripAccents(row.municipio).toLowerCase();
+      const addrOk = stripAccents(osm.hit.address).toLowerCase().includes(muni);
+      if (osm.hit.phone && addrOk) {
+        phone = osm.hit.phone;
+        waHint = osm.hit.phoneFromWhatsapp;
       }
     }
 
-    // 2) Fallback: site (do Places ou já conhecido). Sem key, só roda se houver site.
-    if (!phone && website) {
-      const p = await scrapePhoneFromSite(website);
-      if (p) { phone = p; fonte = "website"; }
+    // 2) Fallback: site (tag do OSM ou domínio do e-mail RFB corporativo).
+    if (!phone) {
+      let site = website;
+      if (!site && row.email_receita && row.email_receita.includes("@") && !FREEMAIL.test(row.email_receita)) {
+        site = row.email_receita.split("@")[1]?.trim() || null;
+      }
+      if (site) {
+        const p = await scrapePhoneFromSite(site);
+        if (p) { phone = p; fonte = "website"; }
+      }
     }
 
-    const digits = phone ? normalizeBRPhone(phone) : null;
+    const digits = phone ? pickBRPhone(phone) : null;
 
     if (!digits) {
+      // Erro de API (rate-limit/queda): NÃO grava backoff — evita falso-negativo.
+      if (apiError) { res.erros_api++; await sleep(1100); continue; }
       res.sem_achar++;
       await admin.from("enriquecimento_log").insert({
-        empresa_id: row.empresa_id, cnpj: row.cnpj, fonte: PLACES_KEY ? "google_places" : "website",
+        empresa_id: row.empresa_id, cnpj: row.cnpj, fonte: "osm",
         sucesso: false, erro: "sem telefone encontrado",
       });
-      await sleep(200);
+      await sleep(1100);
       continue;
     }
 
-    const movel = isMobile(digits);
+    const movel = isMobile(digits) || waHint;
     const { error: insErr } = await admin.from("empresa_contatos").insert({
       empresa_id: row.empresa_id,
       telefone: formatBRPhone(digits),
@@ -231,12 +257,10 @@ Deno.serve(async (req) => {
       dedup_key: `tel:${digits}`,
     });
 
-    // 23505 = telefone já existe (dedup) — não é falha.
     if (insErr && insErr.code !== "23505") {
       res.falhas++;
       await admin.from("enriquecimento_log").insert({
-        empresa_id: row.empresa_id, cnpj: row.cnpj, fonte,
-        sucesso: false, erro: `gravar contato: ${insErr.message}`,
+        empresa_id: row.empresa_id, cnpj: row.cnpj, fonte, sucesso: false, erro: `gravar: ${insErr.message}`,
       });
     } else {
       res.com_telefone++;
@@ -247,7 +271,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    await sleep(200);
+    await sleep(1100); // política Nominatim: ~1 req/s
   }
 
   return json({ ok: true, ...res }, 200);
