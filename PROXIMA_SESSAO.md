@@ -1,5 +1,45 @@
 # Próxima Sessão — Enriquecimento
 
+## Rodada system-wide (09/07/2026, tarde) — decisor por MAIOR CAPITAL
+
+Depois de fechar a ação do terço (96%), estendido o método a TODO o sistema,
+priorizando por **capital_social** (proxy de faturamento — `faturamento_anual`/
+`faturamento_estimado` estão VAZIOS no DB) e com **ênfase máxima em telefone/email**.
+
+**Resultado:** decisor no sistema de 777 → **927/5630 (16%)**. Processadas as
+**150 empresas de maior capital sem decisor** (25 lotes de 6, faixa R$92mi–R$120bi:
+Banco do Brasil, BRF, John Deere, Lojas Renner, Marcopolo, SLC Agrícola, Tupy,
+Portobello, etc.). Gravados **260 contatos** (150 decisores nomeados + 110 canais
+institucionais), **253 com telefone, 124 com email**.
+
+Método para grande porte (S.A./multinacional): alvo = **CFO / Diretor Financeiro /
+Head de Tax / RI**, não "dono". Emails de RI (`ri@empresa.com.br`) e de
+**departamento tributário** (ex.: `tributario2@johndeere.com`, `tributario@fele.com`)
+foram o achado mais valioso. Ferramentas: `tools/diag_system.mjs --top N` (rankeia
+por capital, exporta worklist), `tools/PROMPT_SYSTEM.md` (instruções compartilhadas
+dos agentes), `tools/insert_decisor_by_id.mjs` (agora grava também contatos
+institucionais sem nome, dedup por email/telefone).
+
+### ⚠️ Restam ~4.700 empresas sem decisor (fila)
+
+O sistema tem 5.630 empresas; só 16% têm decisor. As próximas por capital são
+RS/SC/PR (bases importadas de 700 cada). Continuar é só repetir o pipeline:
+
+```bash
+set -a && . ./tools/.env.local && set +a
+node tools/diag_system.mjs --top 300      # regenera worklist_system.json
+# gerar batches_system.json (BATCH=6), disparar agentes lendo PROMPT_SYSTEM.md,
+# consolidar por id, node tools/insert_decisor_by_id.mjs --glob 'tools/found_sys_*.json'
+```
+
+⚠️ **Limite de sessão da conta**: lançar 25 agentes de uma vez estourou o limite
+(reseta 14h BRT). Preferir **ondas de ~6-8 agentes**. Muitas dessas grandes
+(Banco do Brasil, BRF) provavelmente NÃO são prospects reais de boutique — vale
+o time definir um **teto de capital** ou filtrar por `status=prospect` antes de
+continuar, pra não gastar em não-alvos.
+
+---
+
 ## Status Atual (FIM 09/07/2026)
 
 ### 🎯 Foco desta rodada: AÇÃO DO TERÇO (Rescisória Tema 985)

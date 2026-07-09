@@ -65,23 +65,30 @@ async function main() {
       const contatos = Array.isArray(reg.contatos) ? reg.contatos : [];
       if (!contatos.length) { semContato++; continue; }
       for (const c of contatos) {
-        if (!c.nome || !c.nome.trim()) continue;
-        const dedupKey = "decisor_web:" + normNome(c.nome);
+        const nomeTrim = (c.nome || "").trim();
+        // contatos institucionais (sem nome, mas com telefone/email) também entram —
+        // maximiza captura de telefone/email; rotulados pelo cargo ou "Contato institucional".
+        const temCanal = c.telefone || c.email;
+        if (!nomeTrim && !temCanal) continue;
+        const nomeFinal = nomeTrim || (c.cargo || "").trim() || "Contato institucional";
+        const dedupKey = nomeTrim
+          ? "decisor_web:" + normNome(nomeTrim)
+          : "decisor_web_inst:" + String(c.email || c.telefone).toLowerCase().replace(/\s/g, "");
         const { data: existing } = await supabase
           .from("empresa_contatos").select("id").eq("empresa_id", reg.id).eq("dedup_key", dedupKey).maybeSingle();
         if (existing) { jaExistia++; continue; }
-        console.log(`[${DRY_RUN ? "DRY" : "INSERT"}] ${reg.nome || reg.id} -> ${c.nome} (${c.cargo || "?"}) [${c.confianca || "?"}]${c.linkedin ? " [LI]" : ""}${c.telefone ? " [tel]" : ""}${c.email ? " [email]" : ""}`);
+        console.log(`[${DRY_RUN ? "DRY" : "INSERT"}] ${reg.nome || reg.id} -> ${nomeFinal} (${c.cargo || "?"}) [${c.confianca || "?"}]${c.linkedin ? " [LI]" : ""}${c.telefone ? " [tel]" : ""}${c.email ? " [email]" : ""}`);
         if (!DRY_RUN) {
           const { error: insErr } = await supabase.from("empresa_contatos").insert({
             empresa_id: reg.id,
-            nome: c.nome.trim(),
+            nome: nomeFinal,
             cargo: c.cargo || null,
             papel: "decisor",
             origem: "outro",
             linkedin: c.linkedin || null,
             telefone: c.telefone || null,
             email: c.email || null,
-            observacoes: `Pesquisa web ação terço (confiança: ${c.confianca || "?"}). Fonte: ${c.fonte || "n/d"}`,
+            observacoes: `Pesquisa web decisor (confiança: ${c.confianca || "?"}). Fonte: ${c.fonte || "n/d"}`,
             dedup_key: dedupKey,
           });
           if (insErr) { console.error("  erro insert:", insErr.message); continue; }
