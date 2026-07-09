@@ -20,23 +20,34 @@ por capital, exporta worklist), `tools/PROMPT_SYSTEM.md` (instruções compartil
 dos agentes), `tools/insert_decisor_by_id.mjs` (agora grava também contatos
 institucionais sem nome, dedup por email/telefone).
 
-### ⚠️ Restam ~4.700 empresas sem decisor (fila)
+### Rodada 2 (mesma tarde) — top 150 PROSPECTS por capital
 
-O sistema tem 5.630 empresas; só 16% têm decisor. As próximas por capital são
-RS/SC/PR (bases importadas de 700 cada). Continuar é só repetir o pipeline:
+Aplicado o filtro recomendado (`--status prospect`, exclui gigantes não-alvo como
+Banco do Brasil/BRF, que eram `status=ativa`). Processadas as **150 maiores
+prospects sem decisor** (R$25–91mi: Compass.UOL, Fluidra, Oleoplan, Herval, Lifemed,
+Canguru, Ânima/IEDUC, Angeloni, etc.), em **ondas de 8** — **275 contatos gravados,
+284 telefone, 145 email**. Decisor no sistema: 927 → **1.077 (19%)**.
+
+Melhor achado (foco telefone/email): emails de **departamento fiscal/tributário
+direto** — `br.fiscal.groups@veolia.com` (Recicle/GTA), `fiscalgyn@gruposaga.com.br`
+(Kasa Motors), `tributario@minisobrasil.com` (Top Brasil), `grupofiscal@lamoda.com.br`.
+
+### ⚠️ Restam ~2.540 prospects sem decisor (fila)
+
+Continuar é só repetir o pipeline (o diag exclui automaticamente quem já tem decisor):
 
 ```bash
 set -a && . ./tools/.env.local && set +a
-node tools/diag_system.mjs --top 300      # regenera worklist_system.json
-# gerar batches_system.json (BATCH=6), disparar agentes lendo PROMPT_SYSTEM.md,
-# consolidar por id, node tools/insert_decisor_by_id.mjs --glob 'tools/found_sys_*.json'
+node tools/diag_system.mjs --status prospect --top 300   # regenera worklist_system.json
+# gerar batches_system.json (BATCH=6), disparar agentes em ONDAS DE ~8 lendo
+# PROMPT_SYSTEM.md, consolidar por id, insert_decisor_by_id.mjs --glob 'tools/found_sys_*.json'
 ```
 
-⚠️ **Limite de sessão da conta**: lançar 25 agentes de uma vez estourou o limite
-(reseta 14h BRT). Preferir **ondas de ~6-8 agentes**. Muitas dessas grandes
-(Banco do Brasil, BRF) provavelmente NÃO são prospects reais de boutique — vale
-o time definir um **teto de capital** ou filtrar por `status=prospect` antes de
-continuar, pra não gastar em não-alvos.
+⚠️ **Lições operacionais**: (1) **nunca lançar 25 agentes de uma vez** — estoura o
+limite da conta (reseta 14h BRT); usar ondas de ~8. (2) A confusão de índice de
+lote volta a acontecer (2 agentes leem o mesmo índice) — a **verificação de
+cobertura por `empresa_id`** pega e re-dispara o batch pulado. (3) `diag_system.mjs`
+aceita `--status prospect` e `--cap-max <valor>` para focar/limitar o pool.
 
 ---
 

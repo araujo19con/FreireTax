@@ -15,18 +15,24 @@ const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_ROLE_KE
 const supabase = createClient(URL, KEY, { auth: { persistSession: false } });
 const argv = process.argv.slice(2);
 const TOP = argv.includes("--top") ? Number(argv[argv.indexOf("--top") + 1]) : 300;
+const STATUS = argv.includes("--status") ? argv[argv.indexOf("--status") + 1] : null; // ex: prospect
+const CAP_MAX = argv.includes("--cap-max") ? Number(argv[argv.indexOf("--cap-max") + 1]) : null; // teto capital
 
 async function main() {
   // 1) todas empresas (campos p/ priorizar e guiar pesquisa)
   const emp = [];
   for (let f = 0; ; f += 1000) {
-    const { data, error } = await supabase.from("empresas")
-      .select("id,nome,razao_social,cnpj,uf,municipio,porte,capital_social,qsa,telefone_receita,email_receita,telefones,contatos_count")
+    let q = supabase.from("empresas")
+      .select("id,nome,razao_social,cnpj,uf,municipio,porte,capital_social,qsa,telefone_receita,email_receita,telefones,contatos_count,status")
       .range(f, f + 999);
+    if (STATUS) q = q.eq("status", STATUS);
+    const { data, error } = await q;
     if (error) throw new Error("empresas: " + error.message);
     emp.push(...data);
     if (data.length < 1000) break;
   }
+  if (STATUS) console.log(`Filtro status='${STATUS}': ${emp.length} empresas.`);
+  if (CAP_MAX) console.log(`Teto capital: R$${CAP_MAX.toLocaleString("pt-BR")}`);
   // 2) empresa_ids que JÁ têm decisor (query só papel=decisor, paginado)
   const decisorSet = new Set();
   for (let f = 0; ; f += 1000) {
@@ -38,8 +44,9 @@ async function main() {
   }
   console.log("Total empresas:", emp.length, "| já com decisor:", decisorSet.size);
 
-  const semD = emp.filter((e) => !decisorSet.has(e.id));
-  console.log("SEM decisor:", semD.length);
+  let semD = emp.filter((e) => !decisorSet.has(e.id));
+  if (CAP_MAX) semD = semD.filter((e) => (Number(e.capital_social) || 0) <= CAP_MAX);
+  console.log("SEM decisor" + (CAP_MAX ? " (abaixo do teto)" : "") + ":", semD.length);
 
   // priorizar: capital_social desc (faturamento vazio no DB)
   semD.sort((a, b) => (Number(b.capital_social) || 0) - (Number(a.capital_social) || 0));
