@@ -56,18 +56,31 @@ function normNome(s) {
   return String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim();
 }
 
+function normalizeBuscaLike(nome) {
+  // Remove acentos, hífens, "&", "."; melhora match rate
+  const norm = String(nome ?? "").normalize("NFD").replace(/[̀-ͯ&.\-]/g, "").toUpperCase().trim();
+  return "%" + norm.replace(/%/g, "") + "%"; // remove wildcards internos, mantém nome completo
+}
+
 async function main() {
   const grupos = JSON.parse(fs.readFileSync(FILE, "utf-8"));
   let inseridos = 0, jaExistia = 0, empresaNaoAchada = 0;
 
   for (const grupo of grupos) {
     const uf = grupo.uf || "PB";
+    const buscaNormalizada = normalizeBuscaLike(grupo.empresaLike);
     const { data: empresas, error } = await supabase
-      .from("empresas").select("id, nome").eq("uf", uf).ilike("nome", grupo.empresaLike)
+      .from("empresas").select("id, nome").eq("uf", uf).ilike("nome", buscaNormalizada)
       .limit(grupo.todasQueCasarem ? 1000 : 3);
     if (error) { console.error("erro busca empresa:", grupo.empresaLike, error.message); continue; }
     if (!empresas || empresas.length === 0) {
       console.log(`[SEM MATCH] (${uf}) ${grupo.empresaLike}`);
+      await supabase.from("empresas_skip_log").insert({
+        empresa_nome: grupo.empresaLike,
+        uf,
+        motivo: "sem_match",
+        tentativas: 1
+      }).catch(() => {}); // ignora erro se tabela não existir
       empresaNaoAchada++;
       continue;
     }

@@ -160,6 +160,19 @@ async function main() {
     ? sheetRows(wb, "Sócios")
     : sheetRows(wb, "Socios");
 
+  // Diagnóstico: se NENHUMA aba esperada tem dados, o export DRIVA veio noutro
+  // formato (aba única / CSV). Falha com mensagem clara em vez de importar 0
+  // silenciosamente e o usuário achar que "não tinha contato".
+  if (!rfbRows.length && !emailRows.length && !phoneRows.length && !socioRows.length) {
+    console.error(
+      "ERRO: nenhuma das abas esperadas (RFB, Emails, Telefones, Sócios) tem dados.\n" +
+        `Abas encontradas: ${wb.SheetNames.map((s) => `"${s}"`).join(", ") || "(nenhuma)"}\n` +
+        "Este importador espera o export DRIVA multi-aba de Contatos. Se o seu export veio\n" +
+        "em outro formato (aba única/CSV), me mande uma amostra pra adaptar o mapeamento.",
+    );
+    process.exit(1);
+  }
+
   // Índice mestre de empresas da planilha (CNPJ → metadados RFB)
   const empresasPlanilha = new Map();
   for (const r of rfbRows) {
@@ -186,9 +199,13 @@ async function main() {
   // Sócios → pessoas decisoras
   for (const r of socioRows) {
     const cnpj = cleanCNPJ(r["CNPJ"]);
-    const nome = trimOrNull(r["Nome"]);
+    const nome = trimOrNull(
+      r["Nome"] || r["Nome do Sócio"] || r["Nome do Socio"] || r["Sócio"] || r["Socio"],
+    );
     if (!cnpj || !nome) continue;
-    const cargo = trimOrNull(r["Qualificação"] || r["Qualificacao"]);
+    const cargo = trimOrNull(
+      r["Qualificação"] || r["Qualificacao"] || r["Qualificação do Sócio"] || r["Qualificacao do Socio"],
+    );
     push(cnpj, {
       nome,
       cargo,
@@ -203,16 +220,18 @@ async function main() {
   // Emails → contatos com email (alguns nomeados, com cargo + linkedin)
   for (const r of emailRows) {
     const cnpj = cleanCNPJ(r["CNPJ"]);
-    const email = trimOrNull(r["Email"]);
+    const email = trimOrNull(r["Email"] || r["E-mail"] || r["E-Mail"]);
     if (!cnpj || !email) continue;
-    const nome = trimOrNull(r["Nome"]);
-    const cargo = trimOrNull(r["Cargo"]);
-    const isContador = isSim(r["Pertence ao Contador"]);
+    const nome = trimOrNull(r["Nome"] || r["Nome Contato"] || r["Nome do Contato"]);
+    const cargo = trimOrNull(r["Cargo"] || r["Função"] || r["Funcao"] || r["Cargo/Função"]);
+    const isContador = isSim(r["Pertence ao Contador"] || r["Pertence a Contador"]);
     push(cnpj, {
       nome,
       cargo,
       email: email.toLowerCase(),
-      linkedin: trimOrNull(r["Linkedin"] || r["LinkedIn"]),
+      linkedin: trimOrNull(
+        r["Linkedin"] || r["LinkedIn"] || r["URL Linkedin"] || r["Linkedin URL"] || r["Perfil Linkedin"],
+      ),
       is_contador: isContador,
       papel: derivePapel(cargo, isContador, !!nome),
       origem: "driva",
@@ -227,8 +246,11 @@ async function main() {
     if (!cnpj || !tel) continue;
     const tipo = tipoTelefoneFrom(r["Fixo Ou Móvel"] || r["Fixo Ou Movel"]);
     const isContador = isSim(r["Pertence a Contador"] || r["Pertence ao Contador"]);
-    const waCol = r["WhatsApp"];
-    const whatsapp = isSim(waCol) || !blank(waCol) || tipo === "movel";
+    // Coluna WhatsApp pode vir como flag (Sim/Não) OU como o próprio número.
+    // Marca true por número/movel, mas NUNCA para negativo explícito ("Não").
+    const waCol = r["WhatsApp"] ?? r["Whatsapp"] ?? r["WHATSAPP"];
+    const waNeg = /^(n[aã]o|no|false|0)$/i.test(String(waCol ?? "").trim());
+    const whatsapp = !waNeg && (isSim(waCol) || !blank(waCol) || tipo === "movel");
     const digits = onlyDigits(tel);
     push(cnpj, {
       telefone: tel,
