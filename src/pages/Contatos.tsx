@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { EmptyState } from "@/components/EmptyState";
@@ -23,7 +23,9 @@ import {
   Phone,
   Smartphone,
   PhoneCall,
+  PhoneOff,
   MessageCircle,
+  MessageSquareText,
   Mail,
   Linkedin,
   Building2,
@@ -36,6 +38,10 @@ import {
   Copy,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { logAudit } from "@/lib/audit";
+import { TemplateSelectorDialog } from "@/components/TemplateSelectorDialog";
+import type { TemplateVars } from "@/lib/templateEngine";
 import type { EmpresaContato, PapelContato, OrigemContato } from "@/lib/contatos";
 import {
   PAPEL_CONTATO,
@@ -53,8 +59,17 @@ import {
 } from "@/lib/contatos";
 
 type ContatoRow = EmpresaContato & {
-  empresas: { id: string; nome: string; uf: string | null; municipio: string | null } | null;
+  empresas: {
+    id: string;
+    nome: string;
+    uf: string | null;
+    municipio: string | null;
+    cnpj: string | null;
+  } | null;
 };
+
+/** Tese de maior valor potencial por empresa — pra personalizar mensagem LinkedIn. */
+type TeseDestaque = { nome: string; valorPotencial: number | null };
 
 // PostgrestFilterBuilder é profundo demais pra encadear vários filtros
 // condicionais (TS 2589 "type instantiation excessively deep"). Tipo relaxado
@@ -100,6 +115,8 @@ const UFS = [
 ].filter((v, i, a) => a.indexOf(v) === i);
 
 export default function Contatos() {
+  const { profile } = useAuth();
+  const qc = useQueryClient();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [papel, setPapel] = useState<PapelContato | "todos">("todos");
@@ -109,6 +126,7 @@ export default function Contatos() {
   const [comTel, setComTel] = useState(false);
   const [soCel, setSoCel] = useState(false);
   const [soPje, setSoPje] = useState(false);
+  const [soInvalido, setSoInvalido] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(new Set<string>());
@@ -124,11 +142,11 @@ export default function Contatos() {
 
   useEffect(() => {
     setPage(0);
-  }, [papel, origem, uf, soWhats, comTel, soCel, soPje]);
+  }, [papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido]);
 
   const filtros = useMemo(
-    () => ({ search, papel, origem, uf, soWhats, comTel, soCel, soPje, page }),
-    [search, papel, origem, uf, soWhats, comTel, soCel, soPje, page]
+    () => ({ search, papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido, page }),
+    [search, papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido, page]
   );
 
   const usaUf = uf !== "todas";
@@ -143,8 +161,8 @@ export default function Contatos() {
         .from("empresa_contatos")
         .select(
           `id, nome, cargo, papel, email, telefone, tipo_telefone, whatsapp, linkedin,
-           is_contador, principal, origem, empresa_id,
-           empresas${usaUf ? "!inner" : ""}(id, nome, uf, municipio)`,
+           is_contador, principal, origem, empresa_id, telefone_invalido, telefone_invalido_motivo,
+           empresas${usaUf ? "!inner" : ""}(id, nome, uf, municipio, cnpj)`,
           { count: "exact" }
         )
         .order("principal", { ascending: false })
@@ -161,6 +179,7 @@ export default function Contatos() {
       if (comTel) q = q.not("telefone", "is", null).neq("telefone", "");
       if (soCel) q = q.eq("tipo_telefone", "movel");
       if (soPje) q = q.ilike("observacoes", "%PJe/TJRN%");
+      if (soInvalido) q = q.eq("telefone_invalido", true);
       if (usaUf) q = q.eq("empresas.uf", uf);
 
       const { data, error, count } = await (q as unknown as PromiseLike<{
@@ -169,7 +188,36 @@ export default function Contatos() {
         count: number | null;
       }>);
       if (error) throw new Error(error.message);
-      return { rows: data ?? [], count: count ?? 0 };
+      const rows = data ?? [];
+
+      // Tese de maior valor potencial por empresa (pra personalizar a mensagem
+      // de LinkedIn) — 1 fetch em lote, só das empresas visíveis nesta página.
+      const teseByEmpresa = new Map<string, TeseDestaque>();
+      const empresaIds = [...new Set(rows.map((r) => r.empresa_id).filter(Boolean))];
+      if (empresaIds.length > 0) {
+        const { data: elegs } = await supabase
+          .from("elegibilidade")
+          .select("empresa_id, valor_potencial_estimado, acoes_tributarias(nome)")
+          .in("empresa_id", empresaIds)
+          .eq("elegivel", true);
+        for (const e of (elegs ?? []) as unknown as Array<{
+          empresa_id: string;
+          valor_potencial_estimado: number | null;
+          acoes_tributarias: { nome: string } | null;
+        }>) {
+          if (!e.acoes_tributarias) continue;
+          const atual = teseByEmpresa.get(e.empresa_id);
+          const valor = e.valor_potencial_estimado ?? 0;
+          if (!atual || valor > (atual.valorPotencial ?? 0)) {
+            teseByEmpresa.set(e.empresa_id, {
+              nome: e.acoes_tributarias.nome,
+              valorPotencial: e.valor_potencial_estimado,
+            });
+          }
+        }
+      }
+
+      return { rows, count: count ?? 0, teseByEmpresa };
     },
   });
 
@@ -183,6 +231,7 @@ export default function Contatos() {
           .from("empresa_contatos")
           .select(
             `nome, cargo, papel, email, telefone, tipo_telefone, whatsapp, linkedin, origem,
+             telefone_invalido, telefone_invalido_motivo,
              empresas${usaUf ? "!inner" : ""}(nome, uf, municipio)`
           )
           .order("nome", { ascending: true, nullsFirst: false })
@@ -198,6 +247,7 @@ export default function Contatos() {
         if (comTel) q = q.not("telefone", "is", null).neq("telefone", "");
         if (soCel) q = q.eq("tipo_telefone", "movel");
         if (soPje) q = q.ilike("observacoes", "%PJe/TJRN%");
+        if (soInvalido) q = q.eq("telefone_invalido", true);
         if (usaUf) q = q.eq("empresas.uf", uf);
 
         const { data, error } = await (q as unknown as PromiseLike<{
@@ -224,6 +274,8 @@ export default function Contatos() {
         "Telefone",
         "Tipo",
         "WhatsApp",
+        "Telefone Inválido",
+        "Motivo Inválido",
         "Email",
         "LinkedIn",
       ];
@@ -243,6 +295,8 @@ export default function Contatos() {
           formatPhoneBR(c.telefone),
           c.tipo_telefone,
           c.whatsapp ? "sim" : "",
+          c.telefone_invalido ? "sim" : "",
+          c.telefone_invalido_motivo,
           c.email,
           c.linkedin,
         ]
@@ -268,6 +322,45 @@ export default function Contatos() {
 
   const rows = data?.rows ?? [];
   const total = data?.count ?? 0;
+  const teseByEmpresa = data?.teseByEmpresa;
+
+  // Mensagem LinkedIn personalizada — 1 dialog reaproveitado pra qualquer contato
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [msgVars, setMsgVars] = useState<TemplateVars>({});
+  const [msgLinkedin, setMsgLinkedin] = useState<string | null>(null);
+
+  const abrirMensagemLinkedin = (c: ContatoRow) => {
+    const tese = c.empresa_id ? teseByEmpresa?.get(c.empresa_id) : undefined;
+    setMsgVars({
+      empresa: c.empresas?.nome ?? null,
+      cnpj: c.empresas?.cnpj ?? null,
+      contato_nome: c.nome,
+      tese: tese?.nome ?? null,
+      valor_potencial: tese?.valorPotencial ?? null,
+      advogado_responsavel: profile?.nome ?? null,
+    });
+    setMsgLinkedin(linkedinUrl(c.linkedin));
+    setMsgOpen(true);
+  };
+
+  const toggleTelefoneInvalido = async (c: ContatoRow) => {
+    const invalido = !c.telefone_invalido;
+    const { error } = await supabase
+      .from("empresa_contatos")
+      .update({ telefone_invalido: invalido })
+      .eq("id", c.id);
+    if (error) return toast.error("Erro ao atualizar telefone");
+    toast.success(invalido ? "Telefone marcado como errado" : "Telefone marcado como válido");
+    void logAudit({
+      tabela: "empresa_contatos",
+      acao: invalido ? "Marcou telefone como errado" : "Desmarcou telefone como errado",
+      registro_id: c.id,
+      detalhes: { empresa_id: c.empresa_id },
+    });
+    void qc.invalidateQueries({ queryKey: ["contatos-global"] });
+    void qc.invalidateQueries({ queryKey: ["contatos-coverage"] });
+  };
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const temFiltro =
     !!search ||
@@ -277,7 +370,8 @@ export default function Contatos() {
     soWhats ||
     comTel ||
     soCel ||
-    soPje;
+    soPje ||
+    soInvalido;
 
   const limpar = () => {
     setSearchInput("");
@@ -289,6 +383,7 @@ export default function Contatos() {
     setComTel(false);
     setSoCel(false);
     setSoPje(false);
+    setSoInvalido(false);
     setPage(0);
   };
 
@@ -502,6 +597,16 @@ export default function Contatos() {
             <Gavel className="mr-1 h-3.5 w-3.5" /> Só PJe
           </Button>
 
+          <Button
+            variant={soInvalido ? "destructive" : "outline"}
+            size="sm"
+            className="h-8"
+            onClick={() => setSoInvalido((v) => !v)}
+            title="Contatos com telefone marcado como errado — pra auditar qualidade dos dados"
+          >
+            <PhoneOff className="mr-1 h-3.5 w-3.5" /> Telefone inválido
+          </Button>
+
           {temFiltro && (
             <Button variant="ghost" size="sm" className="h-8" onClick={limpar}>
               <X className="mr-1 h-3.5 w-3.5" /> Limpar
@@ -565,10 +670,21 @@ export default function Contatos() {
               c={c}
               selected={selected.has(c.id)}
               onSelect={(checked) => handleSelectOne(c.id, checked)}
+              onMensagemLinkedin={() => abrirMensagemLinkedin(c)}
+              onToggleTelefoneInvalido={() => void toggleTelefoneInvalido(c)}
             />
           ))}
         </div>
       )}
+
+      <TemplateSelectorDialog
+        open={msgOpen}
+        onOpenChange={setMsgOpen}
+        vars={msgVars}
+        initialCategoria="abertura"
+        canalFiltro="linkedin"
+        linkedinProfileUrl={msgLinkedin}
+      />
 
       {/* Paginação */}
       {total > PAGE_SIZE && (
@@ -604,10 +720,14 @@ function ContatoLinha({
   c,
   selected,
   onSelect,
+  onMensagemLinkedin,
+  onToggleTelefoneInvalido,
 }: {
   c: ContatoRow;
   selected?: boolean;
   onSelect?: (checked: boolean) => void;
+  onMensagemLinkedin: () => void;
+  onToggleTelefoneInvalido: () => void;
 }) {
   const empresaNome = c.empresas?.nome ?? "—";
   const tel = telLink(c.telefone);
@@ -665,9 +785,22 @@ function ContatoLinha({
             </span>
           )}
           {c.telefone && (
-            <span className="flex items-center gap-1">
+            <span
+              className={`flex items-center gap-1 ${c.telefone_invalido ? "text-destructive" : ""}`}
+            >
               <Phone className="h-3 w-3" />
-              {formatPhoneBR(c.telefone)}
+              <span className={c.telefone_invalido ? "line-through" : ""}>
+                {formatPhoneBR(c.telefone)}
+              </span>
+              {c.telefone_invalido && (
+                <Badge
+                  variant="outline"
+                  className="border-destructive/40 text-[9px] text-destructive"
+                  title={c.telefone_invalido_motivo ?? "Telefone marcado como errado"}
+                >
+                  inválido
+                </Badge>
+              )}
             </span>
           )}
           {c.email && (
@@ -680,6 +813,24 @@ function ContatoLinha({
       </div>
 
       <div className="flex shrink-0 items-center gap-0.5">
+        {c.telefone && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={`h-8 w-8 ${c.telefone_invalido ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
+            title={
+              c.telefone_invalido
+                ? "Desmarcar — telefone volta a ser válido"
+                : "Marcar telefone como errado/inexistente"
+            }
+            aria-label={
+              c.telefone_invalido ? "Marcar telefone como válido" : "Marcar telefone como errado"
+            }
+            onClick={onToggleTelefoneInvalido}
+          >
+            <PhoneOff className="h-4 w-4" />
+          </Button>
+        )}
         {tel && (
           <IconLink href={tel} title="Ligar">
             <PhoneCall className="h-4 w-4" />
@@ -696,9 +847,21 @@ function ContatoLinha({
           </IconLink>
         )}
         {lkd && (
-          <IconLink href={lkd} title="LinkedIn" external className="text-[#0a66c2]">
+          <IconLink href={lkd} title="Abrir perfil no LinkedIn" external className="text-[#0a66c2]">
             <Linkedin className="h-4 w-4" />
           </IconLink>
+        )}
+        {lkd && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-[#0a66c2]"
+            title="Gerar mensagem personalizada de LinkedIn"
+            aria-label="Gerar mensagem personalizada de LinkedIn"
+            onClick={onMensagemLinkedin}
+          >
+            <MessageSquareText className="h-4 w-4" />
+          </Button>
         )}
       </div>
     </Card>

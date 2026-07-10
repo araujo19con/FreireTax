@@ -329,6 +329,10 @@ export type Database = {
           papel: Database["public"]["Enums"]["papel_contato"];
           principal: boolean;
           telefone: string | null;
+          telefone_invalido: boolean;
+          telefone_invalido_em: string | null;
+          telefone_invalido_motivo: string | null;
+          telefone_invalido_por: string | null;
           tipo_telefone: Database["public"]["Enums"]["tipo_telefone"];
           updated_at: string;
           whatsapp: boolean;
@@ -352,6 +356,10 @@ export type Database = {
           papel?: Database["public"]["Enums"]["papel_contato"];
           principal?: boolean;
           telefone?: string | null;
+          telefone_invalido?: boolean;
+          telefone_invalido_em?: string | null;
+          telefone_invalido_motivo?: string | null;
+          telefone_invalido_por?: string | null;
           tipo_telefone?: Database["public"]["Enums"]["tipo_telefone"];
           updated_at?: string;
           whatsapp?: boolean;
@@ -375,6 +383,10 @@ export type Database = {
           papel?: Database["public"]["Enums"]["papel_contato"];
           principal?: boolean;
           telefone?: string | null;
+          telefone_invalido?: boolean;
+          telefone_invalido_em?: string | null;
+          telefone_invalido_motivo?: string | null;
+          telefone_invalido_por?: string | null;
           tipo_telefone?: Database["public"]["Enums"]["tipo_telefone"];
           updated_at?: string;
           whatsapp?: boolean;
@@ -385,6 +397,13 @@ export type Database = {
             columns: ["empresa_id"];
             isOneToOne: false;
             referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "empresa_contatos_telefone_invalido_por_fkey";
+            columns: ["telefone_invalido_por"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
             referencedColumns: ["id"];
           },
         ];

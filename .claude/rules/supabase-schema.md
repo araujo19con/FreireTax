@@ -55,12 +55,13 @@ Timestamps: `created_at`, `updated_at`
 
 Pessoas e canais reais de cada empresa (sócios, decisores, financeiro, contador, canais genéricos) — alimentado por DRIVA/RFB/manual. É o "QUEM e COMO falar" da prospecção.
 
-`id`, `empresa_id` (FK CASCADE), `nome` (nullable — canal sem nome), `cargo`, `papel` (enum `papel_contato`), `email`, `telefone`, `tipo_telefone` (enum: fixo/movel/desconhecido), `whatsapp` bool, `linkedin`, `is_contador` bool (DRIVA "Pertence ao Contador" — NÃO é decisor), `principal` bool (1 por empresa, garantido por trigger), `origem` (enum `origem_contato`), `cpf_mascarado`, `faixa_etaria`, `observacoes`, `metadados` jsonb, `dedup_key` (idempotência do importador — UNIQUE parcial `(empresa_id, dedup_key)`), `created_by`, timestamps.
+`id`, `empresa_id` (FK CASCADE), `nome` (nullable — canal sem nome), `cargo`, `papel` (enum `papel_contato`), `email`, `telefone`, `tipo_telefone` (enum: fixo/movel/desconhecido), `whatsapp` bool, `linkedin`, `is_contador` bool (DRIVA "Pertence ao Contador" — NÃO é decisor), `principal` bool (1 por empresa, garantido por trigger), `origem` (enum `origem_contato`), `cpf_mascarado`, `faixa_etaria`, `observacoes`, `metadados` jsonb, `dedup_key` (idempotência do importador — UNIQUE parcial `(empresa_id, dedup_key)`), `telefone_invalido` bool (mig `20260709000001` — marca número testado como errado/inexistente ANTES de entrar em prospecção), `telefone_invalido_motivo`, `telefone_invalido_em`, `telefone_invalido_por` (FK profiles — carimbados automaticamente por trigger), `created_by`, timestamps.
 
-- Trigger `recalc_empresa_contatos_cache` mantém snapshot em `empresas`: `contatos_count`, `contato_principal_nome/cargo/telefone/email/whatsapp`.
+- Trigger `recalc_empresa_contatos_cache` mantém snapshot em `empresas`: `contatos_count`, `contato_principal_nome/cargo/telefone/email/whatsapp`. Telefone/whatsapp de contato com `telefone_invalido=true` NUNCA entram nesse snapshot (cai pro fallback `telefone_receita` na tarefa "Contato inicial").
 - Trigger `ensure_single_contato_principal` rebaixa os demais ao marcar um principal.
+- Trigger `stamp_telefone_invalido` carimba `telefone_invalido_em/_por` ao marcar, limpa os 3 campos ao desmarcar.
 - **NÃO confundir com `prospeccao_contatos`** (log de toques da cadência) — coisas diferentes.
-- UI: `EmpresaContatosSection` (aba "Contatos" do `EmpresaDetailSheet`) + `ContatoDialog`. Helpers em `src/lib/contatos.ts`. Importador: `tools/import-driva-contatos.mjs`.
+- UI: `EmpresaContatosSection` (aba "Contatos" do `EmpresaDetailSheet`) + `ContatoDialog` (checkbox "Telefone errado" + motivo) + tela global `Contatos.tsx` (filtro "Telefone inválido", badge, toggle rápido, coluna no CSV) + `ContatosCoverageCard` (tile de qualidade + origem dos inválidos). Helpers em `src/lib/contatos.ts`. Importador: `tools/import-driva-contatos.mjs`.
 
 ### `acoes_tributarias` — teses jurídicas
 

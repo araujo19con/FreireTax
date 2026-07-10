@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Phone,
   MessageCircle,
+  MessageSquareText,
   Mail,
   Linkedin,
   Star,
@@ -12,12 +13,16 @@ import {
   Trash2,
   UserRound,
   PhoneCall,
+  PhoneOff,
   Crown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { logAudit } from "@/lib/audit";
+import { useAuth } from "@/hooks/useAuth";
 import { ContatoDialog } from "@/components/ContatoDialog";
+import { TemplateSelectorDialog } from "@/components/TemplateSelectorDialog";
+import type { TemplateVars } from "@/lib/templateEngine";
 import {
   type EmpresaContato,
   humanizePapel,
@@ -33,18 +38,52 @@ import {
   mensagemWhatsappPadrao,
 } from "@/lib/contatos";
 
+/** Tese de maior valor potencial vinculada à empresa — usada pra personalizar
+ *  a mensagem (o chamador já tem essa info via useEmpresaRelations, sem query nova). */
+export interface TeseDestaque {
+  nome: string;
+  valorPotencial: number | null;
+}
+
 interface Props {
   empresaId: string;
   empresaNome: string;
+  empresaCnpj?: string | null;
+  teseDestaque?: TeseDestaque | null;
   /** dispara no pai pra invalidar queries (snapshot de contato em empresas) */
   onChanged?: () => void;
 }
 
-export function EmpresaContatosSection({ empresaId, empresaNome, onChanged }: Props) {
+export function EmpresaContatosSection({
+  empresaId,
+  empresaNome,
+  empresaCnpj,
+  teseDestaque,
+  onChanged,
+}: Props) {
+  const { profile } = useAuth();
   const [contatos, setContatos] = useState<EmpresaContato[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<EmpresaContato | null>(null);
+
+  // Mensagem LinkedIn personalizada — 1 dialog reaproveitado pra qualquer contato
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [msgVars, setMsgVars] = useState<TemplateVars>({});
+  const [msgLinkedin, setMsgLinkedin] = useState<string | null>(null);
+
+  const abrirMensagemLinkedin = (c: EmpresaContato) => {
+    setMsgVars({
+      empresa: empresaNome,
+      cnpj: empresaCnpj ?? null,
+      contato_nome: c.nome,
+      tese: teseDestaque?.nome ?? null,
+      valor_potencial: teseDestaque?.valorPotencial ?? null,
+      advogado_responsavel: profile?.nome ?? null,
+    });
+    setMsgLinkedin(linkedinUrl(c.linkedin));
+    setMsgOpen(true);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +124,23 @@ export function EmpresaContatosSection({ empresaId, empresaNome, onChanged }: Pr
     void logAudit({
       tabela: "empresa_contatos",
       acao: "Definiu contato principal",
+      registro_id: c.id,
+      detalhes: { empresa_id: empresaId },
+    });
+    afterChange();
+  };
+
+  const toggleTelefoneInvalido = async (c: EmpresaContato) => {
+    const invalido = !c.telefone_invalido;
+    const { error } = await supabase
+      .from("empresa_contatos")
+      .update({ telefone_invalido: invalido })
+      .eq("id", c.id);
+    if (error) return toast.error("Erro ao atualizar telefone");
+    toast.success(invalido ? "Telefone marcado como errado" : "Telefone marcado como válido");
+    void logAudit({
+      tabela: "empresa_contatos",
+      acao: invalido ? "Marcou telefone como errado" : "Desmarcou telefone como errado",
       registro_id: c.id,
       detalhes: { empresa_id: empresaId },
     });
@@ -141,6 +197,8 @@ export function EmpresaContatosSection({ empresaId, empresaNome, onChanged }: Pr
               onEdit={() => editar(c)}
               onDelete={() => void remover(c)}
               onPrincipal={() => void definirPrincipal(c)}
+              onToggleTelefoneInvalido={() => void toggleTelefoneInvalido(c)}
+              onMensagemLinkedin={() => abrirMensagemLinkedin(c)}
             />
           ))}
         </div>
@@ -153,6 +211,15 @@ export function EmpresaContatosSection({ empresaId, empresaNome, onChanged }: Pr
         contato={editing}
         onSaved={afterChange}
       />
+
+      <TemplateSelectorDialog
+        open={msgOpen}
+        onOpenChange={setMsgOpen}
+        vars={msgVars}
+        initialCategoria="abertura"
+        canalFiltro="linkedin"
+        linkedinProfileUrl={msgLinkedin}
+      />
     </div>
   );
 }
@@ -163,12 +230,16 @@ function ContatoCard({
   onEdit,
   onDelete,
   onPrincipal,
+  onToggleTelefoneInvalido,
+  onMensagemLinkedin,
 }: {
   c: EmpresaContato;
   empresaNome: string;
   onEdit: () => void;
   onDelete: () => void;
   onPrincipal: () => void;
+  onToggleTelefoneInvalido: () => void;
+  onMensagemLinkedin: () => void;
 }) {
   const tel = telLink(c.telefone);
   const wa = c.whatsapp ? waLink(c.telefone, mensagemWhatsappPadrao(empresaNome, c.nome)) : null;
@@ -210,12 +281,26 @@ function ContatoCard({
 
           <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
             {c.telefone && (
-              <span className="flex items-center gap-1.5">
-                <Phone className="h-3 w-3" /> {formatPhoneBR(c.telefone)}
+              <span
+                className={`flex items-center gap-1.5 ${c.telefone_invalido ? "text-destructive" : ""}`}
+              >
+                <Phone className="h-3 w-3" />
+                <span className={c.telefone_invalido ? "line-through" : ""}>
+                  {formatPhoneBR(c.telefone)}
+                </span>
                 {c.tipo_telefone !== "desconhecido" && (
                   <span className="text-[10px] opacity-60">
                     ({c.tipo_telefone === "movel" ? "cel" : "fixo"})
                   </span>
+                )}
+                {c.telefone_invalido && (
+                  <Badge
+                    variant="outline"
+                    className="border-destructive/40 text-[9px] text-destructive"
+                    title={c.telefone_invalido_motivo ?? "Telefone marcado como errado"}
+                  >
+                    inválido
+                  </Badge>
                 )}
               </span>
             )}
@@ -245,9 +330,26 @@ function ContatoCard({
             </IconLink>
           )}
           {lkd && (
-            <IconLink href={lkd} title="LinkedIn" external className="text-[#0a66c2]">
+            <IconLink
+              href={lkd}
+              title="Abrir perfil no LinkedIn"
+              external
+              className="text-[#0a66c2]"
+            >
               <Linkedin className="h-3.5 w-3.5" />
             </IconLink>
+          )}
+          {lkd && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-[#0a66c2]"
+              title="Gerar mensagem personalizada de LinkedIn"
+              aria-label="Gerar mensagem personalizada de LinkedIn"
+              onClick={onMensagemLinkedin}
+            >
+              <MessageSquareText className="h-3.5 w-3.5" />
+            </Button>
           )}
         </div>
       </div>
@@ -257,6 +359,22 @@ function ContatoCard({
         {!c.principal && (
           <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={onPrincipal}>
             <Star className="mr-1 h-3 w-3" /> Tornar principal
+          </Button>
+        )}
+        {c.telefone && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-6 px-2 text-[11px] ${c.telefone_invalido ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
+            onClick={onToggleTelefoneInvalido}
+            title={
+              c.telefone_invalido
+                ? "Desmarcar — telefone volta a ser válido"
+                : "Marcar telefone como errado/inexistente"
+            }
+          >
+            <PhoneOff className="mr-1 h-3 w-3" />
+            {c.telefone_invalido ? "Telefone OK" : "Telefone errado"}
           </Button>
         )}
         <Button

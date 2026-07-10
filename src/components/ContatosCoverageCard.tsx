@@ -2,7 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Phone, Smartphone, MessageCircle, Gavel, BarChart3, Loader2 } from "lucide-react";
+import {
+  Phone,
+  Smartphone,
+  MessageCircle,
+  Gavel,
+  PhoneOff,
+  BarChart3,
+  Loader2,
+} from "lucide-react";
 
 export function ContatosCoverageCard() {
   const { data, isLoading } = useQuery({
@@ -15,7 +23,9 @@ export function ContatosCoverageCard() {
         { count: comCelular },
         { count: comWhatsapp },
         { count: comPje },
+        { count: comTelefoneInvalido },
         { data: origemStats },
+        { data: origemInvalidoStats },
         { data: empresasComContato },
       ] = await Promise.all([
         supabase.from("empresa_contatos").select("id", { count: "exact", head: true }),
@@ -38,7 +48,28 @@ export function ContatosCoverageCard() {
           .ilike("observacoes", "%PJe/TJRN%"),
         supabase
           .from("empresa_contatos")
+          .select("id", { count: "exact", head: true })
+          .eq("telefone_invalido", true),
+        supabase
+          .from("empresa_contatos")
           .select("origem", { head: false })
+          .then((r) => {
+            if (r.data) {
+              const counts: Record<string, number> = {};
+              r.data.forEach((row: { origem: string }) => {
+                counts[row.origem] = (counts[row.origem] ?? 0) + 1;
+              });
+              return { data: Object.entries(counts).map(([k, v]) => ({ origem: k, count: v })) };
+            }
+            return { data: [] };
+          }),
+        // Origem dos telefones marcados como errados — mostra qual fonte
+        // (DRIVA/RFB/PJe/manual) traz mais dado ruim, pra priorizar onde
+        // conferir com mais cuidado.
+        supabase
+          .from("empresa_contatos")
+          .select("origem", { head: false })
+          .eq("telefone_invalido", true)
           .then((r) => {
             if (r.data) {
               const counts: Record<string, number> = {};
@@ -66,6 +97,7 @@ export function ContatosCoverageCard() {
       const celular = comCelular ?? 0;
       const whatsapp = comWhatsapp ?? 0;
       const pje = comPje ?? 0;
+      const invalido = comTelefoneInvalido ?? 0;
       const empresas = empresasComContato?.length ?? 0;
 
       return {
@@ -74,12 +106,16 @@ export function ContatosCoverageCard() {
         celular,
         whatsapp,
         pje,
+        invalido,
         empresas,
         origemStats: (origemStats ?? []) as { origem: string; count: number }[],
+        origemInvalidoStats: (origemInvalidoStats ?? []) as { origem: string; count: number }[],
         pctTelefone: total > 0 ? Math.round((telefone / total) * 100) : 0,
         pctCelular: total > 0 ? Math.round((celular / total) * 100) : 0,
         pctWhatsapp: total > 0 ? Math.round((whatsapp / total) * 100) : 0,
         pctPje: total > 0 ? Math.round((pje / total) * 100) : 0,
+        // % de qualidade do dado telefone (só faz sentido sobre quem TEM telefone).
+        pctInvalido: telefone > 0 ? Math.round((invalido / telefone) * 100) : 0,
       };
     },
     staleTime: 5 * 60 * 1000, // 5 min
@@ -105,7 +141,7 @@ export function ContatosCoverageCard() {
         <h3 className="text-sm font-semibold">Cobertura de Enriquecimento</h3>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
         {/* Total */}
         <div className="space-y-1 rounded bg-muted/50 p-2 text-center">
           <div className="text-2xl font-bold">{data.total.toLocaleString("pt-BR")}</div>
@@ -157,6 +193,16 @@ export function ContatosCoverageCard() {
           <div className="text-[10px] uppercase text-muted-foreground">PJe</div>
           <div className="text-[9px] text-muted-foreground">{data.pje}</div>
         </div>
+
+        {/* Telefone inválido — qualidade do dado, não cobertura */}
+        <div className="space-y-1 rounded bg-destructive/5 p-2 text-center">
+          <div className="flex items-center justify-center gap-0.5">
+            <PhoneOff className="h-3 w-3 text-destructive" />
+            <span className="text-xl font-bold text-destructive">{data.pctInvalido}%</span>
+          </div>
+          <div className="text-[10px] uppercase text-muted-foreground">Tel. inválido</div>
+          <div className="text-[9px] text-muted-foreground">{data.invalido}</div>
+        </div>
       </div>
 
       {/* Origens principais */}
@@ -172,6 +218,28 @@ export function ContatosCoverageCard() {
                   </Badge>
                 )
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Qualidade: de onde vêm os telefones marcados como errados */}
+      {data.origemInvalidoStats.length > 0 && (
+        <div className="space-y-1.5 border-t pt-2">
+          <div className="text-xs font-medium text-muted-foreground">
+            Origem dos telefones inválidos
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {data.origemInvalidoStats
+              .sort((a, b) => b.count - a.count)
+              .map((item) => (
+                <Badge
+                  key={item.origem}
+                  variant="outline"
+                  className="border-destructive/30 text-[9px] text-destructive"
+                >
+                  {item.origem}: {item.count}
+                </Badge>
+              ))}
           </div>
         </div>
       )}

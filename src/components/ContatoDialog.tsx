@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PhoneOff } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -56,6 +57,8 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
   const [telefone, setTelefone] = useState("");
   const [tipoTelefone, setTipoTelefone] = useState<TipoTelefone>("desconhecido");
   const [whatsapp, setWhatsapp] = useState(false);
+  const [telefoneInvalido, setTelefoneInvalido] = useState(false);
+  const [telefoneInvalidoMotivo, setTelefoneInvalidoMotivo] = useState("");
   const [linkedin, setLinkedin] = useState("");
   const [isContador, setIsContador] = useState(false);
   const [principal, setPrincipal] = useState(false);
@@ -72,6 +75,8 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
     setTelefone(contato?.telefone ?? "");
     setTipoTelefone(contato?.tipo_telefone ?? "desconhecido");
     setWhatsapp(contato?.whatsapp ?? false);
+    setTelefoneInvalido(contato?.telefone_invalido ?? false);
+    setTelefoneInvalidoMotivo(contato?.telefone_invalido_motivo ?? "");
     setLinkedin(contato?.linkedin ?? "");
     setIsContador(contato?.is_contador ?? false);
     setPrincipal(contato?.principal ?? false);
@@ -102,6 +107,8 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
       telefone: telefone.trim() || null,
       tipo_telefone: tipoTelefone,
       whatsapp,
+      telefone_invalido: telefoneInvalido,
+      telefone_invalido_motivo: telefoneInvalido ? telefoneInvalidoMotivo.trim() || null : null,
       linkedin: linkedin.trim() || null,
       is_contador: isContador,
       principal,
@@ -237,6 +244,31 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
             <Checkbox checked={whatsapp} onCheckedChange={(v) => setWhatsapp(!!v)} />
             Este número tem WhatsApp
           </label>
+
+          <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+            <label className="flex items-center gap-2 text-sm text-destructive">
+              <Checkbox
+                checked={telefoneInvalido}
+                onCheckedChange={(v) => setTelefoneInvalido(!!v)}
+              />
+              <PhoneOff className="h-3.5 w-3.5" />
+              Telefone errado / não existe
+            </label>
+            {telefoneInvalido && (
+              <div className="space-y-1">
+                <Input
+                  value={telefoneInvalidoMotivo}
+                  onChange={(e) => setTelefoneInvalidoMotivo(e.target.value)}
+                  placeholder="Motivo (opcional): não existe, não é da empresa, número trocou..."
+                  className="text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Marcado antes de entrar em prospecção: esse número para de ser sugerido
+                  automaticamente (fica só registrado pra análise de qualidade de dados).
+                </p>
+              </div>
+            )}
+          </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">LinkedIn</Label>
