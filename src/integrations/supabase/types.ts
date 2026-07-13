@@ -180,11 +180,14 @@ export type Database = {
       elegibilidade: {
         Row: {
           acao_id: string;
+          ajuizada_por_nos: boolean | null;
+          ajuizamento_notas: string | null;
           created_at: string;
           destaque: boolean;
           elegivel: boolean;
           empresa_id: string;
           id: string;
+          ja_ajuizada: boolean;
           justificativa: string | null;
           motivo_desqualificacao: string | null;
           notas_contexto: string | null;
@@ -200,11 +203,14 @@ export type Database = {
         };
         Insert: {
           acao_id: string;
+          ajuizada_por_nos?: boolean | null;
+          ajuizamento_notas?: string | null;
           created_at?: string;
           destaque?: boolean;
           elegivel?: boolean;
           empresa_id: string;
           id?: string;
+          ja_ajuizada?: boolean;
           justificativa?: string | null;
           motivo_desqualificacao?: string | null;
           notas_contexto?: string | null;
@@ -220,11 +226,14 @@ export type Database = {
         };
         Update: {
           acao_id?: string;
+          ajuizada_por_nos?: boolean | null;
+          ajuizamento_notas?: string | null;
           created_at?: string;
           destaque?: boolean;
           elegivel?: boolean;
           empresa_id?: string;
           id?: string;
+          ja_ajuizada?: boolean;
           justificativa?: string | null;
           motivo_desqualificacao?: string | null;
           notas_contexto?: string | null;
