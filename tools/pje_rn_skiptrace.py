@@ -169,14 +169,35 @@ def engaged_empresa_ids():
     return ids
 
 
-def carregar_socios(limit, priorizar_engajados=True):
+def acao_empresa_ids(acao_id, ufs):
+    """empresa_ids das UFs alvo vinculados a uma AÇÃO (via elegibilidade) — pra
+    lote FOCADO nos sócios das empresas de uma tese específica, em vez do sweep
+    alfabético. Filtra por UF no servidor pra a lista IN não estourar a URL."""
+    flt = (f"empresas.uf=in.({','.join(ufs)})" if len(ufs) > 1 else f"empresas.uf=eq.{ufs[0]}")
+    ids = set()
+    for r in (sb(f"elegibilidade?select=empresa_id,empresas!inner(uf)"
+                 f"&acao_id=eq.{acao_id}&{flt}&limit=10000") or []):
+        if r.get("empresa_id"):
+            ids.add(r["empresa_id"])
+    return ids
+
+
+def carregar_socios(limit, priorizar_engajados=True, restrict_empresa_ids=None):
     """Sócios RN pessoa-física ainda não varridos. Prioriza sócios de empresas
     engajadas e DEPOIS segue alfabético; pula os já varridos (ledger), já enriquecidos
-    (marcador) e PJ. Ledger+marcador garantem que ninguém é re-processado."""
+    (marcador) e PJ. Ledger+marcador garantem que ninguém é re-processado.
+    restrict_empresa_ids: se setado, limita a varredura a essas empresas (lote focado)."""
     done = ledger_nomes()
     vistos, alvos = set(), []
+    # Lote focado numa ação: restringe a query às empresas da ação (ignora a
+    # priorização por engajamento — o próprio recorte já é o foco).
+    restrict = ""
+    if restrict_empresa_ids:
+        priorizar_engajados = False
+        restrict = f"&empresa_id=in.({','.join(str(x) for x in restrict_empresa_ids)})"
 
     def _coletar(extra=""):
+        extra = restrict + extra
         offset, page = 0, 1000
         while len(alvos) < limit:
             rows = sb(ALVOS_QUERY + extra + f"&limit={page}&offset={offset}") or []
@@ -465,6 +486,8 @@ def main():
                     help="salva o texto cru dos autos em pje_rn_dump.jsonl (corpus p/ reparse)")
     ap.add_argument("--reparse", metavar="JSONL",
                     help="reprocessa um corpus salvo (SEM browser) e mostra o rendimento")
+    ap.add_argument("--acao", metavar="ACAO_ID",
+                    help="lote FOCADO: só sócios das empresas vinculadas a esta ação (elegibilidade)")
     ap.add_argument("--names-file", metavar="JSON",
                     help="busca uma lista CUSTOM de alvos [{nome,cpf_mascarado}] no tribunal "
                          "(ex: sócios PB de CNPJs-alvo) em vez do sweep por UF. "
@@ -505,6 +528,15 @@ def main():
                  and a["nome"].upper() not in done][:args.limit]
         print(f"> {len(alvos)} alvos custom (de {len(raw)}; {len(done)} já no ledger próprio) "
               f"a BUSCAR no {_c['nome']}. Ledger: {LEDGER.name}")
+    elif args.acao:
+        # lote FOCADO: só sócios das empresas da ação (nas UFs do TJ)
+        restrict = acao_empresa_ids(args.acao, _c["ufs"])
+        if not restrict:
+            print(f"> Nenhuma empresa da ação {args.acao} nas UFs {'/'.join(_c['ufs'])}. Nada a fazer.")
+            return
+        alvos = carregar_socios(args.limit, restrict_empresa_ids=restrict)
+        print(f"> {len(alvos)} sócios FOCADOS na ação ({len(restrict)} empresas {'/'.join(_c['ufs'])}) "
+              f"a processar no {_c['nome']} (sem enriquecimento {_c['marker']}).")
     else:
         alvos = carregar_socios(args.limit)
         print(f"> {len(alvos)} sócios ({'/'.join(_c['ufs'])}) a processar no {_c['nome']} "
