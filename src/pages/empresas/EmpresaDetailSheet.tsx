@@ -87,6 +87,9 @@ interface ElegRow {
   elegivel: boolean;
   justificativa: string | null;
   valor_potencial_estimado: number | null;
+  ja_ajuizada: boolean;
+  ajuizada_por_nos: boolean | null;
+  ajuizamento_notas: string | null;
   acoes_tributarias: { nome: string; tipo: string } | null;
 }
 interface TarefaRow {
@@ -145,7 +148,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
         supabase
           .from("elegibilidade")
           .select(
-            "id, acao_id, elegivel, justificativa, valor_potencial_estimado, acoes_tributarias(nome, tipo)"
+            "id, acao_id, elegivel, justificativa, valor_potencial_estimado, ja_ajuizada, ajuizada_por_nos, ajuizamento_notas, acoes_tributarias(nome, tipo)"
           )
           .eq("empresa_id", empresaId),
         supabase
@@ -280,6 +283,19 @@ export function EmpresaDetailSheet({
   }, [empresa?.id]);
 
   const { data: relations, isLoading: loadingRel } = useEmpresaRelations(empresa?.id);
+
+  // Atualiza ajuizamento de uma elegibilidade (empresa já tem a ação / por nós).
+  const updateAjuizamento = async (
+    elegId: string,
+    patch: { ja_ajuizada?: boolean; ajuizada_por_nos?: boolean | null }
+  ) => {
+    const { error } = await supabase.from("elegibilidade").update(patch).eq("id", elegId);
+    if (error) {
+      toast.error("Erro ao atualizar ajuizamento: " + error.message);
+      return;
+    }
+    if (empresa) void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+  };
 
   if (!empresa) return null;
 
@@ -774,6 +790,64 @@ export function EmpresaDetailSheet({
                                 </span>
                               )}
                             </div>
+                          </div>
+
+                          {/* Ajuizamento — a empresa já entrou com esta ação? foi por nós? */}
+                          <div
+                            className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2"
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          >
+                            {el.ja_ajuizada ? (
+                              <>
+                                <Badge
+                                  variant="outline"
+                                  className="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-600"
+                                >
+                                  <Gavel className="mr-1 h-3 w-3" /> Já ajuizada
+                                </Badge>
+                                <span className="text-[10px] text-muted-foreground">por:</span>
+                                {[
+                                  { v: true as boolean | null, label: "Nós" },
+                                  { v: false as boolean | null, label: "Terceiro" },
+                                  { v: null as boolean | null, label: "A definir" },
+                                ].map((opt) => (
+                                  <Button
+                                    key={String(opt.v)}
+                                    size="sm"
+                                    variant={el.ajuizada_por_nos === opt.v ? "default" : "outline"}
+                                    className="h-6 px-2 text-[10px]"
+                                    onClick={() =>
+                                      void updateAjuizamento(el.id, { ajuizada_por_nos: opt.v })
+                                    }
+                                  >
+                                    {opt.label}
+                                  </Button>
+                                ))}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="ml-auto h-6 px-2 text-[10px] text-muted-foreground"
+                                  onClick={() =>
+                                    void updateAjuizamento(el.id, {
+                                      ja_ajuizada: false,
+                                      ajuizada_por_nos: null,
+                                    })
+                                  }
+                                >
+                                  Desmarcar
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-[10px] text-muted-foreground"
+                                onClick={() => void updateAjuizamento(el.id, { ja_ajuizada: true })}
+                              >
+                                <Gavel className="mr-1 h-3 w-3" /> Marcar como já ajuizada
+                              </Button>
+                            )}
                           </div>
                         </Card>
                       );
