@@ -13,6 +13,7 @@ export type EmpresaContatoInsert = Database["public"]["Tables"]["empresa_contato
 export type PapelContato = Database["public"]["Enums"]["papel_contato"];
 export type OrigemContato = Database["public"]["Enums"]["origem_contato"];
 export type TipoTelefone = Database["public"]["Enums"]["tipo_telefone"];
+export type TelefoneStatus = Database["public"]["Enums"]["telefone_status_contato"];
 
 // ---------------------------------------------------------------------------
 // Papel (função do contato na empresa)
@@ -99,6 +100,89 @@ export function origemColor(o: string | null | undefined): string {
   const fallback = "bg-muted text-muted-foreground border-border";
   if (!o) return fallback;
   return ORIGEM_CONTATO_META[o as OrigemContato]?.color ?? fallback;
+}
+
+// ---------------------------------------------------------------------------
+// Status do telefone — resultado da tentativa de contato por número, individual.
+// NÃO é toque de prospecção (não conta como "contato feito"); é qualidade do
+// número. numero_errado/nao_existe derivam telefone_invalido=true (trigger).
+// ---------------------------------------------------------------------------
+export const TELEFONE_STATUS: {
+  value: TelefoneStatus;
+  label: string;
+  /** rótulo curto pra badge */
+  short: string;
+  /** classes tailwind do badge */
+  color: string;
+  /** true => marca o número como inválido (deriva telefone_invalido) */
+  invalida: boolean;
+}[] = [
+  {
+    value: "nao_testado",
+    label: "Não testado",
+    short: "—",
+    color: "bg-muted text-muted-foreground border-border",
+    invalida: false,
+  },
+  {
+    value: "atendeu",
+    label: "Atendeu",
+    short: "Atendeu",
+    color: "bg-success/10 text-success border-success/20",
+    invalida: false,
+  },
+  {
+    value: "nao_atendeu",
+    label: "Não atendeu",
+    short: "Não atendeu",
+    color: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    invalida: false,
+  },
+  {
+    value: "caixa_postal",
+    label: "Caixa postal",
+    short: "Caixa postal",
+    color: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    invalida: false,
+  },
+  {
+    value: "ocupado",
+    label: "Ocupado",
+    short: "Ocupado",
+    color: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    invalida: false,
+  },
+  {
+    value: "numero_errado",
+    label: "Número errado",
+    short: "Errado",
+    color: "bg-destructive/10 text-destructive border-destructive/30",
+    invalida: true,
+  },
+  {
+    value: "nao_existe",
+    label: "Não existe",
+    short: "Não existe",
+    color: "bg-destructive/10 text-destructive border-destructive/30",
+    invalida: true,
+  },
+];
+
+const TELEFONE_STATUS_MAP = new Map(TELEFONE_STATUS.map((s) => [s.value, s]));
+
+export function humanizeTelefoneStatus(s: TelefoneStatus | null | undefined): string {
+  if (!s) return "—";
+  return TELEFONE_STATUS_MAP.get(s)?.label ?? s;
+}
+
+/** Metadados (label/short/color/invalida) do status, com fallback pra "não testado". */
+export function telefoneStatusMeta(s: TelefoneStatus | null | undefined) {
+  return (s ? TELEFONE_STATUS_MAP.get(s) : undefined) ?? TELEFONE_STATUS_MAP.get("nao_testado");
+}
+
+/** true se o status marca o número como ruim (numero_errado/nao_existe). */
+export function telefoneStatusInvalida(s: TelefoneStatus | null | undefined): boolean {
+  return !!s && (TELEFONE_STATUS_MAP.get(s)?.invalida ?? false);
 }
 
 // ---------------------------------------------------------------------------

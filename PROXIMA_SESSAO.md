@@ -1,72 +1,156 @@
-# Próxima Sessão — RN Enriquecimento (Rodada 14+)
+# Próxima Sessão — Enriquecimento
 
-## Status Atual (FIM 06/07/2026)
+## Rodada system-wide (09/07/2026, tarde) — decisor por MAIOR CAPITAL
 
-- **RN contatos `decisor`**: ~420 inseridos (~28% cobertura porte=DEMAIS)
-- **Rodadas completadas**: 5-13 (8 rodadas)
-- **Limite natural encontrado**: empresas RN < R$16mi capital = presença web insuficiente
-- **Rodada 13 resultado**: 15 nomes genéricos, 0 matches (confirmou limite)
+Depois de fechar a ação do terço (96%), estendido o método a TODO o sistema,
+priorizando por **capital_social** (proxy de faturamento — `faturamento_anual`/
+`faturamento_estimado` estão VAZIOS no DB) e com **ênfase máxima em telefone/email**.
 
-## Problemas Detectados
+**Resultado:** decisor no sistema de 777 → **927/5630 (16%)**. Processadas as
+**150 empresas de maior capital sem decisor** (25 lotes de 6, faixa R$92mi–R$120bi:
+Banco do Brasil, BRF, John Deere, Lojas Renner, Marcopolo, SLC Agrícola, Tupy,
+Portobello, etc.). Gravados **260 contatos** (150 decisores nomeados + 110 canais
+institucionais), **253 com telefone, 124 com email**.
 
-1. **Nomes imprecisos**: agentes retornam nomes que não batem DB (ex: "Câmara Cascudo" vs. "CASCUDO & SOARES")
-2. **ROI decrescente**: match rate caiu 30% → 13% em rodadas 12-13
-3. **Falta CNPJ-first lookup**: pesquisar por CNPJ ao invés de nome direto
+Método para grande porte (S.A./multinacional): alvo = **CFO / Diretor Financeiro /
+Head de Tax / RI**, não "dono". Emails de RI (`ri@empresa.com.br`) e de
+**departamento tributário** (ex.: `tributario2@johndeere.com`, `tributario@fele.com`)
+foram o achado mais valioso. Ferramentas: `tools/diag_system.mjs --top N` (rankeia
+por capital, exporta worklist), `tools/PROMPT_SYSTEM.md` (instruções compartilhadas
+dos agentes), `tools/insert_decisor_by_id.mjs` (agora grava também contatos
+institucionais sem nome, dedup por email/telefone).
 
-## Opções Estratégicas
+### Rodada 2 (mesma tarde) — top 150 PROSPECTS por capital
 
-### A) Pausa RN, continuar PR/RS/SC (Máquina B)
+Aplicado o filtro recomendado (`--status prospect`, exclui gigantes não-alvo como
+Banco do Brasil/BRF, que eram `status=ativa`). Processadas as **150 maiores
+prospects sem decisor** (R$25–91mi: Compass.UOL, Fluidra, Oleoplan, Herval, Lifemed,
+Canguru, Ânima/IEDUC, Angeloni, etc.), em **ondas de 8** — **275 contatos gravados,
+284 telefone, 145 email**. Decisor no sistema: 927 → **1.077 (19%)**.
 
-- ✅ ROI melhor (menos dataset explorado)
-- ✅ Máquina B já tem prompt de kickoff em scratchpad
-- ⏱️ RN retoma depois
+Melhor achado (foco telefone/email): emails de **departamento fiscal/tributário
+direto** — `br.fiscal.groups@veolia.com` (Recicle/GTA), `fiscalgyn@gruposaga.com.br`
+(Kasa Motors), `tributario@minisobrasil.com` (Top Brasil), `grupofiscal@lamoda.com.br`.
 
-**Próximo passo:** Lançar máquina B com PR (546 empresas porte=DEMAIS)
+### ⚠️ Restam ~2.540 prospects sem decisor (fila)
 
-### B) Continuar RN com CNPJ-lookup
+Continuar é só repetir o pipeline (o diag exclui automaticamente quem já tem decisor):
 
-- ✅ Resolveria problema "nome impreciso"
-- ❌ Precisa integrar lookup CNPJ→BD→pesquisa executivo
-- ⏱️ ~2-3h implementação + testes
+```bash
+set -a && . ./tools/.env.local && set +a
+node tools/diag_system.mjs --status prospect --top 300   # regenera worklist_system.json
+# gerar batches_system.json (BATCH=6), disparar agentes em ONDAS DE ~8 lendo
+# PROMPT_SYSTEM.md, consolidar por id, insert_decisor_by_id.mjs --glob 'tools/found_sys_*.json'
+```
 
-### C) Upgrade Econodata/Apollo
+⚠️ **Lições operacionais**: (1) **nunca lançar 25 agentes de uma vez** — estoura o
+limite da conta (reseta 14h BRT); usar ondas de ~8. (2) A confusão de índice de
+lote volta a acontecer (2 agentes leem o mesmo índice) — a **verificação de
+cobertura por `empresa_id`** pega e re-dispara o batch pulado. (3) `diag_system.mjs`
+aceita `--status prospect` e `--cap-max <valor>` para focar/limitar o pool.
 
-- ✅ 100% cobertura automática
-- ❌ Custo (~R$600+/mês)
-- ⏱️ ~30min integração API
+---
 
-## Arquivos Organizados
+## Status Atual (FIM 09/07/2026)
 
-| Arquivo                                                    | O que é                    | Status                |
-| ---------------------------------------------------------- | -------------------------- | --------------------- |
-| `ENRIQUECIMENTO_CONTATOS.md`                               | Living doc (main)          | ✅ Atualizado 06/07   |
-| `OTIMIZACOES_IMPLEMENTADAS.md`                             | Guia 4 otimizações         | ✅ Novo 06/07         |
-| `AGENT_PROMPT_TEMPLATE.md`                                 | Prompt mínimo reutilizável | ✅ Novo 06/07         |
-| `tools/insert_decisor_gestor.mjs`                          | Tool permanente + skip-log | ✅ Integrado skip-log |
-| `tools/detect_spe_clusters.mjs`                            | Auto-detector SPE          | ✅ Testado            |
-| `supabase/migrations/20260706000000_empresas_skip_log.sql` | Skip-log table             | ✅ Pronta pra push    |
-| `.env.local` (tools/)                                      | Service role key           | ✅ Criado             |
+### 🎯 Foco desta rodada: AÇÃO DO TERÇO (Rescisória Tema 985)
 
-## Checklist Próxima Sessão
+Mudança de estratégia: em vez de continuar RN genérico (rendimento decrescente,
+ver rodadas 5-13 abaixo), o foco passou a ser **as empresas vinculadas à ação
+Rescisória do Tema 985** (`acao_id 7e9cf5bb-99ba-4428-889f-c6870e8be2f3`), que é
+o alvo comercial concreto.
 
-- [ ] Decidir: A (PR/RS/SC), B (CNPJ-lookup RN), ou C (upgrade API)
-- [ ] Se A: copiar prompt kickoff de scratchpad, lançar máquina B
-- [ ] Se B: implementar CNPJ-first lookup em `insert_decisor_gestor.mjs`
-- [ ] Se C: integrar Econodata/Apollo API
-- [ ] Aplicar migration `empresas_skip_log` se ainda não feito (`rtk supabase db push`)
-- [ ] Continuar rodada 14+ com escolha acima
+**Resultado da rodada (09/07): decisor 45%→96%.**
 
-## Comando de Retomada
+| Métrica (ação do terço, 423 empresas) | Início | Final         |
+| ------------------------------------- | ------ | ------------- |
+| Com decisor (`papel=decisor`)         | ~197   | **405 (96%)** |
+| Com telefone (qualquer contato)       | —      | 328 (78%)     |
+| Com LinkedIn                          | —      | 126 (30%)     |
+
+Três levas nesta sessão:
+
+1. **+83 decisores** via pesquisa web — 15 lotes de agentes paralelos sobre as
+   88 empresas com capital_social>0 (as mais encontráveis), QSA como guia.
+2. **+55 decisores** via promoção QSA→decisor — empresas com sócio-administrador
+   pessoa física no QSA; confiança "média", fonte "QSA Receita Federal", custo
+   zero de pesquisa.
+3. **+81 decisores** nas 88 restantes (sem QSA / sem CNPJ) — outra leva de 15
+   lotes de agentes. Descoberta: a maioria era **sindicato/associação/entidade
+   do Sistema FIERN** (SESC, SEBRAE, SINDUSCON, SINDLEITE, SINDCAFÉ, SINDVEST,
+   SINDIPOSTOS, IEL/SESI/SENAI, etc.) → decisor = **presidente da entidade**
+   (dado público) — ou grandes empresas sem CNPJ no cadastro (Lojas Riachuelo,
+   Neoenergia Cosern, Arena das Dunas, Masterboi, grupo Saga, Unimeds de outras
+   praças).
+
+### Restam 18 empresas da ação SEM decisor (fim da linha por ora)
+
+Não enriquecíveis sem novo dado: **nomes genéricos sem CNPJ/UF** ("CRISTALINA",
+"FM NORDESTE", "A&C COMÉRCIO"), **consórcios/SPEs extintos** (Consórcio Ponte da
+Redinha), **controle recém-vendido** (Midway Mall vendido dez/2025 → Ancar
+Ivanhoe; superintendente atual não confirmado). Só avançam com CNPJ correto
+cadastrado ou confirmação manual.
+
+### Achados de qualidade a revisar no CRM (sinalizados pelos agentes)
+
+- **Jornal Correio da Paraíba**: CNPJ cadastrado `91.118.320/2001-50` parece
+  errado — razão social corresponde a `09.111.832/0001-50` (João Pessoa/PB).
+- **SAGA (Goiás/DF/MT/etc.)**: várias unidades cadastradas com `uf=RN`, mas o
+  grupo opera em GO/MT/MG/DF/RO — provável erro de UF no cadastro.
+- **Brasimport** (RN): situação RFB **INAPTA** — relevante pra priorização.
+- Alguns registros são duplicata/variante de empresa já coberta (INTERFORT =
+  Interfort Segurança; A&S = Grupo Proteg; REDEMAIS = Supermercado Veneza).
+
+## Ferramentas desta rodada (permanentes)
+
+| Arquivo                          | O que faz                                                                                                                                                                                                                              |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools/insert_decisor_by_id.mjs` | Grava contatos `papel=decisor` casando por **empresa_id exato** (elimina bugs de match por nome: mojibake, séries numeradas de SPE). Lê `--file` ou `--glob`. Sempre `--dry-run` antes. Dedup por `empresa_id` + `decisor_web:<nome>`. |
+| `tools/diag_terco.mjs`           | Diagnóstico read-only da cobertura da ação. **Bug de paginação corrigido** (busca de contatos agora usa `.range()` interno — sem isso truncava em 1000 e inflava a lista de "sem decisor").                                            |
+
+## Lições desta rodada
+
+1. **Match por empresa_id, não por nome.** Nomes no DB têm mojibake ("PONTANEGRA
+   AUTOMÃVEIS", "ESPACIAL AUTOPEÃAS") e séries que confundem `ilike`. Os lotes
+   carregam o `id` do banco → inserir por id é robusto e idempotente.
+2. **QSA já é meio caminho.** ~66% das empresas da ação já têm QSA (sócios RFB).
+   A pesquisa web não parte do zero: valida quem é o decisor atual e acha
+   LinkedIn/telefone. Para PME sem web, promover o sócio-administrador do QSA a
+   decisor (confiança média) é aceitável e instantâneo.
+3. **Agentes web em paralelo rendem ~100% de match nas empresas com capital>0**
+   (grandes/médias com presença digital). Achados de qualidade: detectaram
+   sócio falecido (Morada Cemitérios), homônimos (AeC ≠ call center AeC), grupo
+   controlador correto (SPE Moura Dubeux → Diego Villar).
+4. **Cuidado com índice de lote nos prompts de agente**: um agente leu o índice
+   errado e pulou um batch (detectado na verificação de cobertura por id — SEMPRE
+   conferir cobertura por `empresa_id` contra a worklist, não confiar no rótulo).
+5. **Paginação `.range()` é obrigatória** em qualquer contagem sobre
+   `empresa_contatos` (tabela grande) — senão trunca em 1000.
+
+## Comando de retomada (próxima rodada)
 
 ```bash
 cd "/c/Users/Gabriel/OneDrive/Área de Trabalho/FREIRETAX/FreireTax"
-# Leia este arquivo
-# Escolha estratégia A/B/C acima
-# Se A: execute prompt de máquina B em outra sessão
-# Se B/C: execute rodada 14 com novo pipeline
-rtk node tools/insert_decisor_gestor.mjs --file tools/lote_rn14.json
+set -a && . ./tools/.env.local && set +a
+node tools/diag_terco.mjs   # re-mapeia cobertura da ação do terço (96% decisor)
+# A ação do terço está praticamente fechada (405/423). Próximos passos possíveis:
+#  a) Estender o MESMO método a OUTRA ação tributária (trocar ACAO no diag +
+#     regenerar batches por empresa_id — pipeline: diag -> agentes -> insert_decisor_by_id).
+#  b) Corrigir os achados de qualidade sinalizados (CNPJ Correio PB, UF das SAGAs).
+#  c) Enriquecer TELEFONE/EMAIL dos decisores já achados (hoje 78% tel / poucos email)
+#     — via A3/PJe (sócios) ou Econodata Premium se orçamento permitir.
 ```
 
 ---
 
-**Tudo commitado e pronto.** Próxima sessão é escolha + execução.
+## (Histórico) Rodadas RN 5-13 — enriquecimento genérico de gestores
+
+- **RN contatos `decisor`**: ~420 inseridos (~28% cobertura porte=DEMAIS)
+- **Limite natural**: empresas RN < R$16mi capital = presença web insuficiente
+- Rodada 13: 15 nomes genéricos, 0 matches (confirmou limite)
+- Pausado em favor do foco por AÇÃO (mais eficiente comercialmente).
+
+**A3 / PJe skiptrace** (CPF+endereço+raramente telefone de sócios): trilha lenta
+(~100/dia por tribunal, telefone raro ~8-12%). RN operacional; RS/SC/PR prontos
+via CDP+Chrome real (ver ENRIQUECIMENTO_CONTATOS.md). Não usada nesta rodada —
+a trilha web de decisor rende mais rápido e sem A3.

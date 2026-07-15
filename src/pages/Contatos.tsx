@@ -18,6 +18,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
+import {
   Contact,
   Search,
   Phone,
@@ -42,10 +50,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import { TemplateSelectorDialog } from "@/components/TemplateSelectorDialog";
 import type { TemplateVars } from "@/lib/templateEngine";
-import type { EmpresaContato, PapelContato, OrigemContato } from "@/lib/contatos";
+import type { EmpresaContato, PapelContato, OrigemContato, TelefoneStatus } from "@/lib/contatos";
 import {
   PAPEL_CONTATO,
   ORIGEM_CONTATO_META,
+  TELEFONE_STATUS,
   humanizePapel,
   papelColor,
   humanizeOrigem,
@@ -56,6 +65,9 @@ import {
   mailtoLink,
   linkedinUrl,
   mensagemWhatsappPadrao,
+  telefoneStatusMeta,
+  telefoneStatusInvalida,
+  humanizeTelefoneStatus,
 } from "@/lib/contatos";
 
 type ContatoRow = EmpresaContato & {
@@ -127,6 +139,7 @@ export default function Contatos() {
   const [soCel, setSoCel] = useState(false);
   const [soPje, setSoPje] = useState(false);
   const [soInvalido, setSoInvalido] = useState(false);
+  const [statusTel, setStatusTel] = useState<TelefoneStatus | "">("");
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(new Set<string>());
@@ -142,11 +155,23 @@ export default function Contatos() {
 
   useEffect(() => {
     setPage(0);
-  }, [papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido]);
+  }, [papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido, statusTel]);
 
   const filtros = useMemo(
-    () => ({ search, papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido, page }),
-    [search, papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido, page]
+    () => ({
+      search,
+      papel,
+      origem,
+      uf,
+      soWhats,
+      comTel,
+      soCel,
+      soPje,
+      soInvalido,
+      statusTel,
+      page,
+    }),
+    [search, papel, origem, uf, soWhats, comTel, soCel, soPje, soInvalido, statusTel, page]
   );
 
   const usaUf = uf !== "todas";
@@ -162,6 +187,7 @@ export default function Contatos() {
         .select(
           `id, nome, cargo, papel, email, telefone, tipo_telefone, whatsapp, linkedin,
            is_contador, principal, origem, empresa_id, telefone_invalido, telefone_invalido_motivo,
+           telefone_status, telefone_status_nota,
            empresas${usaUf ? "!inner" : ""}(id, nome, uf, municipio, cnpj)`,
           { count: "exact" }
         )
@@ -180,6 +206,7 @@ export default function Contatos() {
       if (soCel) q = q.eq("tipo_telefone", "movel");
       if (soPje) q = q.ilike("observacoes", "%PJe/TJRN%");
       if (soInvalido) q = q.eq("telefone_invalido", true);
+      if (statusTel) q = q.eq("telefone_status", statusTel);
       if (usaUf) q = q.eq("empresas.uf", uf);
 
       const { data, error, count } = await (q as unknown as PromiseLike<{
@@ -231,7 +258,7 @@ export default function Contatos() {
           .from("empresa_contatos")
           .select(
             `nome, cargo, papel, email, telefone, tipo_telefone, whatsapp, linkedin, origem,
-             telefone_invalido, telefone_invalido_motivo,
+             telefone_invalido, telefone_invalido_motivo, telefone_status, telefone_status_nota,
              empresas${usaUf ? "!inner" : ""}(nome, uf, municipio)`
           )
           .order("nome", { ascending: true, nullsFirst: false })
@@ -276,6 +303,8 @@ export default function Contatos() {
         "WhatsApp",
         "Telefone Inválido",
         "Motivo Inválido",
+        "Status Telefone",
+        "Nota Status",
         "Email",
         "LinkedIn",
       ];
@@ -297,6 +326,8 @@ export default function Contatos() {
           c.whatsapp ? "sim" : "",
           c.telefone_invalido ? "sim" : "",
           c.telefone_invalido_motivo,
+          humanizeTelefoneStatus(c.telefone_status),
+          c.telefone_status_nota,
           c.email,
           c.linkedin,
         ]
@@ -343,19 +374,20 @@ export default function Contatos() {
     setMsgOpen(true);
   };
 
-  const toggleTelefoneInvalido = async (c: ContatoRow) => {
-    const invalido = !c.telefone_invalido;
+  const setStatusTelefone = async (c: ContatoRow, status: TelefoneStatus) => {
+    if (c.telefone_status === status) return;
+    // categoriza o resultado da tentativa — NÃO é toque de prospecção.
     const { error } = await supabase
       .from("empresa_contatos")
-      .update({ telefone_invalido: invalido })
+      .update({ telefone_status: status })
       .eq("id", c.id);
-    if (error) return toast.error("Erro ao atualizar telefone");
-    toast.success(invalido ? "Telefone marcado como errado" : "Telefone marcado como válido");
+    if (error) return toast.error("Erro ao atualizar status do telefone");
+    toast.success(`Telefone: ${humanizeTelefoneStatus(status)}`);
     void logAudit({
       tabela: "empresa_contatos",
-      acao: invalido ? "Marcou telefone como errado" : "Desmarcou telefone como errado",
+      acao: "Alterou status do telefone",
       registro_id: c.id,
-      detalhes: { empresa_id: c.empresa_id },
+      detalhes: { empresa_id: c.empresa_id, status },
     });
     void qc.invalidateQueries({ queryKey: ["contatos-global"] });
     void qc.invalidateQueries({ queryKey: ["contatos-coverage"] });
@@ -371,7 +403,8 @@ export default function Contatos() {
     comTel ||
     soCel ||
     soPje ||
-    soInvalido;
+    soInvalido ||
+    statusTel !== "";
 
   const limpar = () => {
     setSearchInput("");
@@ -384,6 +417,7 @@ export default function Contatos() {
     setSoCel(false);
     setSoPje(false);
     setSoInvalido(false);
+    setStatusTel("");
     setPage(0);
   };
 
@@ -607,6 +641,23 @@ export default function Contatos() {
             <PhoneOff className="mr-1 h-3.5 w-3.5" /> Telefone inválido
           </Button>
 
+          <Select
+            value={statusTel || "todos"}
+            onValueChange={(v) => setStatusTel(v === "todos" ? "" : (v as TelefoneStatus))}
+          >
+            <SelectTrigger className="h-8 w-[160px]">
+              <SelectValue placeholder="Status tel." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Status tel.: todos</SelectItem>
+              {TELEFONE_STATUS.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {temFiltro && (
             <Button variant="ghost" size="sm" className="h-8" onClick={limpar}>
               <X className="mr-1 h-3.5 w-3.5" /> Limpar
@@ -671,7 +722,7 @@ export default function Contatos() {
               selected={selected.has(c.id)}
               onSelect={(checked) => handleSelectOne(c.id, checked)}
               onMensagemLinkedin={() => abrirMensagemLinkedin(c)}
-              onToggleTelefoneInvalido={() => void toggleTelefoneInvalido(c)}
+              onSetStatusTelefone={(s) => void setStatusTelefone(c, s)}
             />
           ))}
         </div>
@@ -721,13 +772,13 @@ function ContatoLinha({
   selected,
   onSelect,
   onMensagemLinkedin,
-  onToggleTelefoneInvalido,
+  onSetStatusTelefone,
 }: {
   c: ContatoRow;
   selected?: boolean;
   onSelect?: (checked: boolean) => void;
   onMensagemLinkedin: () => void;
-  onToggleTelefoneInvalido: () => void;
+  onSetStatusTelefone: (s: TelefoneStatus) => void;
 }) {
   const empresaNome = c.empresas?.nome ?? "—";
   const tel = telLink(c.telefone);
@@ -792,13 +843,13 @@ function ContatoLinha({
               <span className={c.telefone_invalido ? "line-through" : ""}>
                 {formatPhoneBR(c.telefone)}
               </span>
-              {c.telefone_invalido && (
+              {c.telefone_status !== "nao_testado" && (
                 <Badge
                   variant="outline"
-                  className="border-destructive/40 text-[9px] text-destructive"
-                  title={c.telefone_invalido_motivo ?? "Telefone marcado como errado"}
+                  className={`text-[9px] ${telefoneStatusMeta(c.telefone_status).color}`}
+                  title={c.telefone_status_nota ?? humanizeTelefoneStatus(c.telefone_status)}
                 >
-                  inválido
+                  {telefoneStatusMeta(c.telefone_status).short}
                 </Badge>
               )}
             </span>
@@ -814,22 +865,40 @@ function ContatoLinha({
 
       <div className="flex shrink-0 items-center gap-0.5">
         {c.telefone && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-8 w-8 ${c.telefone_invalido ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
-            title={
-              c.telefone_invalido
-                ? "Desmarcar — telefone volta a ser válido"
-                : "Marcar telefone como errado/inexistente"
-            }
-            aria-label={
-              c.telefone_invalido ? "Marcar telefone como válido" : "Marcar telefone como errado"
-            }
-            onClick={onToggleTelefoneInvalido}
-          >
-            <PhoneOff className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-8 w-8 ${
+                  c.telefone_status === "nao_testado"
+                    ? "text-muted-foreground"
+                    : telefoneStatusInvalida(c.telefone_status)
+                      ? "text-destructive hover:text-destructive"
+                      : "text-amber-600 hover:text-amber-600"
+                }`}
+                title={`Status do telefone: ${humanizeTelefoneStatus(c.telefone_status)} (não conta como toque de prospecção)`}
+                aria-label="Status do telefone"
+              >
+                <PhoneOff className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                Status do telefone
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={c.telefone_status}
+                onValueChange={(v) => onSetStatusTelefone(v as TelefoneStatus)}
+              >
+                {TELEFONE_STATUS.map((s) => (
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                    {s.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {tel && (
           <IconLink href={tel} title="Ligar">

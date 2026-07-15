@@ -342,6 +342,10 @@ export type Database = {
           telefone_invalido_em: string | null;
           telefone_invalido_motivo: string | null;
           telefone_invalido_por: string | null;
+          telefone_status: Database["public"]["Enums"]["telefone_status_contato"];
+          telefone_status_em: string | null;
+          telefone_status_nota: string | null;
+          telefone_status_por: string | null;
           tipo_telefone: Database["public"]["Enums"]["tipo_telefone"];
           updated_at: string;
           whatsapp: boolean;
@@ -369,6 +373,10 @@ export type Database = {
           telefone_invalido_em?: string | null;
           telefone_invalido_motivo?: string | null;
           telefone_invalido_por?: string | null;
+          telefone_status?: Database["public"]["Enums"]["telefone_status_contato"];
+          telefone_status_em?: string | null;
+          telefone_status_nota?: string | null;
+          telefone_status_por?: string | null;
           tipo_telefone?: Database["public"]["Enums"]["tipo_telefone"];
           updated_at?: string;
           whatsapp?: boolean;
@@ -396,6 +404,10 @@ export type Database = {
           telefone_invalido_em?: string | null;
           telefone_invalido_motivo?: string | null;
           telefone_invalido_por?: string | null;
+          telefone_status?: Database["public"]["Enums"]["telefone_status_contato"];
+          telefone_status_em?: string | null;
+          telefone_status_nota?: string | null;
+          telefone_status_por?: string | null;
           tipo_telefone?: Database["public"]["Enums"]["tipo_telefone"];
           updated_at?: string;
           whatsapp?: boolean;
@@ -1818,6 +1830,14 @@ export type Database = {
       situacao_cadastral_rfb: "NULA" | "ATIVA" | "SUSPENSA" | "INAPTA" | "BAIXADA";
       tarefa_prioridade: "baixa" | "media" | "alta" | "urgente";
       tarefa_status: "pendente" | "em_andamento" | "concluida" | "cancelada";
+      telefone_status_contato:
+        | "nao_testado"
+        | "atendeu"
+        | "nao_atendeu"
+        | "caixa_postal"
+        | "ocupado"
+        | "numero_errado"
+        | "nao_existe";
       tipo_contato: "outbound" | "resposta_lead" | "reuniao" | "breakup";
       tipo_prazo: "rescisoria_24m" | "prescricional_5a" | "decadencial_5a" | "personalizado";
       tipo_telefone: "fixo" | "movel" | "desconhecido";
@@ -2006,6 +2026,15 @@ export const Constants = {
       situacao_cadastral_rfb: ["NULA", "ATIVA", "SUSPENSA", "INAPTA", "BAIXADA"],
       tarefa_prioridade: ["baixa", "media", "alta", "urgente"],
       tarefa_status: ["pendente", "em_andamento", "concluida", "cancelada"],
+      telefone_status_contato: [
+        "nao_testado",
+        "atendeu",
+        "nao_atendeu",
+        "caixa_postal",
+        "ocupado",
+        "numero_errado",
+        "nao_existe",
+      ],
       tipo_contato: ["outbound", "resposta_lead", "reuniao", "breakup"],
       tipo_prazo: ["rescisoria_24m", "prescricional_5a", "decadencial_5a", "personalizado"],
       tipo_telefone: ["fixo", "movel", "desconhecido"],

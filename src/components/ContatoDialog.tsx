@@ -25,10 +25,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import {
   PAPEL_CONTATO,
+  TELEFONE_STATUS,
   derivePapel,
+  telefoneStatusInvalida,
   type EmpresaContato,
   type PapelContato,
   type TipoTelefone,
+  type TelefoneStatus,
 } from "@/lib/contatos";
 
 interface Props {
@@ -57,8 +60,8 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
   const [telefone, setTelefone] = useState("");
   const [tipoTelefone, setTipoTelefone] = useState<TipoTelefone>("desconhecido");
   const [whatsapp, setWhatsapp] = useState(false);
-  const [telefoneInvalido, setTelefoneInvalido] = useState(false);
-  const [telefoneInvalidoMotivo, setTelefoneInvalidoMotivo] = useState("");
+  const [telefoneStatus, setTelefoneStatus] = useState<TelefoneStatus>("nao_testado");
+  const [telefoneStatusNota, setTelefoneStatusNota] = useState("");
   const [linkedin, setLinkedin] = useState("");
   const [isContador, setIsContador] = useState(false);
   const [principal, setPrincipal] = useState(false);
@@ -75,8 +78,8 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
     setTelefone(contato?.telefone ?? "");
     setTipoTelefone(contato?.tipo_telefone ?? "desconhecido");
     setWhatsapp(contato?.whatsapp ?? false);
-    setTelefoneInvalido(contato?.telefone_invalido ?? false);
-    setTelefoneInvalidoMotivo(contato?.telefone_invalido_motivo ?? "");
+    setTelefoneStatus(contato?.telefone_status ?? "nao_testado");
+    setTelefoneStatusNota(contato?.telefone_status_nota ?? "");
     setLinkedin(contato?.linkedin ?? "");
     setIsContador(contato?.is_contador ?? false);
     setPrincipal(contato?.principal ?? false);
@@ -107,8 +110,8 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
       telefone: telefone.trim() || null,
       tipo_telefone: tipoTelefone,
       whatsapp,
-      telefone_invalido: telefoneInvalido,
-      telefone_invalido_motivo: telefoneInvalido ? telefoneInvalidoMotivo.trim() || null : null,
+      telefone_status: telefoneStatus,
+      telefone_status_nota: telefoneStatusNota.trim() || null,
       linkedin: linkedin.trim() || null,
       is_contador: isContador,
       principal,
@@ -245,29 +248,40 @@ export function ContatoDialog({ open, onOpenChange, empresaId, contato, onSaved 
             Este número tem WhatsApp
           </label>
 
-          <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
-            <label className="flex items-center gap-2 text-sm text-destructive">
-              <Checkbox
-                checked={telefoneInvalido}
-                onCheckedChange={(v) => setTelefoneInvalido(!!v)}
-              />
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+            <Label className="flex items-center gap-1.5 text-xs">
               <PhoneOff className="h-3.5 w-3.5" />
-              Telefone errado / não existe
-            </label>
-            {telefoneInvalido && (
-              <div className="space-y-1">
-                <Input
-                  value={telefoneInvalidoMotivo}
-                  onChange={(e) => setTelefoneInvalidoMotivo(e.target.value)}
-                  placeholder="Motivo (opcional): não existe, não é da empresa, número trocou..."
-                  className="text-xs"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  Marcado antes de entrar em prospecção: esse número para de ser sugerido
-                  automaticamente (fica só registrado pra análise de qualidade de dados).
-                </p>
-              </div>
+              Status do telefone
+            </Label>
+            <Select
+              value={telefoneStatus}
+              onValueChange={(v) => setTelefoneStatus(v as TelefoneStatus)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TELEFONE_STATUS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {telefoneStatus !== "nao_testado" && (
+              <Input
+                value={telefoneStatusNota}
+                onChange={(e) => setTelefoneStatusNota(e.target.value)}
+                placeholder="Nota (opcional): liguei 3x, número trocou, pediu retorno..."
+                className="text-xs"
+              />
             )}
+            <p className="text-[11px] text-muted-foreground">
+              Resultado da tentativa por telefone — <strong>não</strong> conta como contato feito na
+              prospecção.
+              {telefoneStatusInvalida(telefoneStatus) &&
+                " Como o número está errado/inexistente, ele para de ser sugerido no funil automaticamente."}
+            </p>
           </div>
 
           <div className="space-y-1.5">

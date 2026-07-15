@@ -1,6 +1,29 @@
 # Enriquecimento de CNPJs com Contatos de Sócios — Status & Próximos Passos
 
-**Data**: 2026-07-06 | **Estado**: 20.998+ contatos sócios (RFB/PJe/DRIVA) + 225 contatos `decisor` (gestores, novo) | **PJe**: 794/7.052 (11%)
+**Data**: 2026-07-09 | **Estado**: 20.998+ contatos sócios (RFB/PJe/DRIVA) + 400+ contatos `decisor` | **PJe**: 794/7.052 (11%)
+
+---
+
+## 🎯 09/07 — Enriquecimento focado na AÇÃO DO TERÇO (Rescisória Tema 985)
+
+Mudança de estratégia: enriquecer **por ação tributária** (alvo comercial), não
+RN genérico. Ação `7e9cf5bb-99ba-4428-889f-c6870e8be2f3`, 423 empresas vinculadas.
+
+**Resultado: decisor 45%→96% (405/423).** Três levas: +83 via pesquisa web
+(88 empresas com capital>0, QSA como guia), +55 via promoção QSA→decisor
+(sócio-administrador do QSA, confiança média), +81 nas 88 restantes sem
+QSA/CNPJ (2ª leva de agentes — maioria eram **sindicatos/entidades FIERN**,
+decisor = presidente; ou grandes empresas sem CNPJ cadastrado). Telefone 78%,
+LinkedIn 30%.
+
+Restam só 18 sem decisor = nomes genéricos sem CNPJ, consórcios extintos,
+controle recém-vendido (não enriquecíveis sem novo dado). Ver `PROXIMA_SESSAO.md`
+para detalhes, achados de qualidade a corrigir no CRM, ferramentas e lições.
+
+**Ferramenta nova permanente**: `tools/insert_decisor_by_id.mjs` — grava decisor
+casando por `empresa_id` exato (robusto a mojibake/SPE numerada); dedup por id +
+`decisor_web:<nome>`. Diagnóstico: `tools/diag_terco.mjs` (paginação `.range()`
+corrigida — sem ela a contagem de contatos trunca em 1000 e infla "sem decisor").
 
 ---
 

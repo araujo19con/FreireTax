@@ -20,18 +20,19 @@ type TarefaStatus = Database["public"]["Enums"]["tarefa_status"];
 
 ## Enums
 
-| Enum                     | Valores                                                                                                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `app_role`               | `admin`, `advogado`, `comercial`, `gestor`                                                             |
-| `tarefa_prioridade`      | `baixa`, `media`, `alta`, `urgente`                                                                    |
-| `tarefa_status`          | `pendente`, `em_andamento`, `concluida`, `cancelada`                                                   |
-| `reuniao_status`         | `agendada`, `realizada`, `cancelada`, `no_show`, `reagendada`                                          |
-| `situacao_cadastral_rfb` | `ATIVA`, `BAIXADA`, `INAPTA`, `SUSPENSA`, `NULA`                                                       |
-| `porte_rfb`              | `ME`, `EPP`, `DEMAIS`, `MEI`                                                                           |
-| `qualificacao_estado`    | `nao_avaliada`, `qualificada`, `desqualificada`, `em_prospeccao`, `fechada`, `perdida`                 |
-| `papel_contato`          | `socio`, `decisor`, `financeiro`, `juridico`, `contador`, `comercial`, `operacional`, `geral`, `outro` |
-| `origem_contato`         | `driva`, `rfb`, `manual`, `importacao`, `enriquecimento`, `outro`                                      |
-| `tipo_telefone`          | `fixo`, `movel`, `desconhecido`                                                                        |
+| Enum                      | Valores                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `app_role`                | `admin`, `advogado`, `comercial`, `gestor`                                                             |
+| `tarefa_prioridade`       | `baixa`, `media`, `alta`, `urgente`                                                                    |
+| `tarefa_status`           | `pendente`, `em_andamento`, `concluida`, `cancelada`                                                   |
+| `reuniao_status`          | `agendada`, `realizada`, `cancelada`, `no_show`, `reagendada`                                          |
+| `situacao_cadastral_rfb`  | `ATIVA`, `BAIXADA`, `INAPTA`, `SUSPENSA`, `NULA`                                                       |
+| `porte_rfb`               | `ME`, `EPP`, `DEMAIS`, `MEI`                                                                           |
+| `qualificacao_estado`     | `nao_avaliada`, `qualificada`, `desqualificada`, `em_prospeccao`, `fechada`, `perdida`                 |
+| `papel_contato`           | `socio`, `decisor`, `financeiro`, `juridico`, `contador`, `comercial`, `operacional`, `geral`, `outro` |
+| `origem_contato`          | `driva`, `rfb`, `manual`, `importacao`, `enriquecimento`, `outro`                                      |
+| `tipo_telefone`           | `fixo`, `movel`, `desconhecido`                                                                        |
+| `telefone_status_contato` | `nao_testado`, `atendeu`, `nao_atendeu`, `caixa_postal`, `ocupado`, `numero_errado`, `nao_existe`      |
 
 Status de prospecção (text, não enum): `"Não iniciado"`, `"Contato inicial"`, `"Qualificação"`, `"Proposta enviada"`, `"Negociação"`, `"Contrato assinado"`, `"Perdido"`.
 
@@ -55,7 +56,9 @@ Timestamps: `created_at`, `updated_at`
 
 Pessoas e canais reais de cada empresa (sócios, decisores, financeiro, contador, canais genéricos) — alimentado por DRIVA/RFB/manual. É o "QUEM e COMO falar" da prospecção.
 
-`id`, `empresa_id` (FK CASCADE), `nome` (nullable — canal sem nome), `cargo`, `papel` (enum `papel_contato`), `email`, `telefone`, `tipo_telefone` (enum: fixo/movel/desconhecido), `whatsapp` bool, `linkedin`, `is_contador` bool (DRIVA "Pertence ao Contador" — NÃO é decisor), `principal` bool (1 por empresa, garantido por trigger), `origem` (enum `origem_contato`), `cpf_mascarado`, `faixa_etaria`, `observacoes`, `metadados` jsonb, `dedup_key` (idempotência do importador — UNIQUE parcial `(empresa_id, dedup_key)`), `telefone_invalido` bool (mig `20260709000001` — marca número testado como errado/inexistente ANTES de entrar em prospecção), `telefone_invalido_motivo`, `telefone_invalido_em`, `telefone_invalido_por` (FK profiles — carimbados automaticamente por trigger), `created_by`, timestamps.
+`id`, `empresa_id` (FK CASCADE), `nome` (nullable — canal sem nome), `cargo`, `papel` (enum `papel_contato`), `email`, `telefone`, `tipo_telefone` (enum: fixo/movel/desconhecido), `whatsapp` bool, `linkedin`, `is_contador` bool (DRIVA "Pertence ao Contador" — NÃO é decisor), `principal` bool (1 por empresa, garantido por trigger), `origem` (enum `origem_contato`), `cpf_mascarado`, `faixa_etaria`, `observacoes`, `metadados` jsonb, `dedup_key` (idempotência do importador — UNIQUE parcial `(empresa_id, dedup_key)`), `telefone_invalido` bool (mig `20260709000001` — marca número testado como errado/inexistente ANTES de entrar em prospecção), `telefone_invalido_motivo`, `telefone_invalido_em`, `telefone_invalido_por` (FK profiles — carimbados automaticamente por trigger), `telefone_status` (enum `telefone_status_contato`, mig `20260715000000` — categoriza o RESULTADO de cada telefone: nao_atendeu/atendeu/caixa_postal/ocupado/numero_errado/nao_existe; **NÃO é toque de prospecção**), `telefone_status_nota`, `telefone_status_em`, `telefone_status_por`, `created_by`, timestamps.
+
+- Trigger `derive_telefone_status` (BEFORE, roda antes do `stamp_telefone_invalido`): `telefone_status IN (numero_errado, nao_existe)` DERIVA `telefone_invalido=true` (espelho) e sincroniza `telefone_invalido_motivo := telefone_status_nota`; carimba `telefone_status_em/_por` na mudança. Ou seja, `telefone_invalido` virou derivado do status — o front grava só `telefone_status` (+ nota). UI: select de status no `ContatoDialog`, badge + filtro "Status tel." + colunas no CSV em `Contatos.tsx`, badge + toggle rápido em `EmpresaContatosSection`. Helpers `TELEFONE_STATUS`/`telefoneStatusMeta`/`humanizeTelefoneStatus`/`telefoneStatusInvalida` em `src/lib/contatos.ts`.
 
 - Trigger `recalc_empresa_contatos_cache` mantém snapshot em `empresas`: `contatos_count`, `contato_principal_nome/cargo/telefone/email/whatsapp`. Telefone/whatsapp de contato com `telefone_invalido=true` NUNCA entram nesse snapshot (cai pro fallback `telefone_receita` na tarefa "Contato inicial").
 - Trigger `ensure_single_contato_principal` rebaixa os demais ao marcar um principal.
