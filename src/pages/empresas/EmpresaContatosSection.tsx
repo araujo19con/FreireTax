@@ -36,6 +36,8 @@ import {
   mailtoLink,
   linkedinUrl,
   mensagemWhatsappPadrao,
+  telefoneStatusMeta,
+  humanizeTelefoneStatus,
 } from "@/lib/contatos";
 
 /** Tese de maior valor potencial vinculada à empresa — usada pra personalizar
@@ -132,9 +134,12 @@ export function EmpresaContatosSection({
 
   const toggleTelefoneInvalido = async (c: EmpresaContato) => {
     const invalido = !c.telefone_invalido;
+    // atalho da lista: alterna entre "número errado" e "não testado". O status
+    // fino (não atendeu / caixa postal / etc.) fica no ContatoDialog. O trigger
+    // deriva telefone_invalido a partir do status.
     const { error } = await supabase
       .from("empresa_contatos")
-      .update({ telefone_invalido: invalido })
+      .update({ telefone_status: invalido ? "numero_errado" : "nao_testado" })
       .eq("id", c.id);
     if (error) return toast.error("Erro ao atualizar telefone");
     toast.success(invalido ? "Telefone marcado como errado" : "Telefone marcado como válido");
@@ -293,13 +298,13 @@ function ContatoCard({
                     ({c.tipo_telefone === "movel" ? "cel" : "fixo"})
                   </span>
                 )}
-                {c.telefone_invalido && (
+                {c.telefone_status !== "nao_testado" && (
                   <Badge
                     variant="outline"
-                    className="border-destructive/40 text-[9px] text-destructive"
-                    title={c.telefone_invalido_motivo ?? "Telefone marcado como errado"}
+                    className={`text-[9px] ${telefoneStatusMeta(c.telefone_status).color}`}
+                    title={c.telefone_status_nota ?? humanizeTelefoneStatus(c.telefone_status)}
                   >
-                    inválido
+                    {telefoneStatusMeta(c.telefone_status).short}
                   </Badge>
                 )}
               </span>
