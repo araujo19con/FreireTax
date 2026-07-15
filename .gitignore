@@ -84,3 +84,5 @@ package-lock.json
 # Dados operacionais de prospeccao (PII de socios/CNPJs) — nao versionar
 tools/*_system.json
 tools/driva-worklist-*.csv
+tools/found_*.json
+tools/_worklist_*.json
