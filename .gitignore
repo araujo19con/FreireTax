@@ -77,3 +77,10 @@ __pycache__/
 cnpja_phone_ledger.json
 pje_*_ledger.jsonl
 pje_*_names_ledger.jsonl
+
+# Padronizado em bun (bun.lock e o unico lockfile canonico)
+package-lock.json
+
+# Dados operacionais de prospeccao (PII de socios/CNPJs) — nao versionar
+tools/*_system.json
+tools/driva-worklist-*.csv
