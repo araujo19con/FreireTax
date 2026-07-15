@@ -91,15 +91,20 @@ def normalize(raw):
     }
 
 def brasilapi(cnpj):
-    try:
-        r = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}",
-                         headers={"Accept": "application/json"}, timeout=30)
-        if r.status_code == 429: return ("rate", None)
-        if r.status_code == 404: return ("404", None)
-        if not r.ok: return (f"http{r.status_code}", None)
-        return ("ok", r.json())
-    except Exception as e:
-        return (f"err:{e}", None)
+    """BrasilAPI com backoff exponencial no 429 (limite agressivo da API)."""
+    for attempt in range(5):
+        try:
+            r = requests.get(f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}",
+                             headers={"Accept": "application/json"}, timeout=30)
+            if r.status_code == 429:
+                time.sleep(min(2 ** attempt * 2, 30))  # 2,4,8,16,30s
+                continue
+            if r.status_code == 404: return ("404", None)
+            if not r.ok: return (f"http{r.status_code}", None)
+            return ("ok", r.json())
+        except Exception as e:
+            time.sleep(2 ** attempt)
+    return ("rate", None)
 
 class Api:
     def __init__(self):
@@ -151,14 +156,12 @@ def main():
         if not valid_cnpj(cnpj):
             falha += 1; continue
         status, raw = brasilapi(cnpj)
-        if status == "rate":
-            time.sleep(1.5); status, raw = brasilapi(cnpj)
         if status != "ok":
             if status == "404": sem += 1
             else: falha += 1
             api.post("enriquecimento_log", {"empresa_id": emp["id"], "cnpj": cnpj,
                      "fonte": "brasilapi", "sucesso": False, "erro": status})
-            time.sleep(0.35); continue
+            time.sleep(1.5); continue
         payload = normalize(raw)
         if emp.get("email_manual"): payload.pop("email_receita", None)
         if emp.get("telefone_manual"): payload.pop("telefone_receita", None)
@@ -173,7 +176,7 @@ def main():
                      "fonte": "brasilapi", "sucesso": False, "erro": str(ex)[:200]})
         if i % 25 == 0:
             print(f"  {i}/{len(alvos)}  ok={ok} sem_dados={sem} falha={falha}")
-        time.sleep(0.35)  # rate limit BrasilAPI
+        time.sleep(1.5)  # rate limit BrasilAPI
     print(f"\nFIM: ok={ok} sem_dados={sem} falha={falha} de {len(alvos)}")
 
 if __name__ == "__main__":
