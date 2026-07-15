@@ -18,6 +18,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
+import {
   Contact,
   Search,
   Phone,
@@ -58,6 +66,7 @@ import {
   linkedinUrl,
   mensagemWhatsappPadrao,
   telefoneStatusMeta,
+  telefoneStatusInvalida,
   humanizeTelefoneStatus,
 } from "@/lib/contatos";
 
@@ -365,20 +374,20 @@ export default function Contatos() {
     setMsgOpen(true);
   };
 
-  const toggleTelefoneInvalido = async (c: ContatoRow) => {
-    const invalido = !c.telefone_invalido;
-    // atalho: alterna "número errado" ↔ "não testado" (status fino fica no dialog).
+  const setStatusTelefone = async (c: ContatoRow, status: TelefoneStatus) => {
+    if (c.telefone_status === status) return;
+    // categoriza o resultado da tentativa — NÃO é toque de prospecção.
     const { error } = await supabase
       .from("empresa_contatos")
-      .update({ telefone_status: invalido ? "numero_errado" : "nao_testado" })
+      .update({ telefone_status: status })
       .eq("id", c.id);
-    if (error) return toast.error("Erro ao atualizar telefone");
-    toast.success(invalido ? "Telefone marcado como errado" : "Telefone marcado como válido");
+    if (error) return toast.error("Erro ao atualizar status do telefone");
+    toast.success(`Telefone: ${humanizeTelefoneStatus(status)}`);
     void logAudit({
       tabela: "empresa_contatos",
-      acao: invalido ? "Marcou telefone como errado" : "Desmarcou telefone como errado",
+      acao: "Alterou status do telefone",
       registro_id: c.id,
-      detalhes: { empresa_id: c.empresa_id },
+      detalhes: { empresa_id: c.empresa_id, status },
     });
     void qc.invalidateQueries({ queryKey: ["contatos-global"] });
     void qc.invalidateQueries({ queryKey: ["contatos-coverage"] });
@@ -713,7 +722,7 @@ export default function Contatos() {
               selected={selected.has(c.id)}
               onSelect={(checked) => handleSelectOne(c.id, checked)}
               onMensagemLinkedin={() => abrirMensagemLinkedin(c)}
-              onToggleTelefoneInvalido={() => void toggleTelefoneInvalido(c)}
+              onSetStatusTelefone={(s) => void setStatusTelefone(c, s)}
             />
           ))}
         </div>
@@ -763,13 +772,13 @@ function ContatoLinha({
   selected,
   onSelect,
   onMensagemLinkedin,
-  onToggleTelefoneInvalido,
+  onSetStatusTelefone,
 }: {
   c: ContatoRow;
   selected?: boolean;
   onSelect?: (checked: boolean) => void;
   onMensagemLinkedin: () => void;
-  onToggleTelefoneInvalido: () => void;
+  onSetStatusTelefone: (s: TelefoneStatus) => void;
 }) {
   const empresaNome = c.empresas?.nome ?? "—";
   const tel = telLink(c.telefone);
@@ -856,22 +865,40 @@ function ContatoLinha({
 
       <div className="flex shrink-0 items-center gap-0.5">
         {c.telefone && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-8 w-8 ${c.telefone_invalido ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
-            title={
-              c.telefone_invalido
-                ? "Desmarcar — telefone volta a ser válido"
-                : "Marcar telefone como errado/inexistente"
-            }
-            aria-label={
-              c.telefone_invalido ? "Marcar telefone como válido" : "Marcar telefone como errado"
-            }
-            onClick={onToggleTelefoneInvalido}
-          >
-            <PhoneOff className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`h-8 w-8 ${
+                  c.telefone_status === "nao_testado"
+                    ? "text-muted-foreground"
+                    : telefoneStatusInvalida(c.telefone_status)
+                      ? "text-destructive hover:text-destructive"
+                      : "text-amber-600 hover:text-amber-600"
+                }`}
+                title={`Status do telefone: ${humanizeTelefoneStatus(c.telefone_status)} (não conta como toque de prospecção)`}
+                aria-label="Status do telefone"
+              >
+                <PhoneOff className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                Status do telefone
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={c.telefone_status}
+                onValueChange={(v) => onSetStatusTelefone(v as TelefoneStatus)}
+              >
+                {TELEFONE_STATUS.map((s) => (
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                    {s.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         {tel && (
           <IconLink href={tel} title="Ligar">

@@ -2,6 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
+import {
   Phone,
   MessageCircle,
   MessageSquareText,
@@ -36,8 +44,11 @@ import {
   mailtoLink,
   linkedinUrl,
   mensagemWhatsappPadrao,
+  TELEFONE_STATUS,
   telefoneStatusMeta,
+  telefoneStatusInvalida,
   humanizeTelefoneStatus,
+  type TelefoneStatus,
 } from "@/lib/contatos";
 
 /** Tese de maior valor potencial vinculada à empresa — usada pra personalizar
@@ -132,22 +143,21 @@ export function EmpresaContatosSection({
     afterChange();
   };
 
-  const toggleTelefoneInvalido = async (c: EmpresaContato) => {
-    const invalido = !c.telefone_invalido;
-    // atalho da lista: alterna entre "número errado" e "não testado". O status
-    // fino (não atendeu / caixa postal / etc.) fica no ContatoDialog. O trigger
-    // deriva telefone_invalido a partir do status.
+  const setStatusTelefone = async (c: EmpresaContato, status: TelefoneStatus) => {
+    if (c.telefone_status === status) return;
+    // categoriza o resultado da tentativa direto no card — NÃO é toque de
+    // prospecção. O trigger deriva telefone_invalido de numero_errado/nao_existe.
     const { error } = await supabase
       .from("empresa_contatos")
-      .update({ telefone_status: invalido ? "numero_errado" : "nao_testado" })
+      .update({ telefone_status: status })
       .eq("id", c.id);
-    if (error) return toast.error("Erro ao atualizar telefone");
-    toast.success(invalido ? "Telefone marcado como errado" : "Telefone marcado como válido");
+    if (error) return toast.error("Erro ao atualizar status do telefone");
+    toast.success(`Telefone: ${humanizeTelefoneStatus(status)}`);
     void logAudit({
       tabela: "empresa_contatos",
-      acao: invalido ? "Marcou telefone como errado" : "Desmarcou telefone como errado",
+      acao: "Alterou status do telefone",
       registro_id: c.id,
-      detalhes: { empresa_id: empresaId },
+      detalhes: { empresa_id: empresaId, status },
     });
     afterChange();
   };
@@ -202,7 +212,7 @@ export function EmpresaContatosSection({
               onEdit={() => editar(c)}
               onDelete={() => void remover(c)}
               onPrincipal={() => void definirPrincipal(c)}
-              onToggleTelefoneInvalido={() => void toggleTelefoneInvalido(c)}
+              onSetStatusTelefone={(s) => void setStatusTelefone(c, s)}
               onMensagemLinkedin={() => abrirMensagemLinkedin(c)}
             />
           ))}
@@ -235,7 +245,7 @@ function ContatoCard({
   onEdit,
   onDelete,
   onPrincipal,
-  onToggleTelefoneInvalido,
+  onSetStatusTelefone,
   onMensagemLinkedin,
 }: {
   c: EmpresaContato;
@@ -243,7 +253,7 @@ function ContatoCard({
   onEdit: () => void;
   onDelete: () => void;
   onPrincipal: () => void;
-  onToggleTelefoneInvalido: () => void;
+  onSetStatusTelefone: (s: TelefoneStatus) => void;
   onMensagemLinkedin: () => void;
 }) {
   const tel = telLink(c.telefone);
@@ -367,20 +377,42 @@ function ContatoCard({
           </Button>
         )}
         {c.telefone && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-6 px-2 text-[11px] ${c.telefone_invalido ? "text-muted-foreground" : "text-destructive hover:text-destructive"}`}
-            onClick={onToggleTelefoneInvalido}
-            title={
-              c.telefone_invalido
-                ? "Desmarcar — telefone volta a ser válido"
-                : "Marcar telefone como errado/inexistente"
-            }
-          >
-            <PhoneOff className="mr-1 h-3 w-3" />
-            {c.telefone_invalido ? "Telefone OK" : "Telefone errado"}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-6 px-2 text-[11px] ${
+                  c.telefone_status === "nao_testado"
+                    ? "text-muted-foreground"
+                    : telefoneStatusInvalida(c.telefone_status)
+                      ? "text-destructive hover:text-destructive"
+                      : "text-amber-600 hover:text-amber-600"
+                }`}
+                title="Status do telefone (não conta como toque de prospecção)"
+              >
+                <PhoneOff className="mr-1 h-3 w-3" />
+                {c.telefone_status === "nao_testado"
+                  ? "Status tel."
+                  : telefoneStatusMeta(c.telefone_status).short}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">
+                Status do telefone
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={c.telefone_status}
+                onValueChange={(v) => onSetStatusTelefone(v as TelefoneStatus)}
+              >
+                {TELEFONE_STATUS.map((s) => (
+                  <DropdownMenuRadioItem key={s.value} value={s.value} className="text-xs">
+                    {s.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
         <Button
           variant="ghost"
