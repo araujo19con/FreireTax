@@ -621,7 +621,8 @@ def main():
         erros_seguidos = 0     # falhas seguidas na BUSCA (form ausente = sessão caiu)
         aberturas_falhas = 0   # sócios seguidos com processos mas NENHUM autos abriu
         enriquecidos = 0       # hits efetivamente gravados neste lote
-        LIMITE_ABERTURA = 5    # autos não abrem N× seguidas = limite diário do TJRN
+        LIMITE_ABERTURA = 3    # autos não abrem N× seguidas = limite diário do TJRN
+                               # (3 já é sinal forte; detecta o limite ~2 sócios antes)
         for i, s in enumerate(alvos, 1):
             nome, mask = s["nome"], s["cpf_mascarado"]
             try:
@@ -649,7 +650,11 @@ def main():
             got = None
             abriu_algum = False      # algum processo realmente abriu e rendeu texto?
             falha_abertura = False   # algum open lançou exceção (popup/aba não veio)
-            for r in rows[:4]:  # tenta até 4 processos
+            # Kaizen: já vindo de falha de abertura (provável limite diário), tenta
+            # só 1 proc em vez de 4 — corta ~60s de timeouts por sócio ao confirmar
+            # o limite. Se abrir normal, aberturas_falhas zera e volta a 4.
+            n_try = 1 if aberturas_falhas else 4
+            for r in rows[:n_try]:
                 try:
                     txt = abrir_e_extrair(page, r["proc"])
                 except Exception as e:
