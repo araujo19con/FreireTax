@@ -138,6 +138,13 @@ TJ = {
     "trf5": {"nome": "TRF5", "ufs": ["RN", "PB", "PE", "CE", "AL", "SE"],
              "consulta": "https://pje1g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
              "marker": "PJe/TRF5", "profile": ".pje-trf5-chrome-profile", "ledger": "pje_trf5_ledger.jsonl"},
+    # TJPB: marcado como "(bloqueado)/viable=False" em tools/pje_multi_tj.py (teste de
+    # 15/06 via CDP+A3 contra Cloudflare) — reavaliando aqui porque sócios pessoa física
+    # tendem a litigar na Justiça ESTADUAL (ações próprias), não na Federal (só a tese
+    # tributária da empresa tramita no TRF5).
+    "pb": {"nome": "TJPB", "ufs": ["PB"],
+           "consulta": "https://pje.tjpb.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+           "marker": "PJe/TJPB", "profile": ".pje-pb-chrome-profile", "ledger": "pje_pb_ledger.jsonl"},
 }
 
 
@@ -371,7 +378,16 @@ def parse_qualificacao(txt_raw, alvo_nome, mask=None):
 # Browser (Playwright) — reusa a sessão logada A3
 # ---------------------------------------------------------------------------
 def pesquisar(page, nome):
-    page.goto(CONSULTA, wait_until="domcontentloaded", timeout=60000)
+    # TRF5 (JSF/a4j) às vezes aborta a 1a navegação por redirect concorrente
+    # (ViewState/polling) — retry curto resolve sem mascarar sessão caída de vdd.
+    for tentativa in range(3):
+        try:
+            page.goto(CONSULTA, wait_until="domcontentloaded", timeout=60000)
+            break
+        except Exception:
+            if tentativa == 2:
+                raise
+            page.wait_for_timeout(1500)
     page.wait_for_timeout(1200)
     # detecta sessão caída na hora (form ausente = deslogou) — não espera 30s
     if not page.query_selector("input[id*='nomeParte']"):
