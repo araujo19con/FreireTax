@@ -595,9 +595,21 @@ def main():
                                                         viewport={"width": 1280, "height": 900})
         # Aceita automaticamente o aviso CNJ Res.121 (acesso a autos) em toda aba.
         # O acesso é do advogado a empresas que já patrocina/tem acesso (autorizado).
-        ctx.on("page", lambda pg: pg.on("dialog", lambda d: d.accept()))
+        #
+        # DEFENSIVO: a aba inicial recebe DOIS handlers (o de ctx, que vale pra
+        # toda página, e o de page abaixo). Os dois disparam no mesmo aviso: o 1º
+        # aceita e o 2º estoura "No dialog is showing" — exceção que subia e
+        # derrubava o lote inteiro. Engolir a corrida é seguro: o diálogo já foi
+        # tratado por quem chegou primeiro.
+        def _aceitar(d):
+            try:
+                d.accept()
+            except Exception:
+                pass
+
+        ctx.on("page", lambda pg: pg.on("dialog", _aceitar))
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        page.on("dialog", lambda d: d.accept())
+        page.on("dialog", _aceitar)
         page.goto(CONSULTA, wait_until="domcontentloaded")
         # Auto-detecta o login (não precisa teclar ENTER). NÃO navega enquanto
         # você ainda está na tela de login — só confirma quando o form da
