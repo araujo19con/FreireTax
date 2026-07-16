@@ -510,6 +510,9 @@ def main():
                     help="reprocessa um corpus salvo (SEM browser) e mostra o rendimento")
     ap.add_argument("--acao", metavar="ACAO_ID",
                     help="lote FOCADO: só sócios das empresas vinculadas a esta ação (elegibilidade)")
+    ap.add_argument("--count", action="store_true",
+                    help="só conta o pool pendente REAL (dedup por nome, pós ledger/marcador/PJ) e sai — "
+                         "sem abrir browser nem exigir login A3")
     ap.add_argument("--names-file", metavar="JSON",
                     help="busca uma lista CUSTOM de alvos [{nome,cpf_mascarado}] no tribunal "
                          "(ex: sócios PB de CNPJs-alvo) em vez do sweep por UF. "
@@ -537,6 +540,21 @@ def main():
     LEDGER = ROOT / _c["ledger"]
     MARKER = _c["marker"]
     ALVOS_QUERY = _alvos_query(_c["ufs"])
+
+    # --count: quanto realmente falta, sem custar um login A3. O número honesto é
+    # o pool DEDUPLICADO por nome pós-filtros (ledger/marcador/PJ) — contar linhas
+    # de empresa_contatos infla (1 sócio = N linhas, uma por empresa dele).
+    if args.count:
+        restrict = acao_empresa_ids(args.acao, _c["ufs"]) if args.acao else None
+        if args.acao and not restrict:
+            print(f"> Nenhuma empresa da ação {args.acao} nas UFs {'/'.join(_c['ufs'])}.")
+            return
+        pend = carregar_socios(10**6, restrict_empresa_ids=restrict)
+        escopo = f"ação {args.acao} ({len(restrict)} empresas)" if args.acao else "geral"
+        print(f"> Pool pendente REAL no {_c['nome']} [{escopo}]: {len(pend)} sócios "
+              f"(dedup por nome, já varridos/enriquecidos/PJ excluídos).")
+        print(f"  Ledger {LEDGER.name}: {len(ledger_nomes())} nomes varridos.")
+        return
 
     from playwright.sync_api import sync_playwright
 
