@@ -687,12 +687,35 @@ def main():
                 if not args.dry_run:
                     ledger_add(nome, mask, "sem_processo")
                 continue
-            # prioriza processos onde o nome aparece no POLO ATIVO
-            def ativo(r):
+            # Prioriza processos onde o sócio é o POLO ATIVO (é lá que a
+            # procuração/qualificação dele aparece).
+            #
+            # Kaizen: antes casava só o PRIMEIRO nome ("JOSE" de "JOSE DA SILVA"),
+            # o que dá match em QUALQUER José — a ordenação virava ruído justo em
+            # quem tem 10-20 processos, que é a faixa de MAIOR rendimento (65%
+            # medido no sweep) e onde escolher os 4 certos decide o match. Agora
+            # pontua pela fração de tokens do nome presentes no polo ativo.
+            def ativo_score(r):
                 cells = r.get("cells") or []
-                pa = cells[5] if len(cells) > 5 else r["texto"]
-                return nome.split()[0].upper() in (pa or "").upper()
-            rows.sort(key=lambda r: (0 if ativo(r) else 1))
+                pa = _sem_acento((cells[5] if len(cells) > 5 else r.get("texto")) or "").upper()
+                toks = [t for t in _sem_acento(nome).upper().split() if len(t) > 2]
+                if not toks or not pa:
+                    return 0.0
+                return sum(1 for t in toks if t in pa) / len(toks)
+
+            # Usado no fallback "fraco", que GRAVA endereço/telefone sem CPF
+            # confirmado — então é estrito: maioria dos tokens E o primeiro nome.
+            # Só a fração não basta: "MARIA SILVA SANTOS" casa 0.67 com
+            # "JOSE DA SILVA SANTOS" (sobrenomes) e gravaria dado de PARENTE.
+            def ativo(r):
+                if ativo_score(r) < 0.6:
+                    return False
+                cells = r.get("cells") or []
+                pa = _sem_acento((cells[5] if len(cells) > 5 else r.get("texto")) or "").upper()
+                primeiro = next((t for t in _sem_acento(nome).upper().split() if len(t) > 2), "")
+                return bool(primeiro) and primeiro in pa
+
+            rows.sort(key=lambda r: -ativo_score(r))
             got = None
             abriu_algum = False      # algum processo realmente abriu e rendeu texto?
             falha_abertura = False   # algum open lançou exceção (popup/aba não veio)
