@@ -156,6 +156,15 @@ ASSUNTO_TRIB = [
     "BASE DE CALCULO", "ALIQUOTA", "SIMPLES NACIONAL", "DIFAL", "SUBSTITUICAO TRIBUTARIA",
     "RAT", "SAT", "GILRAT", "FGTS", "INSS", "TERCO DE FERIAS", "TERCO CONSTITUCIONAL",
 ]
+# Objetos ADMINISTRATIVOS ESPECÍFICOS — NÃO são tese (não garantem um direito
+# GERAL recorrente; resolvem uma situação pontual). Ex.: MS p/ expedição de CND /
+# certidão de regularidade fiscal. Mesmo que a petição toque num tributo (discute
+# um débito p/ liberar a CND), o objeto é o ato administrativo, não a tese —
+# então descartamos como não-tese (decisão do usuário, 20/07).
+ASSUNTO_ADMINISTRATIVO = [
+    "CND", "CERTIDAO NEGATIVA", "CERTIDAO POSITIVA", "CERTIDAO DE REGULARIDADE",
+    "EXPEDICAO DE CERTIDAO", "EXPEDICAO DE CND", "REGULARIDADE FISCAL",
+]
 
 # Mapa ASSUNTO(CNJ do DataJud) -> tese do catálogo. Ordem IMPORTA: primeira regra
 # que casa vence, então as ESPECÍFICAS vêm antes das genéricas (senão um "Cofins"
@@ -220,9 +229,20 @@ def assunto_tributario(assunto):
     return any(k in a for k in ASSUNTO_TRIB)
 
 
+def objeto_administrativo(assunto):
+    """True p/ objetos administrativos específicos (CND/certidão de regularidade):
+    são situações pontuais, não teses (direito geral garantido)."""
+    a = _norm(assunto)
+    return any(k in a for k in ASSUNTO_ADMINISTRATIVO)
+
+
 def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
     """Retorna (nome_tese_do_catalogo | None, confianca). Casa contra assunto CNJ
     + classe + TEXTO DA PETIÇÃO (o objeto real; o assunto CNJ engana)."""
+    # objeto administrativo específico (CND/certidão) não é tese, mesmo que a
+    # petição cite um tributo — o objeto é o ato pontual, não um direito geral.
+    if objeto_administrativo(assunto):
+        return None, None
     texto = _norm(assunto) + " " + _norm(classe) + " " + _norm(peticao)
     for nome, rg in regras_tese():
         if _norm(nome) not in catalogo_norm:
@@ -445,7 +465,8 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
     # tributário) — candidato cujo assunto CNJ não é tributário (ex: "Abuso de
     # Poder") não entra na tabela de processos TRIBUTÁRIOS.
     persistir = [c for c in candidatos
-                 if c.get("tese") or assunto_tributario(c.get("assunto") or "")]
+                 if (c.get("tese") or assunto_tributario(c.get("assunto") or ""))
+                 and not objeto_administrativo(c.get("assunto") or "")]
     if gravar and candidatos:
         if not empresa_id:
             print("  [gravar] empresa não está no CRM (sem empresa_id) — nada gravado.")
@@ -688,6 +709,8 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
             linha += (f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')}"
                       f", fonte: {it.get('fonte_tese','?')})")
             teses_ja.setdefault(tese, []).append(it["proc"])
+        elif asn and objeto_administrativo(asn):
+            linha += "\n        => objeto administrativo específico (CND/certidão) — NÃO é tese"
         elif asn and assunto_tributario(asn):
             linha += "\n        => tributário, mas fora do catálogo de teses (revisar manualmente)"
         elif asn:
