@@ -67,12 +67,20 @@ CLASSES_FORA = [
     "ACIDENTE", "SEGURO", "PREVIDENC", "APOSENTADORIA", "BENEFICIO",
     "FALENCIA", "RECUPERACAO JUDICIAL", "INSOLVENCIA",
 ]
-# Classes tipicamente usadas em tese tributária (empresa como POLO ATIVO).
-CLASSES_TRIB = [
+# Classes de TESE COMERCIAL (empresa ATACA proativamente o tributo — é o que o
+# escritório vende). SÓ essas interessam. Embargos/execução/cumprimento (defesa
+# ou cobrança) NÃO têm valor comercial → descartados (decisão do usuário).
+CLASSES_TESE = [
     "MANDADO DE SEGURANCA", "PROCEDIMENTO COMUM", "ACAO ORDINARIA",
-    "DECLARATORIA", "ANULATORIA", "REPETICAO DE INDEBITO", "CONSIGNACAO",
-    "EMBARGOS A EXECUCAO FISCAL", "EMBARGOS A EXECUCAO", "EXECUCAO FISCAL",
-    "CAUTELAR", "TUTELA CAUTELAR", "TUTELA ANTECIPADA", "CUMPRIMENTO DE SENTENCA",
+    "ACAO DECLARATORIA", "DECLARATORIA", "ANULATORIA", "REPETICAO DE INDEBITO",
+    "ACAO DE REPETICAO", "CONSIGNACAO EM PAGAMENTO", "TUTELA ANTECIPADA ANTECEDENTE",
+]
+# Classes SEM valor comercial — defesa/cobrança/execução. Descartadas mesmo em
+# vara fazendária (não é uma tese que a gente ajuíza pra vender).
+CLASSES_SEM_VALOR = [
+    "EMBARGOS", "EXECUCAO FISCAL", "EXECUCAO DE TITULO", "EXECUCAO CONTRA",
+    "CUMPRIMENTO DE SENTENCA", "CUMPRIMENTO PROVISORIO", "MONITORIA",
+    "BUSCA E APREENSAO", "EXECUCAO DE TITULO EXTRAJUDICIAL",
 ]
 # Palavras que marcam ASSUNTO tributário (CNJ "Direito Tributário").
 ASSUNTO_TRIB = [
@@ -116,14 +124,6 @@ def _norm(s):
                    if unicodedata.category(c) != "Mn")
 
 
-def classe_incompativel(classe):
-    c = _norm(classe)
-    if any(k in c for k in CLASSES_FORA):
-        return True
-    # se não bate nenhuma classe tributária conhecida, é "diversa" -> fora
-    return not any(k in c for k in CLASSES_TRIB)
-
-
 def assunto_tributario(assunto):
     a = _norm(assunto)
     return any(k in a for k in ASSUNTO_TRIB)
@@ -151,7 +151,10 @@ def classificar_tese(assunto, classe, catalogo_norm):
 # ---------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cnpj", required=True)
+    ap.add_argument("--cnpj", help="CNPJ único a analisar")
+    ap.add_argument("--cnpjs", help="lista de CNPJs separados por vírgula (1 login, N empresas)")
+    ap.add_argument("--acao", metavar="ACAO_ID", help="analisa TODAS as empresas de uma ação (via elegibilidade)")
+    ap.add_argument("--limit", type=int, default=200, help="máx de empresas no modo --acao")
     ap.add_argument("--inspect", action="store_true",
                     help="1ª vez: loga, dumpa os campos do form + linhas cruas de resultado e sai")
     ap.add_argument("--graus", default="1g,2g", help="quais graus buscar (default 1g,2g)")
@@ -159,16 +162,24 @@ def main():
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: rode `. tools\\pje-env.local.ps1` antes.")
 
-    cnpj_digits = re.sub(r"\D", "", args.cnpj)
-    cnpj_fmt = f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
+    # ---- monta a lista de CNPJs alvo (single / lista / ação) ----
+    alvos = []  # [cnpj_digits]
+    if args.acao:
+        rows = sb(f"elegibilidade?select=empresas!inner(cnpj)&acao_id=eq.{args.acao}&limit={args.limit}")
+        for r in rows:
+            c = re.sub(r"\D", "", ((r.get("empresas") or {}).get("cnpj") or ""))
+            if len(c) == 14: alvos.append(c)
+    elif args.cnpjs:
+        alvos = [re.sub(r"\D", "", c) for c in args.cnpjs.split(",")]
+    elif args.cnpj:
+        alvos = [re.sub(r"\D", "", args.cnpj)]
+    alvos = [c for c in dict.fromkeys(alvos) if len(c) == 14]  # dedup + válidos
+    if not alvos:
+        sys.exit("Nada a analisar. Passe --cnpj, --cnpjs ou --acao.")
 
-    # empresa (nome/razão social pra busca por nome como fallback) + catálogo
-    emp = sb(f"empresas?select=id,nome,razao_social,uf&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
-    empresa = emp[0] if emp else None
-    razao = (empresa or {}).get("razao_social") or (empresa or {}).get("nome") or ""
     catalogo = [r["nome"] for r in sb("acoes_tributarias?select=nome&status=eq.Ativa")]
     catalogo_norm = {_norm(n): n for n in catalogo}
-    print(f"CNPJ {cnpj_fmt} | empresa: {razao or '(não está no CRM)'} | catálogo: {len(catalogo)} teses")
+    print(f"{len(alvos)} empresa(s) a analisar | catálogo: {len(catalogo)} teses")
 
     from playwright.sync_api import sync_playwright
     graus = [g.strip() for g in args.graus.split(",") if g.strip() in GRAUS]
@@ -183,91 +194,94 @@ def main():
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.on("dialog", _aceitar)
 
-        SEL_FORM = "input[id*='nomeParte'], input[id*='Documento'], input[id*='cpfCnpj'], input[id*='numeroDocumento']"
-        LOGIN_MARKERS = ("sso", "/login", "login.seam", "auth", "openid", "saml",
-                         "keycloak", "acesso.gov", "certificado")
+        # LOGIN UMA VEZ (na 1ª busca); depois roda todos os CNPJs na mesma sessão.
+        page = _login_once(ctx, page, GRAUS[graus[0]])
+        if page is None:
+            print("Timeout aguardando login."); return
 
-        todos = {}  # numero -> {proc, classe, assunto, polo, grau}
-        for gi, grau in enumerate(graus):
-            url = GRAUS[grau]
+        for i, cnpj_digits in enumerate(alvos, 1):
+            print(f"\n———— [{i}/{len(alvos)}] ————", flush=True)
+            _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, args.inspect)
+            if args.inspect:
+                print("\n[INSPECT] fim (só a 1ª empresa). Rode sem --inspect.")
+                break
+
+
+SEL_FORM = ("input[id$=':documentoParte'], input[id*='documentoParte'], "
+            "input[id$=':nomeParte'], input[id*='nomeParte']")
+LOGIN_MARKERS = ("sso", "/login", "login.seam", "auth", "openid", "saml",
+                 "keycloak", "acesso.gov", "certificado")
+
+
+def _login_once(ctx, page, url):
+    """Abre a consulta 1g e espera o A3. NÃO re-navega a tela de login (recarregar
+    por baixo impede o certificado). Retorna a page logada ou None (timeout)."""
+    try: page.goto(url, wait_until="domcontentloaded")
+    except Exception: pass
+    print(">>> Faça LOGIN no TJRN com o A3 na janela do Chrome. Aguardando...", flush=True)
+    for _ in range(300):  # ~10 min
+        for pg in list(ctx.pages):
+            try:
+                if pg.query_selector(SEL_FORM):
+                    print(">>> Autenticado.", flush=True)
+                    return pg
+            except Exception:
+                pass
+        alvo = None
+        for pg in list(ctx.pages):
+            try:
+                u = (pg.url or "").lower()
+                if "tjrn.jus.br" in u and not any(m in u for m in LOGIN_MARKERS):
+                    alvo = pg
+            except Exception:
+                pass
+        if alvo:
+            try: alvo.goto(url, wait_until="domcontentloaded")
+            except Exception: pass
+        page.wait_for_timeout(2000)
+    return None
+
+
+def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect):
+    cnpj_fmt = f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
+    emp = sb(f"empresas?select=id,nome,razao_social&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
+    empresa = emp[0] if emp else None
+    razao = (empresa or {}).get("razao_social") or (empresa or {}).get("nome") or ""
+    print(f"CNPJ {cnpj_fmt} | {razao or '(não está no CRM)'}", flush=True)
+
+    todos = {}
+    for grau in graus:
+        url = GRAUS[grau]
+        for _ in range(15):  # garante o form (sessão compartilhada entre graus)
             try: page.goto(url, wait_until="domcontentloaded")
             except Exception: pass
-            if gi == 0:
-                print(f">>> Faça LOGIN no TJRN com o A3 na janela do Chrome. Aguardando... (grau {grau})", flush=True)
-                # NÃO re-navega a tela de login (recarregar por baixo impede o A3).
-                # Só procura o form em QUALQUER aba; se alguma já passou do login
-                # mas não está na consulta, navega ESSA aba pra consulta.
-                ok = False
-                for _ in range(300):  # ~10 min
-                    for pg in list(ctx.pages):
-                        try:
-                            if pg.query_selector(SEL_FORM):
-                                page = pg; ok = True; break
-                        except Exception:
-                            pass
-                    if ok: break
-                    alvo = None
-                    for pg in list(ctx.pages):
-                        try:
-                            u = (pg.url or "").lower()
-                            if "tjrn.jus.br" in u and not any(m in u for m in LOGIN_MARKERS):
-                                alvo = pg
-                        except Exception:
-                            pass
-                    if alvo:
-                        try: alvo.goto(url, wait_until="domcontentloaded")
-                        except Exception: pass
-                    page.wait_for_timeout(2000)
-                if not ok:
-                    print("Timeout aguardando login."); return
-                print(f">>> Autenticado. Buscando {grau}...", flush=True)
-            else:
-                # 2º grau: sessão A3 já vale (SSO compartilhado); só garante o form
-                for _ in range(20):
-                    if page.query_selector(SEL_FORM): break
-                    page.wait_for_timeout(1000)
-                    try: page.goto(url, wait_until="domcontentloaded")
-                    except Exception: pass
-            page.wait_for_timeout(1000)
-
-            if args.inspect:
-                # dumpa TODOS os inputs do form (pra achar o campo de CNPJ) + a classe/assunto
-                campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
-                    .map(e => ({id:e.id, name:e.name, type:e.type, ph:e.placeholder||''}))
-                    .filter(e => e.id || e.name)""")
-                print(f"\n=== [{grau}] CAMPOS DO FORM ({len(campos)}) ===")
-                for c in campos[:40]:
-                    print("  ", c)
-
-            # busca por CNPJ (campo documento) se existir; senão por razão social
-            achou_campo = _buscar(page, cnpj_digits, razao)
-            page.wait_for_timeout(800)
-            linhas = page.evaluate(r"""() => {
-              const out=[];
-              for (const tr of document.querySelectorAll('table tr')) {
-                const t = tr.innerText;
-                const m = t.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
-                if (!m) continue;
-                const cells = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim());
-                out.push({proc:m[0], cells, texto:t.replace(/\s+/g,' ').trim()});
-              }
-              return out;
-            }""")
-            print(f"[{grau}] busca por {'CNPJ' if achou_campo=='doc' else 'razão social'}: {len(linhas)} linha(s)")
-            if args.inspect and linhas:
-                print(f"=== [{grau}] AMOSTRA DE LINHAS CRUAS (até 5) ===")
-                for r in linhas[:5]:
-                    print(f"  proc={r['proc']}")
-                    for i, c in enumerate(r["cells"]):
-                        if c: print(f"     cell[{i}]: {c[:120]}")
-            for r in linhas:
-                todos.setdefault(r["proc"], {**r, "grau": grau})
-
-        if args.inspect:
-            print("\n[INSPECT] fim. Ajuste os seletores/colunas e rode sem --inspect.")
-            return
-
-        # ---- classificação ----
+            page.wait_for_timeout(900)
+            if page.query_selector(SEL_FORM): break
+        if inspect:
+            campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
+                .map(e => ({id:e.id, name:e.name, type:e.type})).filter(e => e.id||e.name)""")
+            print(f"=== [{grau}] CAMPOS ({len(campos)}) ==="); [print("  ", c) for c in campos[:40]]
+        achou = _buscar(page, cnpj_digits, razao)
+        page.wait_for_timeout(700)
+        linhas = page.evaluate(r"""() => {
+          const out=[];
+          for (const tr of document.querySelectorAll('table tr')) {
+            const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+            if (!m) continue;
+            const cells = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim());
+            out.push({proc:m[0], cells});
+          }
+          return out;
+        }""")
+        print(f"[{grau}] busca por {'CNPJ' if achou=='doc' else 'razão social'}: {len(linhas)} linha(s)")
+        if inspect and linhas:
+            for r in linhas[:5]:
+                print(f"  proc={r['proc']}")
+                for idx, c in enumerate(r["cells"]):
+                    if c: print(f"     cell[{idx}]: {c[:120]}")
+        for r in linhas:
+            todos.setdefault(r["proc"], {**r, "grau": grau})
+    if not inspect:
         analisar(todos, catalogo, catalogo_norm, razao, cnpj_fmt)
 
 
@@ -330,79 +344,52 @@ def _empresa_polo(razao, ativo, passivo):
     return "?"
 
 
-def analisar(todos, catalogo, catalogo_norm, razao, cnpj_fmt):
-    """Classifica pela LISTA (classe cell[5], órgão cell[3], polos cell[6]/[7]) —
-    sem abrir autos. O assunto exato não vem na lista; a classe+órgão+polo já
-    separam tributário de diverso e a empresa-autora (tese dela) da ré."""
-    tese_hits = {}          # tese -> [procs]  (best-effort pela classe/órgão)
-    trib_ativo, trib_passivo, descartados = [], [], []
+def filtrar_teses(todos, razao):
+    """Fica SÓ com processo de TESE COMERCIAL: empresa AUTORA + classe de tese
+    (MS/Procedimento Comum/Declaratória/…) + órgão fazendário. Descarta ré,
+    embargos/execução/cumprimento e classe diversa NA FASE DA LISTA (grátis) —
+    é o que reduz o pool a abrir autos ao mínimo. Retorna (candidatos, contagem)."""
+    candidatos, motivos = [], {"re": 0, "sem_valor": 0, "nao_fazenda": 0, "nao_tese": 0}
     for proc, r in todos.items():
         cells = r["cells"]
-        classe = _col(cells, 5)
-        orgao = _col(cells, 3)
-        ativo = _col(cells, 6)
-        passivo = _col(cells, 7)
-        situacao = _col(cells, 8)
-        grau = r["grau"]
-        polo = _empresa_polo(razao, ativo, passivo)
-        fazenda = any(k in _norm(orgao) for k in ORGAO_FAZENDA)
-
-        # 1) classe claramente incompatível → fora
+        classe, orgao = _col(cells, 5), _col(cells, 3)
+        polo = _empresa_polo(razao, _col(cells, 6), _col(cells, 7))
         cn = _norm(classe)
-        if any(k in cn for k in CLASSES_FORA):
-            descartados.append((proc, classe, orgao, polo, "classe incompatível"))
-            continue
-        # 2) é tributário? O sinal CONFIÁVEL é o ÓRGÃO fazendário — a classe é
-        #    genérica demais (validado nos dados reais: "Embargos à Execução" e
-        #    "Cumprimento de Sentença" em Vara CÍVEL são dívida civil, não tese).
-        #    Exceção: classe que já NOMEIA o tributário ("Execução Fiscal") vale
-        #    mesmo em Vara Única de comarca pequena (sem vara fazendária própria).
-        unambiguo = "EXECUCAO FISCAL" in cn
-        eh_trib = fazenda or unambiguo
-        if not eh_trib:
-            descartados.append((proc, classe, orgao, polo, "assunto diverso / cível"))
-            continue
-        item = {"proc": proc, "grau": grau, "classe": classe, "orgao": orgao,
-                "polo": polo, "situacao": situacao}
-        if polo == "ativo":
-            trib_ativo.append(item)   # empresa AUTORA = tese dela
-            tese, conf = classificar_tese(classe + " " + orgao, classe, catalogo_norm)
-            if tese:
-                tese_hits.setdefault(tese, []).append((proc, conf, grau))
-        else:
-            trib_passivo.append(item) # ré (ex: executada pela Fazenda) — relevante, não é tese dela
+        if polo != "ativo":                                   # ré = sem valor
+            motivos["re"] += 1; continue
+        if any(k in cn for k in CLASSES_SEM_VALOR):            # embargos/execução/cumprimento
+            motivos["sem_valor"] += 1; continue
+        if not any(k in _norm(orgao) for k in ORGAO_FAZENDA):  # não fazendário = não tributário
+            motivos["nao_fazenda"] += 1; continue
+        if not any(k in cn for k in CLASSES_TESE):             # classe não é de tese comercial
+            motivos["nao_tese"] += 1; continue
+        candidatos.append({"proc": proc, "grau": r["grau"], "classe": classe,
+                           "orgao": orgao, "situacao": _col(cells, 8)})
+    return candidatos, motivos
 
+
+def analisar(todos, catalogo, catalogo_norm, razao, cnpj_fmt):
+    candidatos, motivos = filtrar_teses(todos, razao)
     print("\n" + "=" * 74)
     print(f"ANÁLISE DE TESES — {razao} ({cnpj_fmt})")
     print("=" * 74)
-    print(f"Processos únicos (1g+2g): {len(todos)}  |  tributários da empresa como AUTORA: "
-          f"{len(trib_ativo)}  |  como ré: {len(trib_passivo)}  |  descartados (diversos): {len(descartados)}")
+    print(f"Processos (1g+2g): {len(todos)}  →  CANDIDATOS A TESE COMERCIAL: {len(candidatos)}")
+    print(f"  descartados: {motivos['re']} ré · {motivos['sem_valor']} embargos/execução/cumprimento "
+          f"· {motivos['nao_fazenda']} não-fazendário · {motivos['nao_tese']} classe diversa")
 
-    print(f"\n>>> PROCESSOS TRIBUTÁRIOS EM QUE A EMPRESA É AUTORA (teses dela) — {len(trib_ativo)}:")
-    if not trib_ativo:
-        print("    (nenhum — a empresa não figura como autora em processo tributário no TJRN)")
-    for it in trib_ativo:
+    print(f"\n>>> PROCESSOS DE TESE COMERCIAL (empresa autora, vara fazendária) — {len(candidatos)}:")
+    if not candidatos:
+        print("    (nenhum — a empresa não ajuizou tese tributária proativa no TJRN)")
+    for it in candidatos:
         print(f"    {it['proc']} [{it['grau']}] {it['classe']} | {it['orgao']} | {it['situacao']}")
+    if candidatos:
+        print("    (a tese EXATA de cada um exige abrir os autos p/ ler o assunto — passo seguinte)")
 
-    print(f"\n>>> TESES DO CATÁLOGO IDENTIFICADAS (best-effort pela classe/órgão) — {len(tese_hits)}:")
-    if not tese_hits:
-        print("    (nenhuma casada só pela classe — o assunto exato exige abrir os autos;")
-        print("     os processos-autora acima são os candidatos a mapear pra tese)")
-    for tese, procs in tese_hits.items():
-        print(f"    ✓ {tese}")
-        for pr, conf, grau in procs:
-            print(f"        {pr} [{grau}] (confiança {conf})")
-
-    gap = [n for n in catalogo if n not in tese_hits]
-    print(f"\n>>> TESES A OFERECER (gap — {len(gap)} de {len(catalogo)}):")
-    for n in gap:
-        print(f"    ○ {n}")
-
-    if trib_passivo:
-        print(f"\n>>> (contexto) EMPRESA COMO RÉ em processo tributário — {len(trib_passivo)} "
-              "(ex: executada pela Fazenda — NÃO é tese dela):")
-        for it in trib_passivo:
-            print(f"    {it['proc']} [{it['grau']}] {it['classe']} | {it['orgao']}")
+    print(f"\n>>> TESES DO CATÁLOGO A OFERECER (gap — {len(catalogo)}):")
+    print("    Nenhuma tese casada ainda (o assunto exato vem dos autos). Os processos")
+    print("    acima são os únicos candidatos a já-ajuizada; o resto do catálogo é oferta.")
+    for n in catalogo:
+        print(f"    ○ {n.strip()}")
 
 
 if __name__ == "__main__":
