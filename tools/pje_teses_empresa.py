@@ -184,9 +184,13 @@ def regras_tese():
                   "EQUIPARACAO A HOSPITAL", "SERVICOS DE SAUDE"],
           "hint": ["IRPJ", "CSLL", "LUCRO PRESUMIDO"], "conf": "alta"}),
         # crédito presumido de ICMS FORA da base do PIS/COFINS (incentivo fiscal) —
-        # tese do processo 0023290-14.2025. Vem ANTES da de IRPJ/CSLL.
+        # tese do processo 0802393-63.2024. Vem ANTES da de IRPJ/CSLL. "NÃO
+        # CUMULATIVIDADE" é conceito de PIS/COFINS (IRPJ/CSLL não são não-cumulativos),
+        # então crédito presumido + não-cumulatividade => variante PIS/COFINS. Isso
+        # desempata quando a petição (só 1ª página) não traz "PIS/COFINS" literal mas
+        # o assunto CNJ do DataJud é "Não Cumulatividade; Crédito Presumido".
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
-         {"all": ["CREDITO PRESUMIDO"], "any": ["PIS", "COFINS"], "conf": "alta"}),
+         {"all": ["CREDITO PRESUMIDO"], "any": ["PIS", "COFINS", "NAO CUMULATIVIDADE"], "conf": "alta"}),
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
          {"any": ["INCENTIVO FISCAL", "SUBVENCAO", "SUBVENCOES", "BENEFICIO FISCAL"],
           "hint": ["ICMS"], "conf": "alta"}),
