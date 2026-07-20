@@ -129,6 +129,8 @@ interface ProcTribRow {
   assunto: string | null;
   acao_id: string | null;
   detectado_em: string;
+  acoes_tributarias: { nome: string } | null;
+  metadados: { tese_sugerida?: string } | null;
 }
 interface PastaLinkRow {
   pasta_id: string;
@@ -204,7 +206,9 @@ function useEmpresaRelations(empresaId: string | undefined) {
             .limit(20),
           supabase
             .from("empresa_processos_tributarios")
-            .select("id, numero, grau, classe, orgao, situacao, assunto, acao_id, detectado_em")
+            .select(
+              "id, numero, grau, classe, orgao, situacao, assunto, acao_id, detectado_em, metadados, acoes_tributarias(nome)"
+            )
             .eq("empresa_id", empresaId)
             .order("detectado_em", { ascending: false }),
           supabase
@@ -916,6 +920,20 @@ export function EmpresaDetailSheet({
                             </Badge>
                           )}
                         </div>
+                        {p.acoes_tributarias?.nome ? (
+                          <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success">
+                            <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span>Tese: {p.acoes_tributarias.nome.trim()}</span>
+                          </p>
+                        ) : p.metadados?.tese_sugerida ? (
+                          <p className="ml-4 mt-1 text-[11px] text-warning">
+                            Tese sugerida (revisar): {p.metadados.tese_sugerida.trim()}
+                          </p>
+                        ) : (
+                          <p className="ml-4 mt-1 text-[11px] italic text-muted-foreground">
+                            Tributário — tese a mapear
+                          </p>
+                        )}
                         {(p.classe || p.orgao) && (
                           <p className="ml-4 mt-0.5 text-[11px] text-muted-foreground">
                             {[p.classe, p.orgao].filter(Boolean).join(" · ")}
