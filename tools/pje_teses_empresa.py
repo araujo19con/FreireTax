@@ -473,7 +473,7 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
         if autos:
             asn = it.get("assunto") or ""
             tese = it.get("tese")
-            linha += f"\n        assunto: {asn or '(não lido — autos bloqueados?)'}"
+            linha += f"\n        assunto: {asn or '(não extraído — o visualizador de autos não mostra o assunto CNJ; está na aba Capa/Detalhes — calibração pendente)'}"
             if tese:
                 linha += f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')})"
                 teses_ja.setdefault(tese, []).append(it["proc"])
