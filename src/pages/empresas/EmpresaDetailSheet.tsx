@@ -30,6 +30,7 @@ import {
   ExternalLink,
   ScanSearch,
   Contact,
+  Lightbulb,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -133,6 +134,11 @@ interface PastaLinkRow {
   pasta_id: string;
   pastas_empresas: { nome: string } | null;
 }
+interface CatalogoRow {
+  id: string;
+  nome: string;
+  tipo: string | null;
+}
 
 function useEmpresaRelations(empresaId: string | undefined) {
   return useQuery({
@@ -148,6 +154,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
           audit: [],
           prospeccoes: [],
           procTrib: [],
+          catalogo: [],
         } as {
           eleg: ElegRow[];
           tarefas: TarefaRow[];
@@ -156,8 +163,9 @@ function useEmpresaRelations(empresaId: string | undefined) {
           audit: AuditRow[];
           prospeccoes: ProspeccaoTimelineRow[];
           procTrib: ProcTribRow[];
+          catalogo: CatalogoRow[];
         };
-      const [elegRes, tarRes, reunRes, pastasRes, auditRes, prospRes, procTribRes] =
+      const [elegRes, tarRes, reunRes, pastasRes, auditRes, prospRes, procTribRes, catRes] =
         await Promise.all([
           supabase
             .from("elegibilidade")
@@ -199,6 +207,11 @@ function useEmpresaRelations(empresaId: string | undefined) {
             .select("id, numero, grau, classe, orgao, situacao, assunto, acao_id, detectado_em")
             .eq("empresa_id", empresaId)
             .order("detectado_em", { ascending: false }),
+          supabase
+            .from("acoes_tributarias")
+            .select("id, nome, tipo")
+            .eq("status", "Ativa")
+            .order("nome"),
         ]);
       const pastaLinks = (pastasRes.data || []) as unknown as PastaLinkRow[];
       return {
@@ -209,6 +222,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
         audit: (auditRes.data || []) as unknown as AuditRow[],
         prospeccoes: (prospRes.data || []) as unknown as ProspeccaoTimelineRow[],
         procTrib: (procTribRes.data || []) as unknown as ProcTribRow[],
+        catalogo: (catRes.data || []) as unknown as CatalogoRow[],
       };
     },
   });
@@ -886,7 +900,7 @@ export function EmpresaDetailSheet({
                     </div>
                     <p className="text-[11px] text-muted-foreground">
                       Ações tributárias que a própria empresa já ajuizou (autora, vara fazendária),
-                      detectadas por CNPJ. As teses do catálogo não vinculadas acima são a oferta.
+                      detectadas por CNPJ.
                     </p>
                     {relations.procTrib.map((p) => (
                       <div
@@ -917,6 +931,46 @@ export function EmpresaDetailSheet({
                     ))}
                   </div>
                 )}
+
+                {/* Teses do catálogo que a empresa AINDA NÃO entrou — a oferta */}
+                {relations &&
+                  relations.catalogo.length > 0 &&
+                  (() => {
+                    const jaTem = new Set<string>();
+                    relations.eleg.forEach((e) => e.acao_id && jaTem.add(e.acao_id));
+                    relations.procTrib.forEach((p) => p.acao_id && jaTem.add(p.acao_id));
+                    const gap = relations.catalogo.filter((c) => !jaTem.has(c.id));
+                    if (gap.length === 0) return null;
+                    return (
+                      <div className="space-y-2 rounded-lg border border-success/30 bg-success/5 p-3">
+                        <div className="flex items-center gap-2">
+                          <Lightbulb className="h-4 w-4 text-success" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Teses que pode oferecer ({gap.length})
+                          </h4>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Teses ativas do catálogo que a empresa ainda não ajuizou nem tem
+                          vinculada. Clique para abrir a tese no painel de Ações.
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {gap.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => openAcaoForEmpresa(c.id)}
+                              className="group inline-flex items-center gap-1 rounded-full border border-success/30 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-success/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              title={`Abrir ${c.nome.trim()} no painel de Ações`}
+                            >
+                              <Gavel className="h-3 w-3 text-success" />
+                              <span className="max-w-[220px] truncate">{c.nome.trim()}</span>
+                              <ExternalLink className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
               </TabsContent>
 
               {/* TAREFAS */}
