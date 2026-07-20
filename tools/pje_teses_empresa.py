@@ -375,10 +375,17 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, 
         c["tese"], c["conf"] = tese, conf
     analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), True)
 
-    # persiste os candidatos no CRM (visível no EmpresaDetailSheet)
+    # persiste no CRM SÓ o que é de fato tributário (tese cravada OU assunto
+    # tributário) — candidato cujo assunto CNJ não é tributário (ex: "Abuso de
+    # Poder") não entra na tabela de processos TRIBUTÁRIOS.
+    persistir = [c for c in candidatos
+                 if c.get("tese") or assunto_tributario(c.get("assunto") or "")]
     if gravar and candidatos:
         if not empresa_id:
             print("  [gravar] empresa não está no CRM (sem empresa_id) — nada gravado.")
+        elif not persistir:
+            print("  [gravar] nenhum processo tributário (os candidatos não são teses "
+                  "pelo assunto CNJ) — nada gravado.")
         else:
             body = [{
                 "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
@@ -387,7 +394,7 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, 
                 "assunto": c.get("assunto") or None,
                 "acao_id": TESE_ID.get(_norm(c["tese"])) if c.get("tese") else None,
                 "fonte": "pje_tjrn+datajud",
-            } for c in candidatos]
+            } for c in persistir]
             try:
                 sb_upsert("empresa_processos_tributarios", body, "empresa_id,numero")
                 print(f"  [gravar] {len(body)} processo(s) tributário(s) gravado(s) no CRM.")
