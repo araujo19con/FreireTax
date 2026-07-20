@@ -210,6 +210,13 @@ def regras_tese():
         # colidir com crédito presumido)
         ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS",
          {"all": ["AQUISICAO"], "any": ["PIS", "COFINS"], "hint": ["ICMS", "CREDIT"], "conf": "alta"}),
+        # IPI — exclusão do IPI da base do PIS/COFINS (indústria: bebidas, etc.)
+        ("EXCLUSÃO DO IPI DA BASE DE CÁLCULO DO PIS E DA COFINS",
+         {"any": ["IPI", "IMPOSTO SOBRE PRODUTOS INDUSTRIALIZADOS"], "conf": "alta"}),
+        # ICMS "por dentro" — exclusão do ICMS da própria base de cálculo
+        ("EXCLUSÃO DO ICMS DA PRÓPRIA BASE DE CÁLCULO (ICMS POR DENTRO)",
+         {"all": ["ICMS"], "any": ["POR DENTRO", "PROPRIA BASE", "NA PROPRIA BASE", "NA SUA BASE"],
+          "conf": "alta"}),
         ("MAJORAÇÃO DE 10% SOBRE O LUCRO PRESUMIDO",
          {"any": ["ADICIONAL DE 10", "MAJORACAO"], "hint": ["LUCRO PRESUMIDO", "IRPJ"], "conf": "media"}),
         # GENÉRICA por último: PIS/COFINS na PRÓPRIA base
@@ -234,6 +241,45 @@ def objeto_administrativo(assunto):
     são situações pontuais, não teses (direito geral garantido)."""
     a = _norm(assunto)
     return any(k in a for k in ASSUNTO_ADMINISTRATIVO)
+
+
+# Corroboração: por FAMÍLIA de tese (marcador no nome), quais keywords no ASSUNTO
+# do DataJud confirmam a classificação vinda da petição. Ordem = específico->genérico.
+CORROB = [
+    ("PERSE",                      ["PERSE", "SETOR DE EVENTOS", "PROGRAMA EMERGENCIAL", "ISENCAO", "BENEFICIO"]),
+    ("HOSPITA",                    ["HOSPITALAR", "SAUDE", "IRPJ", "CSLL", "LUCRO PRESUMIDO"]),
+    ("TERCO",                      ["TERCO", "FERIAS", "SALARIO DE CONTRIBUICAO", "CONTRIBUICAO"]),
+    ("RAT",                        ["RAT", "GILRAT", "FAP", "ATIVIDADE PREPONDERANTE", "GRAU DE RISCO",
+                                    "ACIDENTE", "CONTRIBUICAO SOBRE A FOLHA"]),
+    ("IRRF",                       ["IRRF", "RETIDO", "IMPOSTO DE RENDA"]),
+    ("CREDITAMENTO",               ["CREDITO", "AQUISICAO", "NAO CUMULATIVIDADE", "INSUMO"]),
+    ("ICMS-ST",                    ["SUBSTITUICAO TRIBUTARIA", "ICMS-ST", "ICMS ST"]),
+    ("IPI",                        ["IPI", "PRODUTOS INDUSTRIALIZADOS"]),
+    ("POR DENTRO",                 ["ICMS", "POR DENTRO", "BASE DE CALCULO"]),
+    ("CREDITOS PRESUMIDOS",        ["CREDITO PRESUMIDO", "INCENTIVO", "SUBVENCAO", "BENEFICIO FISCAL",
+                                    "NAO CUMULATIVIDADE"]),
+    ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "SUBVENCAO", "BENEFICIO FISCAL",
+                                    "NAO CUMULATIVIDADE"]),
+    ("ISS",                        ["ISS", "SERVICO"]),
+    ("MAJORACAO",                  ["LUCRO PRESUMIDO", "ADICIONAL", "MAJORACAO", "IRPJ"]),
+    ("PIS E DA COFINS DA SUA BASE",["PIS", "COFINS", "BASE DE CALCULO", "NAO CUMULATIVIDADE"]),
+    ("VERBAS INDENIZATORIAS",      ["CONTRIBUICAO", "FOLHA", "SALARIO DE CONTRIBUICAO"]),
+]
+
+
+def assunto_corrobora(tese, assunto):
+    """A classificação (vinda da petição) é CONFIRMADA pelo assunto do DataJud?
+    Assunto vazio (processo novo não indexado / consulta falhou) => NÃO corrobora
+    (conservador: cravar só quando há confirmação independente). Sem regra p/ a
+    família => não bloqueia (True)."""
+    a = _norm(assunto)
+    if not a.strip():
+        return False
+    tn = _norm(tese or "")
+    for marcador, kws in CORROB:
+        if _norm(marcador) in tn:
+            return any(_tem(k, a) for k in kws)
+    return True
 
 
 def _tem(tok, texto):
@@ -465,6 +511,10 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
         tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "",
                                       catalogo_norm, c.get("peticao", ""))
         c["tese"], c["conf"] = tese, conf
+        # só CRAVA a tese se o assunto do DataJud CORROBORA a petição; senão fica
+        # como sugestão (evita cravar tese errada quando a petição casou termo solto
+        # ou o assunto está vazio — processo novo não indexado).
+        c["corrob"] = assunto_corrobora(tese, c["assunto"]) if tese else False
         c["fonte_tese"] = "petição" if c.get("peticao") else "assunto(DataJud)"
     analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), True)
 
@@ -486,7 +536,11 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 "classe": c.get("classe"), "orgao": c.get("orgao"),
                 "situacao": c.get("situacao"), "polo": "ativo",
                 "assunto": c.get("assunto") or None,
-                "acao_id": TESE_ID.get(_norm(c["tese"])) if c.get("tese") else None,
+                # crava acao_id só se corroborado; senão tese vai como SUGESTÃO
+                "acao_id": (TESE_ID.get(_norm(c["tese"]))
+                            if (c.get("tese") and c.get("corrob")) else None),
+                "metadados": ({"tese_sugerida": c["tese"], "conf": c.get("conf")}
+                              if (c.get("tese") and not c.get("corrob")) else {}),
                 "fonte": "pje_tjrn+datajud",
             } for c in persistir]
             try:
@@ -712,10 +766,12 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
         tese = it.get("tese")
         pet = "petição lida" if it.get("peticao") else "petição NÃO lida (autos bloqueados?)"
         linha += f"\n        assunto (DataJud): {asn or '(sem assunto)'}  |  {pet}"
-        if tese:
+        if tese and it.get("corrob"):
             linha += (f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')}"
-                      f", fonte: {it.get('fonte_tese','?')})")
+                      f", fonte: {it.get('fonte_tese','?')}, assunto CORROBORA)")
             teses_ja.setdefault(tese, []).append(it["proc"])
+        elif tese:
+            linha += (f"\n        => tese SUGERIDA (assunto não confirma — revisar): {tese.strip()}")
         elif asn and objeto_administrativo(asn):
             linha += "\n        => objeto administrativo específico (CND/certidão) — NÃO é tese"
         elif asn and assunto_tributario(asn):
