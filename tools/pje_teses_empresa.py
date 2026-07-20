@@ -33,10 +33,15 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_U
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 PROFILE = str(ROOT / ".pje-chrome-profile")
 
-# Graus do TJRN (mesmo caminho Seam, hosts diferentes). 2g = recursos/apelações.
+# Graus a buscar. ESTADUAL (TJRN) = ICMS/ISS/IPTU. FEDERAL (TRF5, seção RN) =
+# PIS/COFINS/IRPJ/CSLL/IRRF — a MAIORIA das teses tributárias tramita aqui, então
+# sem o federal o sistema perdia a maior parte das teses. Mesmo caminho Seam,
+# hosts diferentes. 2g = recursos/apelações. rótulo curto vira nome do "grau".
 GRAUS = {
-    "1g": "https://pje1g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
-    "2g": "https://pje2g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "1g":  "https://pje1g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "2g":  "https://pje2g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "1gf": "https://pje1g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "2gf": "https://pje2g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
 }
 RE_PROC = re.compile(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}")
 TESE_ID = {}  # norm(nome da tese) -> acao_id; preenchido em main()
@@ -233,7 +238,8 @@ def main():
                     help="persiste os candidatos em empresa_processos_tributarios (visível no CRM)")
     ap.add_argument("--inspect", action="store_true",
                     help="1ª vez: loga, dumpa os campos do form + linhas cruas de resultado e sai")
-    ap.add_argument("--graus", default="1g,2g", help="quais graus buscar (default 1g,2g)")
+    ap.add_argument("--graus", default="1g,2g,1gf,2gf",
+                    help="graus a buscar: 1g/2g=TJRN estadual, 1gf/2gf=TRF5 federal (default todos)")
     args = ap.parse_args()
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: rode `. tools\\pje-env.local.ps1` antes.")
@@ -280,7 +286,7 @@ def main():
 
         for i, cnpj_digits in enumerate(alvos, 1):
             print(f"\n———— [{i}/{len(alvos)}] ————", flush=True)
-            _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm,
+            _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm,
                             args.inspect, args.autos, args.gravar)
             if args.inspect:
                 print("\n[INSPECT] fim (só a 1ª empresa). Rode sem --inspect.")
@@ -322,7 +328,31 @@ def _login_once(ctx, page, url):
     return None
 
 
-def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, autos=False, gravar=False):
+def _garantir_form(page, ctx, url, grau):
+    """Garante o form de consulta do grau. O FEDERAL (TRF5) é outra instância PJe
+    e pode exigir login A3 próprio — não re-navega a tela de login (recarregar
+    impede o A3), só navega uma vez e aguarda o form em qualquer aba. Retorna a
+    page com o form (pode ser outra aba) ou None (login não concluído a tempo)."""
+    try:
+        page.goto(url, wait_until="domcontentloaded")
+    except Exception:
+        pass
+    avisou = False
+    for i in range(150):  # ~2.5min máx; retorna assim que o form aparece
+        for pg in list(ctx.pages):
+            try:
+                if pg.query_selector(SEL_FORM):
+                    return pg
+            except Exception:
+                pass
+        if i == 6 and not avisou:  # ~6s sem form => provável login desta instância
+            print(f">>> [{grau}] Se pedir, faça LOGIN A3 nesta instância (Chrome). Aguardando...", flush=True)
+            avisou = True
+        page.wait_for_timeout(1000)
+    return None
+
+
+def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, inspect, autos=False, gravar=False):
     cnpj_fmt = f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
     emp = sb(f"empresas?select=id,nome,razao_social&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
     empresa = emp[0] if emp else None
@@ -333,11 +363,11 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, 
     todos = {}
     for grau in graus:
         url = GRAUS[grau]
-        for _ in range(15):  # garante o form (sessão compartilhada entre graus)
-            try: page.goto(url, wait_until="domcontentloaded")
-            except Exception: pass
-            page.wait_for_timeout(900)
-            if page.query_selector(SEL_FORM): break
+        pg = _garantir_form(page, ctx, url, grau)
+        if pg is None:
+            print(f"[{grau}] form indisponível (login não concluído nesta instância) — pulando este grau.")
+            continue
+        page = pg  # usa a aba onde o form apareceu (login federal pode abrir outra)
         if inspect:
             campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
                 .map(e => ({id:e.id, name:e.name, type:e.type})).filter(e => e.id||e.name)""")
@@ -462,23 +492,22 @@ def _empresa_polo(razao, ativo, passivo):
 
 
 def filtrar_teses(todos, razao):
-    """Fica SÓ com processo de TESE COMERCIAL: empresa AUTORA + classe de tese
-    (MS/Procedimento Comum/Declaratória/…) + órgão fazendário. Descarta ré,
-    embargos/execução/cumprimento e classe diversa NA FASE DA LISTA (grátis) —
-    é o que reduz o pool a abrir autos ao mínimo. Retorna (candidatos, contagem)."""
-    candidatos, motivos = [], {"re": 0, "sem_valor": 0, "nao_fazenda": 0, "nao_tese": 0}
+    """Candidatos a TESE COMERCIAL pela LISTA: empresa AUTORA + classe de tese
+    (MS/Procedimento Comum/Declaratória/…), descartando ré e embargos/execução/
+    cumprimento. NÃO filtra por 'vara fazendária' — isso só existe no estadual;
+    no FEDERAL o órgão é 'Vara Federal' genérica. O sinal de TRIBUTÁRIO é o
+    ASSUNTO do DataJud (aplicado depois), não o órgão. Retorna (candidatos, contagem)."""
+    candidatos, motivos = [], {"re": 0, "sem_valor": 0, "nao_tese": 0}
     for proc, r in todos.items():
         cells = r["cells"]
         classe, orgao = _col(cells, 5), _col(cells, 3)
         polo = _empresa_polo(razao, _col(cells, 6), _col(cells, 7))
         cn = _norm(classe)
-        if polo != "ativo":                                   # ré = sem valor
+        if polo != "ativo":                          # ré = sem valor
             motivos["re"] += 1; continue
-        if any(k in cn for k in CLASSES_SEM_VALOR):            # embargos/execução/cumprimento
+        if any(k in cn for k in CLASSES_SEM_VALOR):   # embargos/execução/cumprimento
             motivos["sem_valor"] += 1; continue
-        if not any(k in _norm(orgao) for k in ORGAO_FAZENDA):  # não fazendário = não tributário
-            motivos["nao_fazenda"] += 1; continue
-        if not any(k in cn for k in CLASSES_TESE):             # classe não é de tese comercial
+        if not any(k in cn for k in CLASSES_TESE):    # classe não é de tese
             motivos["nao_tese"] += 1; continue
         candidatos.append({"proc": proc, "grau": r["grau"], "classe": classe,
                            "orgao": orgao, "situacao": _col(cells, 8)})
@@ -540,12 +569,12 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
     print("\n" + "=" * 74)
     print(f"ANÁLISE DE TESES — {razao} ({cnpj_fmt})")
     print("=" * 74)
-    print(f"Processos (1g+2g): {total}  →  CANDIDATOS A TESE COMERCIAL: {len(candidatos)}")
-    print(f"  descartados: {motivos['re']} ré · {motivos['sem_valor']} embargos/execução/cumprimento "
-          f"· {motivos['nao_fazenda']} não-fazendário · {motivos['nao_tese']} classe diversa")
+    print(f"Processos (TJRN+TRF5, 1º/2º): {total}  →  CANDIDATOS (autora, classe de tese): {len(candidatos)}")
+    print(f"  descartados na lista: {motivos['re']} ré · {motivos['sem_valor']} embargos/execução/cumprimento "
+          f"· {motivos['nao_tese']} classe diversa  (o tributário é decidido pelo assunto do DataJud abaixo)")
 
     teses_ja = {}   # tese do catálogo -> [procs]
-    print(f"\n>>> PROCESSOS DE TESE COMERCIAL (empresa autora, vara fazendária) — {len(candidatos)}:")
+    print(f"\n>>> CANDIDATOS (empresa autora em classe de tese) — {len(candidatos)}:")
     if not candidatos:
         print("    (nenhum — a empresa não ajuizou tese tributária proativa no TJRN)")
     for it in candidatos:
