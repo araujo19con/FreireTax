@@ -155,6 +155,9 @@ def main():
     ap.add_argument("--cnpjs", help="lista de CNPJs separados por vírgula (1 login, N empresas)")
     ap.add_argument("--acao", metavar="ACAO_ID", help="analisa TODAS as empresas de uma ação (via elegibilidade)")
     ap.add_argument("--limit", type=int, default=200, help="máx de empresas no modo --acao")
+    ap.add_argument("--autos", action="store_true",
+                    help="abre os autos dos candidatos p/ ler o assunto CNJ e cravar a tese exata "
+                         "(gasta abertura de autos — sujeito ao limite diário do TJRN)")
     ap.add_argument("--inspect", action="store_true",
                     help="1ª vez: loga, dumpa os campos do form + linhas cruas de resultado e sai")
     ap.add_argument("--graus", default="1g,2g", help="quais graus buscar (default 1g,2g)")
@@ -201,7 +204,7 @@ def main():
 
         for i, cnpj_digits in enumerate(alvos, 1):
             print(f"\n———— [{i}/{len(alvos)}] ————", flush=True)
-            _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, args.inspect)
+            _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, args.inspect, args.autos)
             if args.inspect:
                 print("\n[INSPECT] fim (só a 1ª empresa). Rode sem --inspect.")
                 break
@@ -242,7 +245,7 @@ def _login_once(ctx, page, url):
     return None
 
 
-def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect):
+def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, autos=False):
     cnpj_fmt = f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
     emp = sb(f"empresas?select=id,nome,razao_social&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
     empresa = emp[0] if emp else None
@@ -281,8 +284,42 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect):
                     if c: print(f"     cell[{idx}]: {c[:120]}")
         for r in linhas:
             todos.setdefault(r["proc"], {**r, "grau": grau})
-    if not inspect:
-        analisar(todos, catalogo, catalogo_norm, razao, cnpj_fmt)
+    if inspect:
+        return
+
+    candidatos, motivos = filtrar_teses(todos, razao)
+    # Abre os autos SÓ dos candidatos (poucos) pra ler o assunto e cravar a tese.
+    if autos and candidatos:
+        for i, c in enumerate(candidatos):
+            # re-busca o grau do candidato (link precisa estar no DOM). goto pode
+            # dar ERR_ABORTED em JSF/a4j — retry curto em vez de derrubar o lote.
+            ok = False
+            for _t in range(3):
+                try:
+                    page.goto(GRAUS[c["grau"]], wait_until="domcontentloaded", timeout=60000)
+                    ok = True; break
+                except Exception:
+                    page.wait_for_timeout(1500)
+            if not ok:
+                c["assunto"] = None; c["tese"] = c["conf"] = None
+                continue
+            page.wait_for_timeout(700)
+            try:
+                _buscar(page, cnpj_digits, razao)
+            except Exception:
+                c["assunto"] = None; c["tese"] = c["conf"] = None
+                continue
+            page.wait_for_timeout(600)
+            try:
+                assunto, dump = _ler_assunto(page, c["proc"])
+            except Exception as e:
+                assunto, dump = None, f"erro: {e}"
+            c["assunto"] = assunto
+            tese, conf = classificar_tese(assunto or "", c["classe"], catalogo_norm)
+            c["tese"], c["conf"] = tese, conf
+            if i == 0 and not assunto:  # 1ª vez sem assunto: dump p/ calibrar o regex
+                print(f"  [dump autos {c['proc']}]:\n{(dump or '')[:500]}")
+    analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), autos)
 
 
 def _buscar(page, cnpj_digits, razao):
@@ -368,27 +405,92 @@ def filtrar_teses(todos, razao):
     return candidatos, motivos
 
 
-def analisar(todos, catalogo, catalogo_norm, razao, cnpj_fmt):
-    candidatos, motivos = filtrar_teses(todos, razao)
+def _ler_assunto(page, proc):
+    """Abre a aba dos autos do processo e lê o ASSUNTO no cabeçalho (HTML) —
+    NÃO abre documento/PDF (o assunto está na capa). Retorna (assunto, dump_cru).
+    Se os autos não abrirem (limite diário do TJRN), retorna (None, motivo)."""
+    ctx = page.context
+    try:
+        with ctx.expect_page(timeout=20000) as pinfo:
+            page.evaluate("""(proc)=>{
+              const tr=[...document.querySelectorAll('table tr')].find(t=>t.innerText.includes(proc));
+              const a=tr&&[...tr.querySelectorAll('a')].find(x=>x.textContent.includes(proc));
+              if(a) a.click();
+            }""", proc)
+        autos = pinfo.value
+    except Exception:
+        return None, "autos não abriram (limite diário do TJRN?)"
+    # O painel "Detalhes/Informações do processo" (com o ASSUNTO) carrega async
+    # e às vezes num frame. Poll ~18s por texto que contenha "Assunto", varrendo
+    # a página E todos os frames; tenta abrir um toggle de detalhes se existir.
+    try:
+        autos.wait_for_load_state("domcontentloaded")
+    except Exception:
+        pass
+    txt = ""
+    for k in range(18):
+        autos.wait_for_timeout(1000)
+        try:
+            if k == 2:  # tenta revelar o painel de dados do processo
+                autos.evaluate("""() => {
+                  const el=[...document.querySelectorAll('a,button,span,div')]
+                    .find(e=>/informaç|detalhe|dados do processo|capa/i.test(e.textContent||''));
+                  if(el) el.click();
+                }""")
+            partes = [autos.evaluate("() => document.body ? document.body.innerText : ''") or ""]
+            for fr in autos.frames:
+                try: partes.append(fr.evaluate("() => document.body ? document.body.innerText : ''") or "")
+                except Exception: pass
+            txt = "\n".join(partes)
+        except Exception:
+            txt = txt or ""
+        if re.search(r"assunto", txt, re.I) and len(txt) > 400:
+            break
+    try: autos.close()
+    except Exception: pass
+    m = re.search(r"Assunto[s]?\b\s*[:\-]?\s*(.+)", txt, re.I)
+    assunto = ""
+    if m:
+        assunto = re.split(r"\n|Classe|Órg[ãa]o|Distribuiç|Autuaç|Valor da|Pol[oô]",
+                           m.group(1), 1)[0].strip()[:200]
+    return assunto, txt[:2000]
+
+
+def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
     print("\n" + "=" * 74)
     print(f"ANÁLISE DE TESES — {razao} ({cnpj_fmt})")
     print("=" * 74)
-    print(f"Processos (1g+2g): {len(todos)}  →  CANDIDATOS A TESE COMERCIAL: {len(candidatos)}")
+    print(f"Processos (1g+2g): {total}  →  CANDIDATOS A TESE COMERCIAL: {len(candidatos)}")
     print(f"  descartados: {motivos['re']} ré · {motivos['sem_valor']} embargos/execução/cumprimento "
           f"· {motivos['nao_fazenda']} não-fazendário · {motivos['nao_tese']} classe diversa")
 
+    teses_ja = {}   # tese do catálogo -> [procs]
     print(f"\n>>> PROCESSOS DE TESE COMERCIAL (empresa autora, vara fazendária) — {len(candidatos)}:")
     if not candidatos:
         print("    (nenhum — a empresa não ajuizou tese tributária proativa no TJRN)")
     for it in candidatos:
-        print(f"    {it['proc']} [{it['grau']}] {it['classe']} | {it['orgao']} | {it['situacao']}")
-    if candidatos:
-        print("    (a tese EXATA de cada um exige abrir os autos p/ ler o assunto — passo seguinte)")
+        linha = f"    {it['proc']} [{it['grau']}] {it['classe']} | {it['orgao']} | {it['situacao']}"
+        if autos:
+            asn = it.get("assunto") or ""
+            tese = it.get("tese")
+            linha += f"\n        assunto: {asn or '(não lido — autos bloqueados?)'}"
+            if tese:
+                linha += f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')})"
+                teses_ja.setdefault(tese, []).append(it["proc"])
+            elif asn:
+                linha += "\n        => assunto tributário, mas não bate tese do catálogo (revisar)"
+        print(linha)
+    if candidatos and not autos:
+        print("    (a tese EXATA de cada um exige abrir os autos — rode com --autos)")
 
-    print(f"\n>>> TESES DO CATÁLOGO A OFERECER (gap — {len(catalogo)}):")
-    print("    Nenhuma tese casada ainda (o assunto exato vem dos autos). Os processos")
-    print("    acima são os únicos candidatos a já-ajuizada; o resto do catálogo é oferta.")
-    for n in catalogo:
+    ja = list(teses_ja.keys())
+    if autos and ja:
+        print(f"\n>>> TESES QUE A EMPRESA JÁ AJUIZOU ({len(ja)}):")
+        for t in ja:
+            print(f"    ✓ {t.strip()}  ({', '.join(teses_ja[t])})")
+    gap = [n for n in catalogo if n not in teses_ja]
+    print(f"\n>>> TESES A OFERECER (gap — {len(gap)} de {len(catalogo)}):")
+    for n in gap:
         print(f"    ○ {n.strip()}")
 
 
