@@ -164,32 +164,44 @@ ASSUNTO_TRIB = [
 # Vocabulário calibrado nas teses reais: crédito presumido ICMS, terço de férias,
 # equiparação clínica/hospital, PIS/COFINS na própria base, RAT, IRRF, etc.
 def regras_tese():
+    # As keywords casam contra ASSUNTO(DataJud) + CLASSE + TEXTO DA PETIÇÃO. Como
+    # o assunto CNJ engana (ex: PERSE tagado "Crédito Presumido"), o objeto real
+    # vem da petição. Ordem = específica -> genérica (primeira que casa vence).
     return [
-        # ESPECÍFICAS (assunto CNJ inequívoco -> confiança alta)
-        ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
-         {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
+        # PERSE — setor de eventos (assunto CNJ costuma NÃO citar; só a petição)
+        ("MANUTENÇÃO NO PERSE (PROGRAMA EMERGENCIAL DE RETOMADA DO SETOR DE EVENTOS)",
+         {"any": ["PERSE", "PROGRAMA EMERGENCIAL DE RETOMADA", "SETOR DE EVENTOS"], "conf": "alta"}),
         ("RESCISÓRIA DO TEMA 985 (TERÇO DE FÉRIAS)",
          {"any": ["TERCO CONSTITUCIONAL", "TERCO DE FERIAS", "ADICIONAL DE FERIAS",
                   "1/3 DE FERIAS", "TEMA 985"], "conf": "alta"}),
         ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
-         {"any": ["RAT", "FAP", "GILRAT", "SAT", "RISCOS AMBIENTAIS"], "conf": "alta"}),
+         {"any": ["RAT", "FAP", "GILRAT", "SAT", "RISCOS AMBIENTAIS DO TRABALHO",
+                  "ATIVIDADE PREPONDERANTE"], "conf": "alta"}),
         ("RECUPERAÇÃO IRRF E FOLHA PARA MUNICÍPIOS",
          {"any": ["IRRF", "IMPOSTO DE RENDA RETIDO", "RETIDO NA FONTE"], "conf": "alta"}),
+        ("EQUIPARAÇÃO DE CLÍNICAS A HOSPITAIS (IRPJ/CSLL)",
+         {"any": ["SERVICO HOSPITALAR", "SERVICOS HOSPITALARES", "HOSPITALAR",
+                  "EQUIPARACAO A HOSPITAL", "SERVICOS DE SAUDE"],
+          "hint": ["IRPJ", "CSLL", "LUCRO PRESUMIDO"], "conf": "alta"}),
+        # crédito presumido de ICMS FORA da base do PIS/COFINS (incentivo fiscal) —
+        # tese do processo 0023290-14.2025. Vem ANTES da de IRPJ/CSLL.
+        ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
+         {"all": ["CREDITO PRESUMIDO"], "any": ["PIS", "COFINS"], "conf": "alta"}),
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
          {"any": ["INCENTIVO FISCAL", "SUBVENCAO", "SUBVENCOES", "BENEFICIO FISCAL"],
           "hint": ["ICMS"], "conf": "alta"}),
+        # crédito presumido de ICMS fora da base do IRPJ/CSLL (sem PIS/COFISN acima)
+        ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
+         {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
+        # creditamento PIS/COFINS sobre ICMS na aquisição (exige AQUISICAO p/ não
+        # colidir com crédito presumido)
         ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS",
-         {"all": ["CREDIT"], "any": ["PIS", "COFINS"], "hint": ["ICMS", "AQUISICAO"], "conf": "alta"}),
-        # equiparação de clínicas a hospitais (IRPJ/CSLL lucro presumido 8%/12%)
-        ("EQUIPARAÇÃO DE CLÍNICAS A HOSPITAIS (IRPJ/CSLL)",
-         {"any": ["SERVICO HOSPITALAR", "SERVICOS HOSPITALARES", "HOSPITALAR",
-                  "EQUIPARACAO", "CLINICA"], "hint": ["IRPJ", "CSLL", "LUCRO PRESUMIDO"], "conf": "alta"}),
+         {"all": ["AQUISICAO"], "any": ["PIS", "COFINS"], "hint": ["ICMS", "CREDIT"], "conf": "alta"}),
         ("MAJORAÇÃO DE 10% SOBRE O LUCRO PRESUMIDO",
-         {"any": ["ADICIONAL"], "hint": ["LUCRO PRESUMIDO", "IRPJ"], "conf": "media"}),
-        # GENÉRICA por último: PIS/COFINS na PRÓPRIA base (o CNJ costuma tagar só
-        # "Cofins"/"PIS"+"Base de Cálculo") -> confiança média, confirmar.
+         {"any": ["ADICIONAL DE 10", "MAJORACAO"], "hint": ["LUCRO PRESUMIDO", "IRPJ"], "conf": "media"}),
+        # GENÉRICA por último: PIS/COFINS na PRÓPRIA base
         ("EXCLUSÃO DO PIS E DA COFINS DA SUA BASE DE CÁLCULO",
-         {"any": ["PIS", "COFINS", "PIS/PASEP", "PIS/COFINS", "PASEP"], "conf": "media"}),
+         {"all": ["BASE DE CALCULO"], "any": ["PIS", "COFINS"], "conf": "media"}),
     ]
 
 
@@ -204,9 +216,10 @@ def assunto_tributario(assunto):
     return any(k in a for k in ASSUNTO_TRIB)
 
 
-def classificar_tese(assunto, classe, catalogo_norm):
-    """Retorna (nome_tese_do_catalogo | None, confianca). Best-effort pelo assunto."""
-    texto = _norm(assunto) + " " + _norm(classe)
+def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
+    """Retorna (nome_tese_do_catalogo | None, confianca). Casa contra assunto CNJ
+    + classe + TEXTO DA PETIÇÃO (o objeto real; o assunto CNJ engana)."""
+    texto = _norm(assunto) + " " + _norm(classe) + " " + _norm(peticao)
     for nome, rg in regras_tese():
         if _norm(nome) not in catalogo_norm:
             continue  # tese não está no catálogo do escritório
@@ -391,18 +404,28 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 for idx, c in enumerate(r["cells"]):
                     if c: print(f"     cell[{idx}]: {c[:120]}")
         for r in linhas:
-            todos.setdefault(r["proc"], {**r, "grau": grau})
+            if r["proc"] in todos:
+                continue
+            # abre a PETIÇÃO dos candidatos AGORA (página está nos resultados deste
+            # grau — evita re-navegar). É o objeto real da tese.
+            if not inspect and _eh_candidato(r["cells"], razao):
+                r["peticao"] = _abrir_peticao(page, r["proc"])
+                _fechar_abas_extras(page)
+            todos[r["proc"]] = {**r, "grau": grau}
     if inspect:
         return
 
     candidatos, motivos = filtrar_teses(todos, razao)
-    # Crava a TESE via DataJud (assunto/classe CNJ OFICIAL, sem A3 nem limite —
-    # funciona em 1º e 2º grau). É isso que diferencia "candidato" de tese exata.
+    # Crava a TESE pelo OBJETO DA PETIÇÃO (fonte da verdade — o assunto CNJ do
+    # DataJud engana: PERSE vem tagado "Crédito Presumido", etc.). DataJud entra
+    # como sinal complementar (classe + assunto). Petição não lida -> só assunto.
     for c in candidatos:
         classe_dj, assuntos, _grau_dj, _org = datajud_meta(c["proc"])
         c["assunto"] = "; ".join(assuntos) if assuntos else ""
-        tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "", catalogo_norm)
+        tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "",
+                                      catalogo_norm, c.get("peticao", ""))
         c["tese"], c["conf"] = tese, conf
+        c["fonte_tese"] = "petição" if c.get("peticao") else "assunto(DataJud)"
     analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), True)
 
     # persiste no CRM SÓ o que é de fato tributário (tese cravada OU assunto
@@ -491,6 +514,70 @@ def _empresa_polo(razao, ativo, passivo):
     return "?"
 
 
+def _eh_candidato(cells, razao):
+    """True se a linha é candidata a tese: empresa AUTORA + classe de tese +
+    não é embargos/execução/cumprimento. (mesma regra do filtrar_teses, por linha)"""
+    cn = _norm(_col(cells, 5))
+    if _empresa_polo(razao, _col(cells, 6), _col(cells, 7)) != "ativo":
+        return False
+    if any(k in cn for k in CLASSES_SEM_VALOR):
+        return False
+    return any(k in cn for k in CLASSES_TESE)
+
+
+def _fechar_abas_extras(page):
+    """Fecha abas órfãs de autos, deixa só a consulta (evita acúmulo que trava)."""
+    try:
+        for pg in list(page.context.pages):
+            if pg is not page:
+                try: pg.close()
+                except Exception: pass
+    except Exception:
+        pass
+
+
+def _abrir_peticao(page, proc):
+    """Abre os autos (nova aba) -> 1º documento (petição inicial) -> extrai o TEXTO
+    do PDF.js. É a FONTE do objeto real da tese (o assunto CNJ engana). Retorna ''
+    se os autos não abrirem (limite diário do TJRN/TRF5) — aí cai no assunto."""
+    ctx = page.context
+    try:
+        with ctx.expect_page(timeout=20000) as pinfo:
+            page.evaluate("""(proc)=>{
+              const tr=[...document.querySelectorAll('table tr')].find(t=>t.innerText.includes(proc));
+              const a=tr&&[...tr.querySelectorAll('a')].find(x=>x.textContent.includes(proc));
+              if(a) a.click();
+            }""", proc)
+        autos = pinfo.value
+    except Exception:
+        return ""
+    txt = ""
+    try:
+        autos.wait_for_load_state("domcontentloaded")
+        autos.wait_for_timeout(2500)
+        try:
+            autos.click("a[title='Primeiro documento'], [aria-label='Primeiro documento']", timeout=8000)
+        except Exception:
+            pass
+        autos.wait_for_timeout(2000)
+        for k in range(16):
+            txt = autos.evaluate(r"""() => {
+              const ifr=[...document.querySelectorAll('iframe')].find(f=>/pdfjs|viewer\.html/.test(f.src||''));
+              if(!ifr) return '';
+              try { const d=ifr.contentDocument; if(!d) return '';
+                let t=''; d.querySelectorAll('.textLayer').forEach(l=>t+=l.innerText+'\n');
+                return t || (d.body?d.body.innerText:''); } catch(e){ return ''; }
+            }""") or ""
+            if len(txt) > 800: break
+            if k >= 7 and len(txt) < 300: break
+            autos.wait_for_timeout(900)
+    except Exception:
+        pass
+    try: autos.close()
+    except Exception: pass
+    return txt
+
+
 def filtrar_teses(todos, razao):
     """Candidatos a TESE COMERCIAL pela LISTA: empresa AUTORA + classe de tese
     (MS/Procedimento Comum/Declaratória/…), descartando ré e embargos/execução/
@@ -510,7 +597,8 @@ def filtrar_teses(todos, razao):
         if not any(k in cn for k in CLASSES_TESE):    # classe não é de tese
             motivos["nao_tese"] += 1; continue
         candidatos.append({"proc": proc, "grau": r["grau"], "classe": classe,
-                           "orgao": orgao, "situacao": _col(cells, 8)})
+                           "orgao": orgao, "situacao": _col(cells, 8),
+                           "peticao": r.get("peticao", "")})
     return candidatos, motivos
 
 
@@ -581,9 +669,11 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
         linha = f"    {it['proc']} [{it['grau']}] {it['classe']} | {it['orgao']} | {it['situacao']}"
         asn = it.get("assunto") or ""
         tese = it.get("tese")
-        linha += f"\n        assunto (DataJud): {asn or '(sem assunto no DataJud)'}"
+        pet = "petição lida" if it.get("peticao") else "petição NÃO lida (autos bloqueados?)"
+        linha += f"\n        assunto (DataJud): {asn or '(sem assunto)'}  |  {pet}"
         if tese:
-            linha += f"\n        => TESE DO CATÁLOGO: {tese.strip()} (confiança {it.get('conf')})"
+            linha += (f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')}"
+                      f", fonte: {it.get('fonte_tese','?')})")
             teses_ja.setdefault(tese, []).append(it["proc"])
         elif asn and assunto_tributario(asn):
             linha += "\n        => tributário, mas fora do catálogo de teses (revisar manualmente)"
