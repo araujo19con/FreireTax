@@ -152,28 +152,39 @@ ASSUNTO_TRIB = [
     "RAT", "SAT", "GILRAT", "FGTS", "INSS", "TERCO DE FERIAS", "TERCO CONSTITUCIONAL",
 ]
 
-# Mapa ASSUNTO/texto -> tese do catálogo (regras: precisa de TODOS os termos "all"
-# e de pelo menos um "any"). Best-effort a partir do assunto da lista; a tese
-# exata pode exigir os autos, mas o assunto já indica forte.
+# Mapa ASSUNTO(CNJ do DataJud) -> tese do catálogo. Ordem IMPORTA: primeira regra
+# que casa vence, então as ESPECÍFICAS vêm antes das genéricas (senão um "Cofins"
+# bare cairia na tese de PIS/COFINS-base antes de checar creditamento etc.).
+# Só valem regras cuja tese está no catálogo do escritório (checado em runtime).
+# Vocabulário calibrado nas teses reais: crédito presumido ICMS, terço de férias,
+# equiparação clínica/hospital, PIS/COFINS na própria base, RAT, IRRF, etc.
 def regras_tese():
     return [
-        ("EXCLUSÃO DO PIS E DA COFINS DA SUA BASE DE CÁLCULO",
-         {"any": ["ICMS BASE", "EXCLUSAO ICMS", "ICMS DA BASE", "BASE DE CALCULO PIS", "PIS/COFINS ICMS"],
-          "hint": ["PIS", "COFINS", "ICMS"]}),
-        ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS",
-         {"hint": ["CREDIT", "PIS", "COFINS", "ICMS", "AQUISICAO"]}),
-        ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
-         {"any": ["INCENTIVO FISCAL", "SUBVENCAO", "BENEFICIO FISCAL"], "hint": ["ICMS"]}),
+        # ESPECÍFICAS (assunto CNJ inequívoco -> confiança alta)
         ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
-         {"all": ["CREDITO PRESUMIDO"], "hint": ["ICMS", "IRPJ", "CSLL"]}),
-        ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
-         {"any": ["RAT", "SAT", "GILRAT", "RISCOS AMBIENTAIS"]}),
-        ("MAJORAÇÃO DE 10% SOBRE O LUCRO PRESUMIDO",
-         {"any": ["ADICIONAL", "MAJORACAO"], "hint": ["LUCRO PRESUMIDO", "IRPJ"]}),
+         {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
         ("RESCISÓRIA DO TEMA 985 (TERÇO DE FÉRIAS)",
-         {"any": ["TERCO DE FERIAS", "TERCO CONSTITUCIONAL", "TEMA 985", "1/3 DE FERIAS"]}),
+         {"any": ["TERCO CONSTITUCIONAL", "TERCO DE FERIAS", "ADICIONAL DE FERIAS",
+                  "1/3 DE FERIAS", "TEMA 985"], "conf": "alta"}),
+        ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
+         {"any": ["RAT", "FAP", "GILRAT", "SAT", "RISCOS AMBIENTAIS"], "conf": "alta"}),
         ("RECUPERAÇÃO IRRF E FOLHA PARA MUNICÍPIOS",
-         {"any": ["IRRF", "IMPOSTO DE RENDA RETIDO"]}),
+         {"any": ["IRRF", "IMPOSTO DE RENDA RETIDO", "RETIDO NA FONTE"], "conf": "alta"}),
+        ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
+         {"any": ["INCENTIVO FISCAL", "SUBVENCAO", "SUBVENCOES", "BENEFICIO FISCAL"],
+          "hint": ["ICMS"], "conf": "alta"}),
+        ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS",
+         {"all": ["CREDIT"], "any": ["PIS", "COFINS"], "hint": ["ICMS", "AQUISICAO"], "conf": "alta"}),
+        # equiparação de clínicas a hospitais (IRPJ/CSLL lucro presumido 8%/12%)
+        ("EQUIPARAÇÃO DE CLÍNICAS A HOSPITAIS (IRPJ/CSLL)",
+         {"any": ["SERVICO HOSPITALAR", "SERVICOS HOSPITALARES", "HOSPITALAR",
+                  "EQUIPARACAO", "CLINICA"], "hint": ["IRPJ", "CSLL", "LUCRO PRESUMIDO"], "conf": "alta"}),
+        ("MAJORAÇÃO DE 10% SOBRE O LUCRO PRESUMIDO",
+         {"any": ["ADICIONAL"], "hint": ["LUCRO PRESUMIDO", "IRPJ"], "conf": "media"}),
+        # GENÉRICA por último: PIS/COFINS na PRÓPRIA base (o CNJ costuma tagar só
+        # "Cofins"/"PIS"+"Base de Cálculo") -> confiança média, confirmar.
+        ("EXCLUSÃO DO PIS E DA COFINS DA SUA BASE DE CÁLCULO",
+         {"any": ["PIS", "COFINS", "PIS/PASEP", "PIS/COFINS", "PASEP"], "conf": "media"}),
     ]
 
 
@@ -198,9 +209,10 @@ def classificar_tese(assunto, classe, catalogo_norm):
             continue
         if "any" in rg and not any(t in texto for t in rg["any"]):
             continue
-        # bateu regra estrutural; hint reforça confiança
-        hits = sum(1 for t in rg.get("hint", []) if t in texto)
-        conf = "alta" if ("all" in rg or "any" in rg) and hits >= 1 else "media"
+        # confiança base da regra; hint presente sobe "media" -> "alta"
+        conf = rg.get("conf", "media")
+        if conf == "media" and any(t in texto for t in rg.get("hint", [])):
+            conf = "alta"
         return nome, conf
     return None, None
 
