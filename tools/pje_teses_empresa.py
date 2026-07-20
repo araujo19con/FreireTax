@@ -253,6 +253,10 @@ def main():
                     help="1ª vez: loga, dumpa os campos do form + linhas cruas de resultado e sai")
     ap.add_argument("--graus", default="1g,2g,1gf,2gf",
                     help="graus a buscar: 1g/2g=TJRN estadual, 1gf/2gf=TRF5 federal (default todos)")
+    ap.add_argument("--cdp", action="store_true",
+                    help="conecta no Chrome REAL (via chrome-cdp.ps1) — NECESSÁRIO pro A3 federal "
+                         "(TRF5/PDPJ): o Chromium do Playwright não apresenta o certificado no SSO")
+    ap.add_argument("--port", type=int, default=9222, help="porta CDP (default 9222)")
     args = ap.parse_args()
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: rode `. tools\\pje-env.local.ps1` antes.")
@@ -283,8 +287,13 @@ def main():
     graus = [g.strip() for g in args.graus.split(",") if g.strip() in GRAUS]
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
-                                                    viewport={"width": 1360, "height": 940})
+        if args.cdp:
+            # Chrome REAL (chrome-cdp.ps1) — onde o A3 federal já foi logado.
+            browser = p.chromium.connect_over_cdp(f"http://localhost:{args.port}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        else:
+            ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
+                                                       viewport={"width": 1360, "height": 940})
         def _aceitar(d):
             try: d.accept()
             except Exception: pass
@@ -317,7 +326,7 @@ def _login_once(ctx, page, url):
     por baixo impede o certificado). Retorna a page logada ou None (timeout)."""
     try: page.goto(url, wait_until="domcontentloaded")
     except Exception: pass
-    print(">>> Faça LOGIN no TJRN com o A3 na janela do Chrome. Aguardando...", flush=True)
+    print(">>> Se pedir, faça LOGIN A3 na janela do Chrome (aguardando o form de consulta)...", flush=True)
     for _ in range(300):  # ~10 min
         for pg in list(ctx.pages):
             try:
