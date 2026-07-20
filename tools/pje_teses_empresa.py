@@ -236,6 +236,13 @@ def objeto_administrativo(assunto):
     return any(k in a for k in ASSUNTO_ADMINISTRATIVO)
 
 
+def _tem(tok, texto):
+    r"""Casa TOKEN como PALAVRA INTEIRA (\b...\b). Substring cru dava falso-positivo
+    grave: 'RAT' casava em 'conTRATo'/'adminisTRATivo', 'SAT' em 'SATisfação',
+    'ISS' em 'comISSão', 'IPI' em 'municÍPIo'. Assim só casa o token isolado."""
+    return re.search(r"\b" + re.escape(tok) + r"\b", texto) is not None
+
+
 def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
     """Retorna (nome_tese_do_catalogo | None, confianca). Casa contra assunto CNJ
     + classe + TEXTO DA PETIÇÃO (o objeto real; o assunto CNJ engana)."""
@@ -247,13 +254,13 @@ def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
     for nome, rg in regras_tese():
         if _norm(nome) not in catalogo_norm:
             continue  # tese não está no catálogo do escritório
-        if "all" in rg and not all(t in texto for t in rg["all"]):
+        if "all" in rg and not all(_tem(t, texto) for t in rg["all"]):
             continue
-        if "any" in rg and not any(t in texto for t in rg["any"]):
+        if "any" in rg and not any(_tem(t, texto) for t in rg["any"]):
             continue
         # confiança base da regra; hint presente sobe "media" -> "alta"
         conf = rg.get("conf", "media")
-        if conf == "media" and any(t in texto for t in rg.get("hint", [])):
+        if conf == "media" and any(_tem(t, texto) for t in rg.get("hint", [])):
             conf = "alta"
         return nome, conf
     return None, None
