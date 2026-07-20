@@ -4,10 +4,11 @@ pje_teses_empresa.py — dado o CNPJ de uma empresa, descobre no PJe-TJRN (1º e
 grau) QUAIS TESES TRIBUTÁRIAS ela já ajuizou, pra saber quais o escritório ainda
 pode oferecer (gap = catálogo de teses − teses já ajuizadas).
 
-COMO (barato): a consulta do PJe já traz CLASSE e ASSUNTO na LISTA de resultados
-— então classificamos SEM abrir os autos (não gasta o limite diário do TJRN).
-Só a busca é usada. 1º e 2º grau do MESMO processo compartilham o número CNJ
-unificado (NNNNNNN-DD.AAAA.J.TR.OOOO) → dedup por número.
+COMO: (1) PJe (com A3) busca por CNPJ e traz número/classe/órgão/polos na LISTA
+— filtramos aí (autora + classe de tese + vara fazendária), sem abrir autos.
+(2) Pra CRAVAR A TESE, o assunto CNJ vem do **DataJud** (API pública do CNJ, sem
+A3 nem limite, 1º e 2º grau) — o visualizador de autos do PJe NÃO mostra o
+assunto. 1º e 2º grau compartilham o número CNJ unificado → dedup por número.
 
 FILTROS (definidos pelo usuário):
   - CLASSE incompatível com tese tributária (penal, família, consumidor, cobrança
@@ -38,6 +39,7 @@ GRAUS = {
     "2g": "https://pje2g.tjrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
 }
 RE_PROC = re.compile(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}")
+TESE_ID = {}  # norm(nome da tese) -> acao_id; preenchido em main()
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +51,50 @@ def sb(path):
         headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"})
     with urllib.request.urlopen(req, timeout=40) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+# DataJud (API pública do CNJ) — fonte OFICIAL do assunto/classe CNJ por número
+# de processo, de qualquer grau, sem A3 e sem limite. Chave pública do wiki do
+# CNJ (pode rotacionar — override por env DATAJUD_API_KEY). É o que crava a TESE.
+DATAJUD_KEY = os.environ.get(
+    "DATAJUD_API_KEY", "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==")
+# sigla do tribunal pelo número CNJ (....J.TR....). J=8 estadual: TR->sigla.
+_TR_ESTADUAL = {"20": "tjrn", "15": "tjpb", "17": "tjpe", "06": "tjce",
+                "26": "tjsp", "19": "tjrj", "13": "tjmg"}
+def _datajud_endpoint(numero):
+    m = re.search(r"\.(\d)\.(\d{2})\.", numero)
+    if not m:
+        return "api_publica_tjrn"
+    j, tr = m.group(1), m.group(2)
+    if j == "8":
+        return f"api_publica_{_TR_ESTADUAL.get(tr, 'tjrn')}"
+    if j == "4":  # Justiça Federal → TRF por região (TR = 01..06)
+        return f"api_publica_trf{int(tr)}"
+    return "api_publica_tjrn"
+
+
+def datajud_meta(numero):
+    """Retorna (classe, [assuntos], grau, orgao) do DataJud, ou (None, [], ...)."""
+    nd = re.sub(r"\D", "", numero)
+    body = json.dumps({"query": {"match": {"numeroProcesso": nd}}}).encode()
+    req = urllib.request.Request(
+        f"https://api-publica.datajud.cnj.jus.br/{_datajud_endpoint(numero)}/_search",
+        data=body, method="POST",
+        headers={"Authorization": f"APIKey {DATAJUD_KEY}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        return None, [], None, f"erro DataJud: {e}"
+    hits = d.get("hits", {}).get("hits", [])
+    if not hits:
+        return None, [], None, None
+    s = hits[0]["_source"]
+    classe = (s.get("classe") or {}).get("nome")
+    assuntos = [a.get("nome") for a in (s.get("assuntos") or []) if a.get("nome")]
+    grau = s.get("grau")
+    orgao = (s.get("orgaoJulgador") or {}).get("nome")
+    return classe, assuntos, grau, orgao
 
 
 def sb_upsert(path, body, on_conflict):
@@ -195,8 +241,11 @@ def main():
     if not alvos:
         sys.exit("Nada a analisar. Passe --cnpj, --cnpjs ou --acao.")
 
-    catalogo = [r["nome"] for r in sb("acoes_tributarias?select=nome&status=eq.Ativa")]
-    catalogo_norm = {_norm(n): n for n in catalogo}
+    cat_rows = sb("acoes_tributarias?select=id,nome&status=eq.Ativa")
+    catalogo = [r["nome"] for r in cat_rows]
+    catalogo_norm = {_norm(n): n for n in catalogo}          # norm(nome) -> nome (tese no catálogo)
+    global TESE_ID
+    TESE_ID = {_norm(r["nome"]): r["id"] for r in cat_rows}  # norm(nome) -> acao_id (p/ gravar)
     print(f"{len(alvos)} empresa(s) a analisar | catálogo: {len(catalogo)} teses")
 
     from playwright.sync_api import sync_playwright
@@ -305,38 +354,14 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, 
         return
 
     candidatos, motivos = filtrar_teses(todos, razao)
-    # Abre os autos SÓ dos candidatos (poucos) pra ler o assunto e cravar a tese.
-    if autos and candidatos:
-        for i, c in enumerate(candidatos):
-            # re-busca o grau do candidato (link precisa estar no DOM). goto pode
-            # dar ERR_ABORTED em JSF/a4j — retry curto em vez de derrubar o lote.
-            ok = False
-            for _t in range(3):
-                try:
-                    page.goto(GRAUS[c["grau"]], wait_until="domcontentloaded", timeout=60000)
-                    ok = True; break
-                except Exception:
-                    page.wait_for_timeout(1500)
-            if not ok:
-                c["assunto"] = None; c["tese"] = c["conf"] = None
-                continue
-            page.wait_for_timeout(700)
-            try:
-                _buscar(page, cnpj_digits, razao)
-            except Exception:
-                c["assunto"] = None; c["tese"] = c["conf"] = None
-                continue
-            page.wait_for_timeout(600)
-            try:
-                assunto, dump = _ler_assunto(page, c["proc"])
-            except Exception as e:
-                assunto, dump = None, f"erro: {e}"
-            c["assunto"] = assunto
-            tese, conf = classificar_tese(assunto or "", c["classe"], catalogo_norm)
-            c["tese"], c["conf"] = tese, conf
-            if i == 0 and not assunto:  # 1ª vez sem assunto: dump p/ calibrar o regex
-                print(f"  [dump autos {c['proc']}]:\n{(dump or '')[:500]}")
-    analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), autos)
+    # Crava a TESE via DataJud (assunto/classe CNJ OFICIAL, sem A3 nem limite —
+    # funciona em 1º e 2º grau). É isso que diferencia "candidato" de tese exata.
+    for c in candidatos:
+        classe_dj, assuntos, _grau_dj, _org = datajud_meta(c["proc"])
+        c["assunto"] = "; ".join(assuntos) if assuntos else ""
+        tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "", catalogo_norm)
+        c["tese"], c["conf"] = tese, conf
+    analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), True)
 
     # persiste os candidatos no CRM (visível no EmpresaDetailSheet)
     if gravar and candidatos:
@@ -347,9 +372,9 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, 
                 "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
                 "classe": c.get("classe"), "orgao": c.get("orgao"),
                 "situacao": c.get("situacao"), "polo": "ativo",
-                "assunto": c.get("assunto"),
-                "acao_id": None,  # tese exata (acao_id) fica p/ quando o assunto CNJ for lido
-                "fonte": "pje_tjrn",
+                "assunto": c.get("assunto") or None,
+                "acao_id": TESE_ID.get(_norm(c["tese"])) if c.get("tese") else None,
+                "fonte": "pje_tjrn+datajud",
             } for c in candidatos]
             try:
                 sb_upsert("empresa_processos_tributarios", body, "empresa_id,numero")
@@ -506,24 +531,26 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
         print("    (nenhum — a empresa não ajuizou tese tributária proativa no TJRN)")
     for it in candidatos:
         linha = f"    {it['proc']} [{it['grau']}] {it['classe']} | {it['orgao']} | {it['situacao']}"
-        if autos:
-            asn = it.get("assunto") or ""
-            tese = it.get("tese")
-            linha += f"\n        assunto: {asn or '(não extraído — o visualizador de autos não mostra o assunto CNJ; está na aba Capa/Detalhes — calibração pendente)'}"
-            if tese:
-                linha += f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')})"
-                teses_ja.setdefault(tese, []).append(it["proc"])
-            elif asn:
-                linha += "\n        => assunto tributário, mas não bate tese do catálogo (revisar)"
+        asn = it.get("assunto") or ""
+        tese = it.get("tese")
+        linha += f"\n        assunto (DataJud): {asn or '(sem assunto no DataJud)'}"
+        if tese:
+            linha += f"\n        => TESE DO CATÁLOGO: {tese.strip()} (confiança {it.get('conf')})"
+            teses_ja.setdefault(tese, []).append(it["proc"])
+        elif asn and assunto_tributario(asn):
+            linha += "\n        => tributário, mas fora do catálogo de teses (revisar manualmente)"
+        elif asn:
+            linha += "\n        => NÃO é matéria tributária (não é tese)"
         print(linha)
-    if candidatos and not autos:
-        print("    (a tese EXATA de cada um exige abrir os autos — rode com --autos)")
 
     ja = list(teses_ja.keys())
-    if autos and ja:
+    if ja:
         print(f"\n>>> TESES QUE A EMPRESA JÁ AJUIZOU ({len(ja)}):")
         for t in ja:
             print(f"    ✓ {t.strip()}  ({', '.join(teses_ja[t])})")
+    elif candidatos:
+        print("\n>>> NENHUMA tese do catálogo foi ajuizada por esta empresa "
+              "(os processos-candidatos não são teses nossas pelo assunto CNJ).")
     gap = [n for n in catalogo if n not in teses_ja]
     print(f"\n>>> TESES A OFERECER (gap — {len(gap)} de {len(catalogo)}):")
     for n in gap:
