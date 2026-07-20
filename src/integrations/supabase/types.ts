@@ -429,6 +429,75 @@ export type Database = {
           },
         ];
       };
+      empresa_processos_tributarios: {
+        Row: {
+          acao_id: string | null;
+          assunto: string | null;
+          classe: string | null;
+          detectado_em: string;
+          detectado_por: string | null;
+          empresa_id: string;
+          fonte: string;
+          grau: string | null;
+          id: string;
+          metadados: Json;
+          numero: string;
+          orgao: string | null;
+          polo: string | null;
+          situacao: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          acao_id?: string | null;
+          assunto?: string | null;
+          classe?: string | null;
+          detectado_em?: string;
+          detectado_por?: string | null;
+          empresa_id: string;
+          fonte?: string;
+          grau?: string | null;
+          id?: string;
+          metadados?: Json;
+          numero: string;
+          orgao?: string | null;
+          polo?: string | null;
+          situacao?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          acao_id?: string | null;
+          assunto?: string | null;
+          classe?: string | null;
+          detectado_em?: string;
+          detectado_por?: string | null;
+          empresa_id?: string;
+          fonte?: string;
+          grau?: string | null;
+          id?: string;
+          metadados?: Json;
+          numero?: string;
+          orgao?: string | null;
+          polo?: string | null;
+          situacao?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "empresa_processos_tributarios_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "empresa_processos_tributarios_acao_id_fkey";
+            columns: ["acao_id"];
+            isOneToOne: false;
+            referencedRelation: "acoes_tributarias";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       empresas: {
         Row: {
           bairro: string | null;

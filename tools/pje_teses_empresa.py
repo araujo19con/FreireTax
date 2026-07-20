@@ -51,6 +51,19 @@ def sb(path):
         return json.loads(r.read().decode("utf-8"))
 
 
+def sb_upsert(path, body, on_conflict):
+    """POST com upsert (merge) — usado pra gravar os processos detectados."""
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/{path}?on_conflict={on_conflict}",
+        data=data, method="POST",
+        headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}",
+                 "Content-Type": "application/json",
+                 "Prefer": "resolution=merge-duplicates,return=minimal"})
+    with urllib.request.urlopen(req, timeout=40) as r:
+        return r.status
+
+
 # ---------------------------------------------------------------------------
 # Classificação — CLASSE e ASSUNTO
 # ---------------------------------------------------------------------------
@@ -158,6 +171,8 @@ def main():
     ap.add_argument("--autos", action="store_true",
                     help="abre os autos dos candidatos p/ ler o assunto CNJ e cravar a tese exata "
                          "(gasta abertura de autos — sujeito ao limite diário do TJRN)")
+    ap.add_argument("--gravar", action="store_true",
+                    help="persiste os candidatos em empresa_processos_tributarios (visível no CRM)")
     ap.add_argument("--inspect", action="store_true",
                     help="1ª vez: loga, dumpa os campos do form + linhas cruas de resultado e sai")
     ap.add_argument("--graus", default="1g,2g", help="quais graus buscar (default 1g,2g)")
@@ -204,7 +219,8 @@ def main():
 
         for i, cnpj_digits in enumerate(alvos, 1):
             print(f"\n———— [{i}/{len(alvos)}] ————", flush=True)
-            _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, args.inspect, args.autos)
+            _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm,
+                            args.inspect, args.autos, args.gravar)
             if args.inspect:
                 print("\n[INSPECT] fim (só a 1ª empresa). Rode sem --inspect.")
                 break
@@ -245,10 +261,11 @@ def _login_once(ctx, page, url):
     return None
 
 
-def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, autos=False):
+def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, autos=False, gravar=False):
     cnpj_fmt = f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
     emp = sb(f"empresas?select=id,nome,razao_social&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
     empresa = emp[0] if emp else None
+    empresa_id = (empresa or {}).get("id")
     razao = (empresa or {}).get("razao_social") or (empresa or {}).get("nome") or ""
     print(f"CNPJ {cnpj_fmt} | {razao or '(não está no CRM)'}", flush=True)
 
@@ -320,6 +337,25 @@ def _processar_cnpj(page, cnpj_digits, graus, catalogo, catalogo_norm, inspect, 
             if i == 0 and not assunto:  # 1ª vez sem assunto: dump p/ calibrar o regex
                 print(f"  [dump autos {c['proc']}]:\n{(dump or '')[:500]}")
     analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), autos)
+
+    # persiste os candidatos no CRM (visível no EmpresaDetailSheet)
+    if gravar and candidatos:
+        if not empresa_id:
+            print("  [gravar] empresa não está no CRM (sem empresa_id) — nada gravado.")
+        else:
+            body = [{
+                "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
+                "classe": c.get("classe"), "orgao": c.get("orgao"),
+                "situacao": c.get("situacao"), "polo": "ativo",
+                "assunto": c.get("assunto"),
+                "acao_id": None,  # tese exata (acao_id) fica p/ quando o assunto CNJ for lido
+                "fonte": "pje_tjrn",
+            } for c in candidatos]
+            try:
+                sb_upsert("empresa_processos_tributarios", body, "empresa_id,numero")
+                print(f"  [gravar] {len(body)} processo(s) tributário(s) gravado(s) no CRM.")
+            except Exception as e:
+                print(f"  [gravar] falha: {e}")
 
 
 def _buscar(page, cnpj_digits, razao):

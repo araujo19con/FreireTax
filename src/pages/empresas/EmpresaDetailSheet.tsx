@@ -118,6 +118,17 @@ interface ProspeccaoTimelineRow {
   created_at: string;
   acoes_tributarias: { nome: string } | null;
 }
+interface ProcTribRow {
+  id: string;
+  numero: string;
+  grau: string | null;
+  classe: string | null;
+  orgao: string | null;
+  situacao: string | null;
+  assunto: string | null;
+  acao_id: string | null;
+  detectado_em: string;
+}
 interface PastaLinkRow {
   pasta_id: string;
   pastas_empresas: { nome: string } | null;
@@ -136,6 +147,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
           pastas: [],
           audit: [],
           prospeccoes: [],
+          procTrib: [],
         } as {
           eleg: ElegRow[];
           tarefas: TarefaRow[];
@@ -143,44 +155,51 @@ function useEmpresaRelations(empresaId: string | undefined) {
           pastas: string[];
           audit: AuditRow[];
           prospeccoes: ProspeccaoTimelineRow[];
+          procTrib: ProcTribRow[];
         };
-      const [elegRes, tarRes, reunRes, pastasRes, auditRes, prospRes] = await Promise.all([
-        supabase
-          .from("elegibilidade")
-          .select(
-            "id, acao_id, elegivel, justificativa, valor_potencial_estimado, ja_ajuizada, ajuizada_por_nos, ajuizamento_notas, acoes_tributarias(nome, tipo)"
-          )
-          .eq("empresa_id", empresaId),
-        supabase
-          .from("tarefas")
-          .select("id, titulo, status, prazo, prioridade, created_at")
-          .eq("empresa_id", empresaId)
-          .order("created_at", { ascending: false })
-          .limit(20),
-        supabase
-          .from("reunioes")
-          .select("id, titulo, data_inicio, status")
-          .eq("empresa_id", empresaId)
-          .order("data_inicio", { ascending: false })
-          .limit(20),
-        supabase
-          .from("pasta_empresa_items")
-          .select("pasta_id, pastas_empresas(nome)")
-          .eq("empresa_id", empresaId),
-        supabase
-          .from("audit_logs")
-          .select("id, acao, created_at, detalhes")
-          .eq("tabela", "empresas")
-          .eq("registro_id", empresaId)
-          .order("created_at", { ascending: false })
-          .limit(30),
-        supabase
-          .from("prospeccoes")
-          .select("id, status_prospeccao, created_at, acoes_tributarias(nome)")
-          .eq("empresa_id", empresaId)
-          .order("created_at", { ascending: false })
-          .limit(20),
-      ]);
+      const [elegRes, tarRes, reunRes, pastasRes, auditRes, prospRes, procTribRes] =
+        await Promise.all([
+          supabase
+            .from("elegibilidade")
+            .select(
+              "id, acao_id, elegivel, justificativa, valor_potencial_estimado, ja_ajuizada, ajuizada_por_nos, ajuizamento_notas, acoes_tributarias(nome, tipo)"
+            )
+            .eq("empresa_id", empresaId),
+          supabase
+            .from("tarefas")
+            .select("id, titulo, status, prazo, prioridade, created_at")
+            .eq("empresa_id", empresaId)
+            .order("created_at", { ascending: false })
+            .limit(20),
+          supabase
+            .from("reunioes")
+            .select("id, titulo, data_inicio, status")
+            .eq("empresa_id", empresaId)
+            .order("data_inicio", { ascending: false })
+            .limit(20),
+          supabase
+            .from("pasta_empresa_items")
+            .select("pasta_id, pastas_empresas(nome)")
+            .eq("empresa_id", empresaId),
+          supabase
+            .from("audit_logs")
+            .select("id, acao, created_at, detalhes")
+            .eq("tabela", "empresas")
+            .eq("registro_id", empresaId)
+            .order("created_at", { ascending: false })
+            .limit(30),
+          supabase
+            .from("prospeccoes")
+            .select("id, status_prospeccao, created_at, acoes_tributarias(nome)")
+            .eq("empresa_id", empresaId)
+            .order("created_at", { ascending: false })
+            .limit(20),
+          supabase
+            .from("empresa_processos_tributarios")
+            .select("id, numero, grau, classe, orgao, situacao, assunto, acao_id, detectado_em")
+            .eq("empresa_id", empresaId)
+            .order("detectado_em", { ascending: false }),
+        ]);
       const pastaLinks = (pastasRes.data || []) as unknown as PastaLinkRow[];
       return {
         eleg: (elegRes.data || []) as unknown as ElegRow[],
@@ -189,6 +208,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
         pastas: pastaLinks.map((r) => r.pastas_empresas?.nome).filter((v): v is string => !!v),
         audit: (auditRes.data || []) as unknown as AuditRow[],
         prospeccoes: (prospRes.data || []) as unknown as ProspeccaoTimelineRow[],
+        procTrib: (procTribRes.data || []) as unknown as ProcTribRow[],
       };
     },
   });
@@ -852,6 +872,49 @@ export function EmpresaDetailSheet({
                         </Card>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Processos tributários próprios detectados no PJe (por CNPJ) */}
+                {relations && relations.procTrib.length > 0 && (
+                  <div className="space-y-2 rounded-lg border border-info/30 bg-info/5 p-3">
+                    <div className="flex items-center gap-2">
+                      <ScanSearch className="h-4 w-4 text-info" />
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Processos tributários no PJe ({relations.procTrib.length}) — já ajuizados
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Ações tributárias que a própria empresa já ajuizou (autora, vara fazendária),
+                      detectadas por CNPJ. As teses do catálogo não vinculadas acima são a oferta.
+                    </p>
+                    {relations.procTrib.map((p) => (
+                      <div
+                        key={p.id}
+                        className="rounded-md border border-border bg-background p-2 text-xs"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Gavel className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="font-mono">{p.numero}</span>
+                          {p.grau && (
+                            <Badge variant="outline" className="text-[9px]">
+                              {p.grau}
+                            </Badge>
+                          )}
+                        </div>
+                        {(p.classe || p.orgao) && (
+                          <p className="ml-4 mt-0.5 text-[11px] text-muted-foreground">
+                            {[p.classe, p.orgao].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
+                        {p.assunto && (
+                          <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
+                        )}
+                        {p.situacao && (
+                          <p className="ml-4 text-[10px] text-muted-foreground">{p.situacao}</p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </TabsContent>
