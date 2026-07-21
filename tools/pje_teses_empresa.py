@@ -46,13 +46,17 @@ GRAUS = {
 # PJe 1.x do TRF5: instância PRÓPRIA por Seção Judiciária (uma por estado). Os
 # processos antigos ficaram lá — o 2.x (pje1g/pje2g.trf5) não os mostra. Qual
 # instância consultar depende da UF DA EMPRESA. Grau "1x" resolve em runtime.
+# ATENÇÃO: usar SEMPRE a consulta de TERCEIROS. A "ConsultaProcesso/listView"
+# só devolve processos em que o ADVOGADO LOGADO atua — com ela a varredura
+# retornava só os casos do próprio escritório e dava "0 processos" para empresas
+# que litigam bastante (ex.: Dois A Engenharia: 1 em vez de 6).
 PJE_1X = {
-    "RN": "https://pje.jfrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
-    "PB": "https://pje.jfpb.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
-    "PE": "https://pje.jfpe.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
-    "AL": "https://pje.jfal.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
-    "SE": "https://pje.jfse.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
-    "CE": "https://pje.jfce.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "RN": "https://pje.jfrn.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
+    "PB": "https://pje.jfpb.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
+    "PE": "https://pje.jfpe.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
+    "AL": "https://pje.jfal.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
+    "SE": "https://pje.jfse.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
+    "CE": "https://pje.jfce.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
 }
 PJE_1X_2G = "https://pje.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam"
 # PROTOCOLO PADRÃO de análise de teses (o que roda quando a UI pede): federal
@@ -184,6 +188,9 @@ ASSUNTO_TRIB = [
     "TAXA", "DIVIDA ATIVA", "EXECUCAO FISCAL", "CERTIDAO", "CND", "REFIS",
     "PARCELAMENTO", "COMPENSACAO", "RESTITUICAO", "REPETICAO DE INDEBITO",
     "BASE DE CALCULO", "ALIQUOTA", "SIMPLES NACIONAL", "DIFAL", "SUBSTITUICAO TRIBUTARIA",
+    # "não cumulatividade" é regime de PIS/COFINS — é tributário, e sem isto
+    # processos assim eram descartados como "não é matéria tributária".
+    "NAO CUMULATIVIDADE", "LANCAMENTO", "ISENCAO", "IMUNIDADE", "PRESCRICAO",
     "RAT", "SAT", "GILRAT", "FGTS", "INSS", "TERCO DE FERIAS", "TERCO CONSTITUCIONAL",
 ]
 # Objetos ADMINISTRATIVOS ESPECÍFICOS — NÃO são tese (não garantem um direito
@@ -568,6 +575,10 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
         linhas = page.evaluate(r"""() => {
           const out=[];
           for (const tr of document.querySelectorAll('table tr')) {
+            // SÓ linha-folha: <tr> container de tabela aninhada também casa o
+            // número (do 1º processo da tabela interna) e vem ANTES no DOM —
+            // o dedup ficava com ele e todas as células saíam erradas.
+            if (tr.querySelector('tr')) continue;
             const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
             if (!m) continue;
             const cells = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim());
@@ -659,6 +670,19 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 print(f"  [gravar] falha: {e}")
 
 
+def _campo_cnpj_1x(page):
+    """Campo de CNPJ no PJe 1.x — Terceiros (consultaProcessoTerceirosListCNPJ)
+    ou a consulta do advogado (cpfCpnjCNPJ). Reconsultado após cada AJAX."""
+    for sel in ("input[id$=':consultaProcessoTerceirosListCNPJ']",
+                "input[id*='consultaProcessoTerceirosListCNPJ']",
+                "input[id$=':cpfCpnjCNPJ']",
+                "input[id*='cpfCpnjCNPJ']"):
+        el = page.query_selector(sel)
+        if el:
+            return el
+    return None
+
+
 def _buscar(page, cnpj_digits, razao):
     """Busca por CNPJ: seleciona o radio 'cnpj' e preenche o campo documentoParte
     (o campo real de CPF/CNPJ da parte no PJe TJRN). Fallback: Nome da Parte.
@@ -683,22 +707,29 @@ def _buscar(page, cnpj_digits, razao):
     # PJe 1.x (instância da Seção Judiciária): o CNPJ tem campo PRÓPRIO
     # (consultarProcessoForm:cpfCpnjRadioCPFCNPJ:cpfCpnjCNPJ), não o documentoParte
     # do 2.x. Sem isto caía no fallback por razão social e voltava 0 linhas.
-    doc1x = (page.query_selector("input[id$=':cpfCpnjCNPJ']")
-             or page.query_selector("input[id*='cpfCpnjCNPJ']"))
+    # 1.x: consulta de TERCEIROS (campo próprio) ou a consulta do advogado (legado)
+    doc1x = _campo_cnpj_1x(page)
     if doc1x:
-        # LIMPA antes: o 1.x não zera a tabela ao iniciar nova busca, então a lista
-        # ANTERIOR continua na tela e o _esperar a lê como se fosse o resultado novo
-        # (dava contagem errada e sem os ícones de detalhe).
-        lim = page.query_selector("input[id$=':clearButton']")
+        # LIMPA só SE já houver resultados na tela (o 1.x não zera a tabela entre
+        # buscas). Numa página recém-carregada o clear é nocivo: ele re-renderiza
+        # o form e reseta o seletor CPF/CNPJ, e a busca sai SEM FILTRO.
+        tem_resultado = page.evaluate(
+            r"""() => [...document.querySelectorAll('table tr')]
+                 .some(tr => !tr.querySelector('tr') &&
+                       /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/.test(tr.innerText))"""
+        )
+        lim = page.query_selector("input[id$=':clearButton']") if tem_resultado else None
         if lim:
             try:
                 lim.click()
                 page.wait_for_timeout(2500)
             except Exception:
                 pass
-            # o clear re-renderiza o form via AJAX -> re-obtém o campo
-            doc1x = (page.query_selector("input[id$=':cpfCpnjCNPJ']")
-                     or page.query_selector("input[id*='cpfCpnjCNPJ']") or doc1x)
+            # o clear re-renderiza o form via AJAX -> RE-OBTÉM o campo com a
+            # MESMA lista de seletores. Com a lista antiga aqui, o handle ficava
+            # obsoleto (elemento destacado): o fill não surtia efeito e a busca
+            # rodava SEM FILTRO — voltava o banco inteiro (219 mil resultados).
+            doc1x = _campo_cnpj_1x(page) or doc1x
         doc1x.fill(cnpj_fmt)
         page.wait_for_timeout(300)
         page.click("input[value='Pesquisar'], input[id$=':searchButton'], "
@@ -785,13 +816,27 @@ def _col(cells, i):
     return cells[i] if i < len(cells) else ""
 
 
+_SUFIXOS_GENERICOS = {"LTDA", "ME", "EPP", "EIRELI", "SA", "S/A", "CIA", "COMPANHIA",
+                      "SPE", "DO", "DA", "DE", "DOS", "DAS", "E"}
+
+
 def _empresa_polo(razao, ativo, passivo):
-    r = _norm(razao)
-    # casa por prefixo do nome (razão social costuma vir com sufixo LTDA/EPP)
-    chave = " ".join([t for t in r.split() if len(t) > 2][:4])
-    if chave and chave in _norm(ativo):
+    """Em qual polo a empresa está. Casa por TOKENS (todos presentes), não por
+    substring contígua: a chave contígua quebrava em nomes com palavras curtas
+    — 'DOIS A ENGENHARIA E TECNOLOGIA' virava 'DOIS ENGENHARIA TECNOLOGIA',
+    que não existe no texto, e a empresa AUTORA era descartada como ré."""
+    toks = [t for t in _norm(razao).split()
+            if len(t) > 2 and t not in _SUFIXOS_GENERICOS][:4]
+    if not toks:
+        return "?"
+
+    def bate(txt):
+        t = _norm(txt)
+        return all(tok in t for tok in toks)
+
+    if bate(ativo):
         return "ativo"
-    if chave and chave in _norm(passivo):
+    if bate(passivo):
         return "passivo"
     return "?"
 
@@ -808,10 +853,20 @@ def _linha_campos(cells, razao):
     PJe 1.x: não tem essas colunas — a linha traz os polos ROTULADOS
     ('IMPETRANTE Fulano' / 'IMPETRADO Ministério...') e a classe junto do número.
     Sem isto, todo processo do 1.x caía como polo '?' e era descartado como ré."""
+    # 1º: polos ROTULADOS na célula ("AUTOR: X" / "RÉU: Y") — é o layout da
+    # consulta de TERCEIROS. Tem prioridade sobre índice fixo porque ali a
+    # coluna 6 é o polo PASSIVO: pelo índice, uma empresa RÉ virava "autora".
+    rotulado = any(
+        any(_norm(c).startswith(m) for m in POLO_ATIVO_ROT + POLO_PASSIVO_ROT)
+        for c in cells if c
+    )
     classe, orgao, situacao = _col(cells, 5), _col(cells, 3), _col(cells, 8)
-    polo = _empresa_polo(razao, _col(cells, 6), _col(cells, 7))
-    if polo != "?":
-        return polo, classe, orgao, situacao          # layout 2.x: inalterado
+    if not rotulado:
+        polo = _empresa_polo(razao, _col(cells, 6), _col(cells, 7))
+        if polo != "?":
+            return polo, classe, orgao, situacao      # layout 2.x: inalterado
+    else:
+        classe = orgao = situacao = ""                 # recalcula pelo conteúdo
     ativo = passivo = ""
     for c in cells:
         cn = _norm(c)
@@ -866,6 +921,17 @@ def _peticao_pdf_1x(ctx, base, id_processo):
         pg.wait_for_timeout(6000)
         pg.evaluate("() => { if (typeof selecionarFimPaginador === 'function') selecionarFimPaginador(); }")
         pg.wait_for_timeout(8000)
+        # o fim NEM SEMPRE é a inicial (ela costuma estar na penúltima página —
+        # o último doc pode ser um anexo juntado na autuação). Volta até achar.
+        tipo_doc = """() => {
+          const t=(document.body?document.body.innerText:'').replace(/\\s+/g,' ');
+          return (t.match(/Tipo de Documento:\\s*([^]{0,45}?)\\s+Documento:/i)||[])[1]||'';
+        }"""
+        for _ in range(6):
+            if "eti" in (pg.evaluate(tipo_doc) or ""):     # Petição
+                break
+            pg.evaluate("() => { if (typeof voltarPaginador === 'function') voltarPaginador(); }")
+            pg.wait_for_timeout(6000)
         idx = pg.evaluate(r"""() => {
           const todos = [...document.querySelectorAll('a')];
           let cand = -1;
