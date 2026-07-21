@@ -875,8 +875,12 @@ def _esperar(page, timeout_s=90, exige_contador=False):
         # quando o PJe diz o total, espera renderizar TODAS as linhas (a tabela
         # monta aos poucos; sair na 1ª perdia processos e os ícones de detalhe).
         esperado = st.get("esperado")
-        if esperado:
-            if st["n"] >= esperado:
+        if esperado is not None:
+            # ATENÇÃO ao 0: "Foram encontrados: 0 resultados" é resposta COMPLETA.
+            # Com `if esperado:` o zero caía no ramo de espera e o loop rodava o
+            # timeout inteiro — 90s parados em CADA empresa sem processo, que é a
+            # maioria. Era a principal fonte de lentidão da varredura.
+            if esperado == 0 or st["n"] >= esperado:
                 break
             estavel = 0
             continue
@@ -993,6 +997,26 @@ def _eh_candidato(cells, razao):
     return any(k in cn for k in CLASSES_TESE)
 
 
+def _ate(pg, js, timeout_s=20, diferente_de=None, passo_ms=500):
+    """Espera CONDICIONAL: roda `js` a cada passo até virar verdadeiro (ou mudar,
+    quando `diferente_de` é dado). Substitui sleeps fixos — o PJe costuma
+    responder em 1-3s, e esperar 6-8s "por garantia" era o que fazia a varredura
+    parecer travada. Retorna o último valor."""
+    v = None
+    for _ in range(int(timeout_s * 1000 / passo_ms)):
+        try:
+            v = pg.evaluate(js)
+        except Exception:
+            v = None
+        if diferente_de is None:
+            if v:
+                return v
+        elif v and v != diferente_de:
+            return v
+        pg.wait_for_timeout(passo_ms)
+    return v
+
+
 MOTIVO_CONSULTA = os.environ.get("PJE_MOTIVO_CONSULTA",
                                  "Analise de teses tributarias do cliente")
 
@@ -1063,20 +1087,25 @@ def _peticao_pdf_1x(ctx, base, id_processo):
             (r.headers.get("content-type", "") or "", r.url)))
         pg.goto(f"{base}/pje/Processo/Paginador/paginator.seam?idProcesso={id_processo}"
                 "&acessoProcessoTerceiros=", wait_until="domcontentloaded", timeout=90000)
-        pg.wait_for_timeout(6000)
-        pg.evaluate("() => { if (typeof selecionarFimPaginador === 'function') selecionarFimPaginador(); }")
-        pg.wait_for_timeout(8000)
-        # o fim NEM SEMPRE é a inicial (ela costuma estar na penúltima página —
-        # o último doc pode ser um anexo juntado na autuação). Volta até achar.
         tipo_doc = """() => {
           const t=(document.body?document.body.innerText:'').replace(/\\s+/g,' ');
           return (t.match(/Tipo de Documento:\\s*([^]{0,45}?)\\s+Documento:/i)||[])[1]||'';
         }"""
+        # ESPERA CONDICIONAL em vez de sleep fixo: sai assim que o documento
+        # aparece/troca. Antes eram 6s + 8s + 6x6s fixos (~50s por peça) mesmo
+        # quando a página já tinha respondido em 1-2s.
+        _ate(pg, tipo_doc, 25)
+        anterior = pg.evaluate(tipo_doc) or ""
+        pg.evaluate("() => { if (typeof selecionarFimPaginador === 'function') selecionarFimPaginador(); }")
+        _ate(pg, tipo_doc, 25, diferente_de=anterior)
+        # o fim NEM SEMPRE é a inicial (ela costuma estar na penúltima página —
+        # o último doc pode ser um anexo juntado na autuação). Volta até achar.
         for _ in range(6):
-            if "eti" in (pg.evaluate(tipo_doc) or ""):     # Petição
+            atual = pg.evaluate(tipo_doc) or ""
+            if "eti" in atual:                            # Petição
                 break
             pg.evaluate("() => { if (typeof voltarPaginador === 'function') voltarPaginador(); }")
-            pg.wait_for_timeout(6000)
+            _ate(pg, tipo_doc, 20, diferente_de=atual)
         idx = pg.evaluate(r"""() => {
           const todos = [...document.querySelectorAll('a')];
           let cand = -1;
@@ -1094,7 +1123,11 @@ def _peticao_pdf_1x(ctx, base, id_processo):
             return ""
         urls.clear()
         pg.query_selector_all("a")[idx].click()
-        pg.wait_for_timeout(7000)
+        # espera o PDF chegar (em vez de 7s fixos) — costuma vir em 1-3s
+        for _ in range(30):
+            if any("application/pdf" in ct for ct, _u in urls):
+                break
+            pg.wait_for_timeout(500)
         alvo = next((u for ct, u in urls if "application/pdf" in ct), None)
         if not alvo:
             return ""
