@@ -192,6 +192,13 @@ ASSUNTO_TRIB = [
     # processos assim eram descartados como "não é matéria tributária".
     "NAO CUMULATIVIDADE", "LANCAMENTO", "ISENCAO", "IMUNIDADE", "PRESCRICAO",
     "RAT", "SAT", "GILRAT", "FGTS", "INSS", "TERCO DE FERIAS", "TERCO CONSTITUCIONAL",
+    # o CNJ usa rótulos curtos que não trazem a palavra "tributário": o PAT da P J
+    # (0805286-95.2022) vinha como "Incidência sobre Lucro" e era descartado como
+    # "não é matéria tributária" — sendo IRPJ/CSLL.
+    "INCIDENCIA SOBRE LUCRO", "LUCRO PRESUMIDO", "LUCRO REAL", "SALARIO EDUCACAO",
+    "SALARIO-EDUCACAO", "SALARIO MATERNIDADE", "SALARIO-MATERNIDADE", "INCRA",
+    "SEBRAE", "SENAI", "SENAC", "SESC", "SESI", "SENAT", "APRENDIZ", "PAT",
+    "ALIMENTACAO DO TRABALHADOR", "FOLHA DE SALARIOS", "GORJETA",
 ]
 # Objetos ADMINISTRATIVOS ESPECÍFICOS — NÃO são tese (não garantem um direito
 # GERAL recorrente; resolvem uma situação pontual). Ex.: MS p/ expedição de CND /
@@ -217,12 +224,29 @@ def regras_tese():
         # PERSE — setor de eventos (assunto CNJ costuma NÃO citar; só a petição)
         ("MANUTENÇÃO NO PERSE (PROGRAMA EMERGENCIAL DE RETOMADA DO SETOR DE EVENTOS)",
          {"any": ["PERSE", "PROGRAMA EMERGENCIAL DE RETOMADA", "SETOR DE EVENTOS"], "conf": "alta"}),
+        # RESCISÓRIA só é protocolada no 2º GRAU (competência originária do
+        # tribunal). Sem o gate de classe, esta regra casava "1/3 de férias" e
+        # sequestrava ações de 1º grau que discutem CPP sobre verbas indenizatórias
+        # — foi o caso do 0804478-71.2014 (Procedimento Comum, 4ª Vara Federal).
         ("RESCISÓRIA DO TEMA 985 (TERÇO DE FÉRIAS)",
-         {"any": ["TERCO CONSTITUCIONAL", "TERCO DE FERIAS", "ADICIONAL DE FERIAS",
+         {"classe": ["RESCISORIA"],
+          "any": ["TERCO CONSTITUCIONAL", "TERCO DE FERIAS", "ADICIONAL DE FERIAS",
                   "1/3 DE FERIAS", "TEMA 985"], "conf": "alta"}),
-        ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
-         {"any": ["RAT", "FAP", "GILRAT", "SAT", "RISCOS AMBIENTAIS DO TRABALHO",
-                  "ATIVIDADE PREPONDERANTE"], "conf": "alta"}),
+        # CPP sobre VERBAS INDENIZATÓRIAS vem ANTES da de 20 salários mínimos: a
+        # verba (terço de férias, salário-maternidade, aviso prévio) é marcador
+        # MUITO mais específico que o nome de uma contribuição. O assunto do CNJ
+        # costuma trazer os dois — no 0804478-71.2014 (Ramalho) vinham "1/3 de
+        # férias" + "INCRA" + "Salário-Educação", e a de 20 SM levava o processo.
+        # O assunto usa hífen ("Salário-Maternidade") e o casamento é por palavra
+        # inteira, então as duas grafias precisam estar aqui.
+        ("NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
+         {"any": ["VERBAS INDENIZATORIAS", "VERBA INDENIZATORIA", "AVISO PREVIO INDENIZADO",
+                  "PRIMEIROS 15 DIAS", "AUXILIO CRECHE", "AUXILIO-CRECHE",
+                  "SALARIO MATERNIDADE", "SALARIO-MATERNIDADE",
+                  "ABONO PECUNIARIO", "ABONO ASSIDUIDADE",
+                  # terço de férias em 1º grau é ESTA tese, não a rescisória
+                  "TERCO CONSTITUCIONAL", "TERCO DE FERIAS", "ADICIONAL DE FERIAS",
+                  "1/3 DE FERIAS"], "conf": "alta"}),
         # LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS das contribuições de terceiros/parafiscais
         ("LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS DA BASE DAS CONTRIBUIÇÕES DE TERCEIROS",
          {"any": ["20 SALARIOS MINIMOS", "VINTE SALARIOS MINIMOS", "CONTRIBUICOES PARAFISCAIS",
@@ -232,6 +256,15 @@ def regras_tese():
         ("EXCLUSÃO DOS VALORES RETIDOS DO SEGURADO DA BASE DA CPP E DO RAT",
          {"any": ["VALORES RETIDOS", "VALOR RETIDO", "RETIDOS PELA", "RETIDOS A TITULO"],
           "hint": ["CONTRIBUICAO PREVIDENCIARIA", "RAT", "PATRONAL"], "conf": "alta"}),
+        # RAT por ENQUADRAMENTO vem DEPOIS das teses específicas de folha: a sigla
+        # RAT aparece em QUALQUER petição previdenciária ("...CPP, terceiros e
+        # RAT..."), então casar por ela fazia esta regra sequestrar aprendizes e
+        # valores retidos. O que distingue ESTA tese é a atividade preponderante /
+        # grau de risco / FAP — não a sigla.
+        ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
+         {"any": ["ATIVIDADE PREPONDERANTE", "FAP", "GRAU DE RISCO", "ENQUADRAMENTO",
+                  "RISCO LEVE", "RISCO MEDIO", "RISCO GRAVE", "ALIQUOTA DO RAT",
+                  "ALIQUOTA DO SAT", "REDUCAO DO RAT"], "conf": "alta"}),
         # IRRF de MUNICÍPIOS: exige o ente público, senão casava "retido na fonte"
         # de qualquer petição e sugeria a tese para empresa privada.
         ("RECUPERAÇÃO IRRF E FOLHA PARA MUNICÍPIOS",
@@ -257,9 +290,13 @@ def regras_tese():
         # por isso caíam em "tributário, fora do catálogo".
         # ICMS-ST: CRÉDITO (substituído aproveita o ST pago pelo substituto) vem
         # ANTES da de exclusão da base — são objetos diferentes.
+        # "CREDIT" era token TRUNCADO e o casamento é por palavra inteira: não casava
+        # em "créditos"/"creditamento", então esta regra nunca disparava e o processo
+        # caía na de EXCLUSÃO do ICMS-ST (objeto oposto: creditar x excluir da base).
         ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS-ST PAGO PELO SUBSTITUTO",
-         {"all": ["CREDIT"], "any": ["ICMS-ST", "ICMS ST", "SUBSTITUTO", "SUBSTITUIDO",
-                                     "SUBSTITUICAO TRIBUTARIA"], "conf": "alta"}),
+         {"any": ["CREDITO", "CREDITOS", "CREDITAMENTO", "CREDITAR", "APROVEITAR"],
+          "any2": ["ICMS-ST", "ICMS ST", "SUBSTITUTO", "SUBSTITUIDO",
+                   "SUBSTITUICAO TRIBUTARIA"], "conf": "alta"}),
         ("EXCLUSÃO DO ICMS-ST DA BASE DE CÁLCULO DO PIS E DA COFINS",
          {"any": ["ICMS-ST", "ICMS ST", "SUBSTITUICAO TRIBUTARIA", "SUBSTITUIDO"],
           "hint": ["PIS", "COFINS"], "conf": "alta"}),
@@ -284,13 +321,6 @@ def regras_tese():
         ("NÃO INCIDÊNCIA DE PIS E COFINS SOBRE RECEITAS FINANCEIRAS",
          {"any": ["RECEITAS FINANCEIRAS", "RECEITA FINANCEIRA", "DECRETO 8.426",
                   "8.426"], "conf": "alta"}),
-        ("NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
-         # o assunto do CNJ usa hífen ("Salário-Maternidade", "Auxílio-Creche") e o
-         # casamento é por palavra inteira — precisa das duas grafias.
-         {"any": ["VERBAS INDENIZATORIAS", "VERBA INDENIZATORIA", "AVISO PREVIO INDENIZADO",
-                  "PRIMEIROS 15 DIAS", "AUXILIO CRECHE", "AUXILIO-CRECHE",
-                  "SALARIO MATERNIDADE", "SALARIO-MATERNIDADE",
-                  "ABONO PECUNIARIO", "ABONO ASSIDUIDADE"], "conf": "alta"}),
         # crédito presumido de ICMS fora da base do IRPJ/CSLL (sem PIS/COFISN acima)
         ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
          {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
@@ -341,10 +371,8 @@ def objeto_administrativo(assunto):
 # do DataJud confirmam a classificação vinda da petição. Ordem = específico->genérico.
 CORROB = [
     ("PERSE",                      ["PERSE", "SETOR DE EVENTOS", "PROGRAMA EMERGENCIAL", "ISENCAO", "BENEFICIO"]),
-    ("HOSPITA",                    ["HOSPITALAR", "SAUDE", "IRPJ", "CSLL", "LUCRO PRESUMIDO"]),
+    ("HOSPITAIS",                  ["HOSPITALAR", "SAUDE", "IRPJ", "CSLL", "LUCRO PRESUMIDO"]),
     ("TERCO",                      ["TERCO", "FERIAS", "SALARIO DE CONTRIBUICAO", "CONTRIBUICAO"]),
-    ("RAT",                        ["RAT", "GILRAT", "FAP", "ATIVIDADE PREPONDERANTE", "GRAU DE RISCO",
-                                    "ACIDENTE", "CONTRIBUICAO SOBRE A FOLHA"]),
     ("IRRF",                       ["IRRF", "RETIDO", "IMPOSTO DE RENDA"]),
     ("CREDITAMENTO",               ["CREDITO", "AQUISICAO", "NAO CUMULATIVIDADE", "INSUMO"]),
     ("ICMS-ST",                    ["SUBSTITUICAO TRIBUTARIA", "ICMS-ST", "ICMS ST"]),
@@ -361,9 +389,15 @@ CORROB = [
                                     "CONTRIBUICAO", "CONTRIBUICOES"]),
     ("VALORES RETIDOS DO SEGURADO", ["CONTRIBUICAO", "PREVIDENCIARIA", "FOLHA", "RAT",
                                      "SALARIO DE CONTRIBUICAO", "IMPOSTO DE RENDA"]),
-    ("PAT",                        ["PAT", "ALIMENTACAO", "IRPJ", "LUCRO"]),
-    ("APRENDIZES",                 ["APRENDIZ", "APRENDIZES", "CONTRIBUICAO", "FOLHA",
-                                    "RAT", "TERCEIROS", "PREVIDENCIARIA"]),
+    ("PAT",                        ["PAT", "ALIMENTACAO", "IRPJ", "LUCRO",
+                                    "INCIDENCIA SOBRE LUCRO"]),
+    ("APRENDIZES",                 ["APRENDIZ", "APRENDIZES", "CONTRIBUICAO", "CONTRIBUICOES",
+                                    "FOLHA", "RAT", "TERCEIROS", "PREVIDENCIARIA",
+                                    "PREVIDENCIARIAS", "FOLHA DE SALARIOS"]),
+    # "RAT" tem de vir DEPOIS de APRENDIZES e VALORES RETIDOS: os nomes dessas
+    # duas teses terminam em "E RAT", e o primeiro marcador que casa vence.
+    ("RAT",                        ["RAT", "GILRAT", "FAP", "ATIVIDADE PREPONDERANTE",
+                                    "GRAU DE RISCO", "ACIDENTE", "CONTRIBUICAO SOBRE A FOLHA"]),
     ("TEMA 69",                    ["ICMS", "EXCLUSAO - ICMS", "BASE DE CALCULO", "PIS",
                                     "COFINS", "FATURAMENTO"]),
     ("RECEITAS FINANCEIRAS",       ["PIS", "COFINS", "RECEITA", "RECEITAS", "FINANCEIRA",
@@ -371,7 +405,16 @@ CORROB = [
     ("ISS",                        ["ISS", "SERVICO"]),
     ("MAJORACAO",                  ["LUCRO PRESUMIDO", "ADICIONAL", "MAJORACAO", "IRPJ"]),
     ("PIS E DA COFINS DA SUA BASE",["PIS", "COFINS", "BASE DE CALCULO", "NAO CUMULATIVIDADE"]),
-    ("VERBAS INDENIZATORIAS",      ["CONTRIBUICAO", "FOLHA", "SALARIO DE CONTRIBUICAO"]),
+    # o casamento é por PALAVRA INTEIRA: "CONTRIBUICAO" não casa em
+    # "CONTRIBUIÇÕES", e o assunto do CNJ vem quase sempre no plural. Faltavam os
+    # plurais e as próprias verbas — por isso o salário-maternidade da P J caía
+    # como "assunto não confirma" mesmo com o assunto dizendo Salário-Maternidade.
+    ("VERBAS INDENIZATORIAS",      ["CONTRIBUICAO", "CONTRIBUICOES", "PREVIDENCIARIA",
+                                    "PREVIDENCIARIAS", "FOLHA", "SALARIO DE CONTRIBUICAO",
+                                    "SALARIO-MATERNIDADE", "SALARIO MATERNIDADE",
+                                    "MATERNIDADE", "AUXILIO-CRECHE", "AUXILIO CRECHE",
+                                    "AVISO PREVIO", "FERIAS", "TERCO", "INDENIZATORIA",
+                                    "INDENIZATORIAS"]),
 ]
 
 
@@ -384,8 +427,11 @@ def assunto_corrobora(tese, assunto):
     if not a.strip():
         return False
     tn = _norm(tese or "")
+    # PALAVRA INTEIRA também no marcador: com substring, "PAT" casava dentro de
+    # "PATRONAL" e a tese de CPP sobre verbas indenizatórias era conferida contra
+    # as keywords do PAT (alimentação/IRPJ/lucro) — nunca corroborava.
     for marcador, kws in CORROB:
-        if _norm(marcador) in tn:
+        if _tem(_norm(marcador), tn):
             return any(_tem(k, a) for k in kws)
     return True
 
@@ -405,12 +451,23 @@ def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
     if objeto_administrativo(assunto):
         return None, None
     texto = _norm(assunto) + " " + _norm(classe) + " " + _norm(peticao)
+    cl = _norm(classe)
     for nome, rg in regras_tese():
         if _norm(nome) not in catalogo_norm:
             continue  # tese não está no catálogo do escritório
+        # algumas teses só existem em certa CLASSE processual (ex.: rescisória só
+        # é protocolada no 2º grau). Sem esse gate, a regra da rescisória casava
+        # "1/3 de férias" e sequestrava ação de 1º grau sobre verbas indenizatórias.
+        if "classe" in rg and not any(t in cl for t in rg["classe"]):
+            continue
         if "all" in rg and not all(_tem(t, texto) for t in rg["all"]):
             continue
         if "any" in rg and not any(_tem(t, texto) for t in rg["any"]):
+            continue
+        # segundo grupo obrigatório: quando a tese exige DUAS ideias presentes, cada
+        # uma com várias grafias (ex.: creditar + ICMS-ST). "all" não serve porque
+        # exigiria TODAS as grafias de uma vez.
+        if "any2" in rg and not any(_tem(t, texto) for t in rg["any2"]):
             continue
         # confiança base da regra; hint presente sobe "media" -> "alta"
         conf = rg.get("conf", "media")
@@ -1090,28 +1147,35 @@ _ANEXO_MARCAS = (
     "COMPROVANTE DE INSCRICAO", "CARTAO CNPJ", "SOLUCAO DE CONSULTA",
     "PARECER NORMATIVO", "GUIA DE RECOLHIMENTO", "CUSTAS", "DOCUMENTO DE IDENTIFICACAO",
     "CARTEIRA DE IDENTIDADE", "COMPROVANTE DE ENDERECO", "ATA DE ASSEMBLEIA",
+    # atos normativos anexados como prova costumam ser LONGOS e citar tributos —
+    # a IN RFB 1300 (59 páginas) passou pela versão anterior desta trava.
+    "INSTRUCAO NORMATIVA", "MEDIDA PROVISORIA", "ATO DECLARATORIO", "PORTARIA",
+    "RESOLUCAO", "VISAO MULTIVIGENTE", "NORMAS.RECEITA.FAZENDA",
 )
-# Marcas de peça processual de verdade (endereçamento e verbos de pedido).
+# ENDEREÇAMENTO — toda petição inicial abre com ele. É a marca mais confiável:
+# as 3 iniciais reais da P J começam com "JUÍZO FEDERAL DE UMA DAS VARAS DA SEÇÃO
+# JUDICIÁRIA DO RN". Anexo nenhum tem isso.
 _PETICAO_MARCAS = (
-    "EXCELENTISSIM", "MERITISSIM", "JUIZ FEDERAL", "VARA FEDERAL", "IMPETRANTE",
-    "REQUER", "VEM, RESPEITOSAMENTE", "VEM RESPEITOSAMENTE", "MANDADO DE SEGURANCA",
-    "DOS FATOS", "DO DIREITO", "DOS PEDIDOS", "LIMINAR", "EXORDIAL", "INICIAL",
+    "EXCELENTISSIM", "MERITISSIM", "JUIZO FEDERAL", "JUIZ FEDERAL", "VARA FEDERAL",
+    "SECAO JUDICIARIA", "VARA CIVEL", "VARA DA FAZENDA", "COMARCA DE",
+    "DESEMBARGADOR", "TRIBUNAL REGIONAL FEDERAL",
 )
 
 
 def peticao_valida(texto):
     """O texto extraído é MESMO a peça inicial (e não um anexo)?
 
-    Vale como porta de qualidade: sem isso o classificador lê procuração/parecer
-    e crava tese com 'fonte: petição', dando falsa precisão.
+    Porta de qualidade: sem isso o classificador lê procuração/parecer/IN e crava
+    tese com 'fonte: petição', dando falsa precisão exatamente onde se pediu
+    precisão. Exige o ENDEREÇAMENTO no começo — não basta citar tributo.
     """
     t = _norm(texto or "")
     if len(t) < 400:
         return False
-    cabeca = t[:600]
-    if any(m in cabeca for m in _ANEXO_MARCAS):
+    cabeca = t[:3000]
+    if any(m in cabeca[:900] for m in _ANEXO_MARCAS):
         return False
-    return any(m in t for m in _PETICAO_MARCAS)
+    return any(m in cabeca for m in _PETICAO_MARCAS)
 
 
 def _peticao_pdf_1x(ctx, base, id_processo):
