@@ -150,6 +150,37 @@ def _agora():
 
 
 # ---------------------------------------------------------------------------
+# TELEMETRIA — onde o tempo vai. Sem isto a otimização é chute: já perdemos 90s
+# por empresa num timeout que ninguém via. Cada fase cronometrada vira uma linha
+# em tools/.cache/telemetria.jsonl, lida por tools/pje_eficiencia.py.
+# ---------------------------------------------------------------------------
+TELEMETRIA = str(ROOT / "tools" / ".cache" / "telemetria.jsonl")
+
+
+class cron:
+    """Cronometra um trecho e registra. Nunca deixa a medição quebrar o scraper."""
+
+    def __init__(self, fase, **extra):
+        self.fase, self.extra = fase, extra
+
+    def __enter__(self):
+        self.t0 = time.time()
+        return self
+
+    def __exit__(self, *exc):
+        seg = round(time.time() - self.t0, 2)
+        try:
+            os.makedirs(os.path.dirname(TELEMETRIA), exist_ok=True)
+            with open(TELEMETRIA, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({"ts": _agora(), "fase": self.fase, "seg": seg,
+                                     "erro": bool(exc and exc[0]), **self.extra},
+                                    ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Classificação — CLASSE e ASSUNTO
 # ---------------------------------------------------------------------------
 # Classes JUDICIAIS incompatíveis com tese tributária (descarta na hora).
@@ -592,8 +623,9 @@ def main():
                 try: sb_patch(f"empresas?id=eq.{eid}", {"teses_status": "processando"})
                 except Exception: pass
             try:
-                _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm,
-                                args.inspect, args.autos, args.gravar)
+                with cron("empresa", cnpj=cnpj_digits, graus=",".join(graus)):
+                    _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm,
+                                    args.inspect, args.autos, args.gravar)
                 if eid:
                     sb_patch(f"empresas?id=eq.{eid}", {
                         "teses_status": "concluido", "teses_analisada_em": _agora(),
@@ -695,7 +727,8 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             print(f"[{grau}] sem instância PJe 1.x para a UF '{uf or '?'}' "
                   f"(TRF5 cobre {'/'.join(PJE_1X)}) — pulando este grau.")
             continue
-        pg = _garantir_form(page, ctx, url, grau)
+        with cron("form", grau=grau, cnpj=cnpj_digits):
+            pg = _garantir_form(page, ctx, url, grau)
         if pg is None:
             print(f"[{grau}] form indisponível (login não concluído nesta instância) — pulando este grau.")
             continue
@@ -704,7 +737,8 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
                 .map(e => ({id:e.id, name:e.name, type:e.type})).filter(e => e.id||e.name)""")
             print(f"=== [{grau}] CAMPOS ({len(campos)}) ==="); [print("  ", c) for c in campos[:40]]
-        achou = _buscar(page, cnpj_digits, razao)
+        with cron("busca", grau=grau, cnpj=cnpj_digits):
+            achou = _buscar(page, cnpj_digits, razao)
         page.wait_for_timeout(700)
         linhas = page.evaluate(r"""() => {
           const out=[];
@@ -751,22 +785,25 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                           f"({len(r['peticao'])} chars)")
                 elif r.get("det"):
                     # PJe 1.x (consulta do advogado): detalhe por URL direta
-                    a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
+                    with cron("peticao", grau=grau, proc=r["proc"], via="detalhe"):
+                        a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
                     r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
                     _cache_gravar(r["proc"], a1, o1, p1)
                 elif grau in ("1x", "2x"):
                     # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
-                    det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
-                    if det is not None:
-                        try:
-                            a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
-                            r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
-                            _cache_gravar(r["proc"], a1, o1, p1)
-                        finally:
-                            try: det.close()
-                            except Exception: pass
+                    with cron("peticao", grau=grau, proc=r["proc"], via="terceiros"):
+                        det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
+                        if det is not None:
+                            try:
+                                a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
+                                r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                                _cache_gravar(r["proc"], a1, o1, p1)
+                            finally:
+                                try: det.close()
+                                except Exception: pass
                 else:
-                    r["peticao"] = _abrir_peticao(page, r["proc"])
+                    with cron("peticao", grau=grau, proc=r["proc"], via="2x"):
+                        r["peticao"] = _abrir_peticao(page, r["proc"])
                     _cache_gravar(r["proc"], "", "", r["peticao"])
                     _fechar_abas_extras(page)
             todos[r["proc"]] = {**r, "grau": grau}
@@ -778,7 +815,8 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
     # DataJud engana: PERSE vem tagado "Crédito Presumido", etc.). DataJud entra
     # como sinal complementar (classe + assunto). Petição não lida -> só assunto.
     for c in candidatos:
-        classe_dj, assuntos, _grau_dj, _org = datajud_meta(c["proc"])
+        with cron("datajud", proc=c["proc"]):
+            classe_dj, assuntos, _grau_dj, _org = datajud_meta(c["proc"])
         # assunto DA FONTE (tela de detalhe do 1.x) tem prioridade sobre o DataJud,
         # que é notoriamente impreciso. Só cai no DataJud quando a fonte não veio.
         c["assunto"] = c.get("assunto_fonte") or ("; ".join(assuntos) if assuntos else "")
