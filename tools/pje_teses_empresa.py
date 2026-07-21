@@ -447,7 +447,13 @@ def main():
                     help="conecta no Chrome REAL (via chrome-cdp.ps1) — NECESSÁRIO pro A3 federal "
                          "(TRF5/PDPJ): o Chromium do Playwright não apresenta o certificado no SSO")
     ap.add_argument("--port", type=int, default=9222, help="porta CDP (default 9222)")
+    ap.add_argument("--sem-cache", action="store_true",
+                    help="ignora o cache de petições e rebaixa tudo do PJe (use só se "
+                         "suspeitar de extração truncada/errada)")
     args = ap.parse_args()
+    if args.sem_cache:
+        global USAR_CACHE
+        USAR_CACHE = False
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: rode `. tools\\pje-env.local.ps1` antes.")
 
@@ -679,10 +685,18 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             # grau — evita re-navegar). É o objeto real da tese.
             if not inspect and _eh_candidato(r["cells"], razao):
                 base = "https://" + url.split("/")[2]
-                if r.get("det"):
+                cach = _cache_ler(r["proc"])
+                if cach:
+                    r["assunto_fonte"] = cach.get("assunto", "")
+                    r["orgao_fonte"] = cach.get("orgao", "")
+                    r["peticao"] = cach.get("peticao", "")
+                    print(f"    {r['proc']}: petição em cache "
+                          f"({len(r['peticao'])} chars)")
+                elif r.get("det"):
                     # PJe 1.x (consulta do advogado): detalhe por URL direta
                     a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
                     r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                    _cache_gravar(r["proc"], a1, o1, p1)
                 elif grau in ("1x", "2x"):
                     # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
                     det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
@@ -690,11 +704,13 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                         try:
                             a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
                             r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                            _cache_gravar(r["proc"], a1, o1, p1)
                         finally:
                             try: det.close()
                             except Exception: pass
                 else:
                     r["peticao"] = _abrir_peticao(page, r["proc"])
+                    _cache_gravar(r["proc"], "", "", r["peticao"])
                     _fechar_abas_extras(page)
             todos[r["proc"]] = {**r, "grau": grau}
     if inspect:
@@ -1264,6 +1280,44 @@ def _detalhe_peticao_1x(ctx, base, caminho_detalhe):
             try: det.close()
             except Exception: pass
     return assunto, orgao, peticao
+
+
+# ---------------------------------------------------------------------------
+# CACHE DE PETIÇÃO — a inicial é IMUTÁVEL (é a peça que abriu o processo), então
+# baixar uma vez basta. Sem isso, cada re-análise (toda vez que uma tese nova
+# entra no catálogo) refazia o download de TODAS as petições da empresa: era o
+# grosso dos 10 minutos por empresa. Com cache, reclassificar fica instantâneo.
+# ---------------------------------------------------------------------------
+CACHE_DIR = str(ROOT / "tools" / ".cache" / "peticoes")
+USAR_CACHE = True
+
+
+def _cache_path(proc):
+    return os.path.join(CACHE_DIR, re.sub(r"\D", "", proc or "") + ".json")
+
+
+def _cache_ler(proc):
+    if not USAR_CACHE:
+        return None
+    try:
+        with open(_cache_path(proc), encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def _cache_gravar(proc, assunto, orgao, peticao):
+    """Só memoriza extração BEM-SUCEDIDA. Cachear vazio congelaria uma falha
+    transitória (sessão caída, PJe lento) como se fosse resultado real."""
+    if not USAR_CACHE or len(peticao or "") < 200:
+        return
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(_cache_path(proc), "w", encoding="utf-8") as fh:
+            json.dump({"assunto": assunto, "orgao": orgao, "peticao": peticao},
+                      fh, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def _fechar_abas_extras(page):
