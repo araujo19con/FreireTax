@@ -1209,19 +1209,42 @@ _SUFIXOS_GENERICOS = {"LTDA", "ME", "EPP", "EIRELI", "SA", "S/A", "CIA", "COMPAN
                       "SPE", "DO", "DA", "DE", "DOS", "DAS", "E"}
 
 
+def _tok_limpo(t):
+    """Token sem pontuação — 'S.A.' e 'S/A' viram 'SA'."""
+    return re.sub(r"[^A-Z0-9]", "", t or "")
+
+
 def _empresa_polo(razao, ativo, passivo):
     """Em qual polo a empresa está. Casa por TOKENS (todos presentes), não por
     substring contígua: a chave contígua quebrava em nomes com palavras curtas
     — 'DOIS A ENGENHARIA E TECNOLOGIA' virava 'DOIS ENGENHARIA TECNOLOGIA',
-    que não existe no texto, e a empresa AUTORA era descartada como ré."""
+    que não existe no texto, e a empresa AUTORA era descartada como ré.
+
+    A limpeza dos tokens é feita SEM PONTUAÇÃO: o conjunto de sufixos tinha 'SA'
+    e 'S/A' mas não 'S.A.', então esse token sobrevivia e — como o casamento
+    exige TODOS os tokens — nunca casava contra um polo escrito 'S/A'. Resultado:
+    toda empresa com 'S.A.' no nome era lida como '?' e descartada, justamente o
+    segmento de empresa grande. Foi o caso da Três Corações."""
     toks = [t for t in _norm(razao).split()
-            if len(t) > 2 and t not in _SUFIXOS_GENERICOS][:4]
+            if len(_tok_limpo(t)) > 2 and _tok_limpo(t) not in _SUFIXOS_GENERICOS][:4]
     if not toks:
         return "?"
 
+    # O polo vem TRUNCADO na lista do PJe ("M DIAS BRANCO SA INDUSTRIA" corta
+    # antes de "COMERCIO"), então exigir os 4 tokens perdia a empresa. Com 3+
+    # tokens, tolera UMA ausência — os 2 primeiros já são bem distintivos, e
+    # continuar exigindo todos os presentes evita casar empresa parecida.
+    minimo = len(toks) if len(toks) <= 2 else len(toks) - 1
+    # ...mas os DOIS PRIMEIROS tokens são obrigatórios: é neles que mora a marca.
+    # Sem isso a folga casava "TRES CORACOES ALIMENTOS" com "TRES RIOS COMERCIO
+    # DE ALIMENTOS" — as palavras genéricas do ramo bastavam.
+    essenciais = toks[:2]
+
     def bate(txt):
         t = _norm(txt)
-        return all(tok in t for tok in toks)
+        if not all(tok in t for tok in essenciais):
+            return False
+        return sum(1 for tok in toks if tok in t) >= minimo
 
     if bate(ativo):
         return "ativo"
