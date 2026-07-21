@@ -152,6 +152,21 @@ custaram classificação errada:
   Não dá para pré-filtrar empresas por CNPJ por lá; o scrape do PJe é a única
   porta de entrada (testado e descartado em 21/07/2026).
 
+## Cobertura — dois furos que davam "empresa sem tese" por engano
+
+- **Filial não ajuíza tese.** O CNPJ no CRM costuma ser o do estabelecimento, mas
+  a tese é ajuizada pela **matriz** (mesma pessoa jurídica). Buscar só pelo CNPJ
+  da filial devolvia ZERO justamente nas maiores empresas da base — Riachuelo,
+  Guararapes e M. Dias Branco vieram todas vazias. `_cnpjs_a_buscar()` acrescenta
+  o CNPJ da matriz (raiz + `0001` + DV por mod 11) quando o alvo é filial.
+- **A lista é paginada (~15 por página).** Sem virar página, só a 1ª era lida —
+  e o viés é perverso: as execuções fiscais (onde a empresa é **ré**) são as mais
+  recentes e ocupam a 1ª página, enquanto a tese que ela ajuizou é mais antiga e
+  cai nas seguintes. Resultado típico: "15 linhas, 15 descartadas como ré, 0
+  candidatos". Pior, o `_esperar` ficava aguardando as linhas renderizadas
+  alcançarem o contador do PJe — alvo inatingível numa página só, 108 s de
+  timeout por busca.
+
 ## Eficiência
 
 - `"Foram encontrados: 0"` é resposta **completa**. Tratar o zero como "sem
@@ -162,3 +177,21 @@ custaram classificação errada:
   frequente** — com cache ela custa ~0. Só grava extração bem-sucedida; use
   `--sem-cache` se suspeitar de extração truncada.
 - Espera **condicional** (`_ate`) em vez de sleep fixo em todo o fluxo do PJe.
+- DataJud em **lote paralelo** (`datajud_lote`, 5 threads): são consultas HTTP
+  independentes por processo; em série, empresa com 13 candidatos pagava 13 idas
+  e voltas enfileiradas.
+
+### Como medir (o ciclo que achou tudo isso)
+
+```powershell
+python tools\pje_teses_empresa.py --cnpjs "a,b,c" --graus 1x --cdp --gravar
+python tools\pje_eficiencia.py --ultimas 3
+```
+
+O scraper cronometra cada fase em `tools/.cache/telemetria.jsonl`;
+`pje_eficiencia.py` agrega e aponta o gargalo. **Rode a cada 3 empresas** — foi
+assim que apareceram a filial (ciclo 2) e a paginação (ciclo 3).
+
+⚠️ **Escolha empresas GRANDES para medir.** Em ordem alfabética a varredura gasta
+os ciclos em microempresa que nunca litigou, e os dois furos acima ficariam
+escondidos por centenas de execuções — nenhuma delas exercita matriz ou página 2.

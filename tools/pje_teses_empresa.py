@@ -788,7 +788,10 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             with cron("busca", grau=grau, cnpj=cnpj_busca, alvo=rotulo):
                 achou = _buscar(page, cnpj_busca, razao)
             page.wait_for_timeout(700)
-            linhas = page.evaluate(r"""() => {
+            total_dito = _total_encontrado(page)
+            linhas, pagina = [], 1
+            while True:
+              linhas_pg = page.evaluate(r"""() => {
               const out=[];
               for (const tr of document.querySelectorAll('table tr')) {
                 // SÓ linha-folha: <tr> container de tabela aninhada também casa o
@@ -811,8 +814,29 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
               }
               return out;
             }""")
+              vistos = {x["proc"] for x in linhas}
+              novos = [x for x in linhas_pg if x["proc"] not in vistos]
+              linhas.extend(novos)
+              # vira a página enquanto faltar resultado E a página trouxer novidade
+              if (not novos or not total_dito or len(linhas) >= total_dito
+                      or pagina >= 20):
+                  break
+              # marca a página atual pra saber quando a nova terminou de montar
+              JS_1A = (r"""() => { const tr = [...document.querySelectorAll('table tr')]"""
+                       r""".find(t => !t.querySelector('tr') &&"""
+                       r""" /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/.test(t.innerText));"""
+                       r""" return tr ? tr.innerText.slice(0, 60) : ''; }""")
+              antes = page.evaluate(JS_1A)
+              if not _proxima_pagina(page):
+                  break
+              pagina += 1
+              _ate(page, JS_1A, 30, diferente_de=antes)
+            paginas_txt = f" em {pagina} página(s)" if pagina > 1 else ""
+            falta = (f"  [PJe informou {total_dito}]"
+                     if total_dito and len(linhas) < total_dito else "")
             print(f"[{grau}] busca por {'CNPJ' if achou=='doc' else 'razão social'}"
-                  f"{'' if rotulo == 'próprio' else ' da MATRIZ'}: {len(linhas)} linha(s)")
+                  f"{'' if rotulo == 'próprio' else ' da MATRIZ'}: "
+                  f"{len(linhas)} linha(s){paginas_txt}{falta}")
             if inspect and linhas:
                 for r in linhas[:5]:
                     print(f"  proc={r['proc']}")
@@ -927,6 +951,46 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 print(f"  [gravar] {len(body)} processo(s) tributário(s) gravado(s) no CRM.")
             except Exception as e:
                 print(f"  [gravar] falha: {e}")
+
+
+def _total_encontrado(page):
+    """Quantos resultados o PJe DIZ que existem (pode ser > que os exibidos)."""
+    try:
+        t = page.evaluate("() => (document.body ? document.body.innerText : '')") or ""
+    except Exception:
+        return None
+    m = re.search(r"Foram encontrados:\s*(\d+)", t.replace("\n", " "), re.I)
+    return int(m.group(1)) if m else None
+
+
+def _proxima_pagina(page):
+    """Avança o datascroller da LISTA de resultados. True se avançou.
+
+    A lista do PJe mostra ~15 por página. Sem virar, empresa com muitos processos
+    era lida só na 1ª página — e como as execuções fiscais (onde ela é ré) são as
+    mais recentes, a tese ajuizada por ela costuma estar nas páginas seguintes.
+    """
+    try:
+        return bool(page.evaluate(r"""() => {
+          // RichFaces datascroller: <td class="rich-datascr-button"> com onclick
+          const cands = [...document.querySelectorAll(
+              'td[class*="datascr"], a[id*="scroller"], td[id*="scroller"], '
+              + '[class*="rich-datascr"]')];
+          const proximo = cands.find(e => {
+            const t = (e.innerText || '').trim().toLowerCase();
+            const ti = (e.getAttribute('title') || '').toLowerCase();
+            return t === '»' || t === '>' || t === 'próxima' || t === 'proxima'
+                || ti.includes('próxima') || ti.includes('proxima') || ti.includes('next');
+          });
+          if (!proximo) return false;
+          // desabilitado = última página
+          const cls = proximo.className || '';
+          if (/dsabled|disabled/i.test(cls)) return false;
+          proximo.click();
+          return true;
+        }""") )
+    except Exception:
+        return False
 
 
 def _campo_cnpj_1x(page):
@@ -1044,6 +1108,17 @@ def _esperar(page, timeout_s=90, exige_contador=False):
             # maioria. Era a principal fonte de lentidão da varredura.
             if esperado == 0 or st["n"] >= esperado:
                 break
+            # PAGINAÇÃO: a lista mostra no máximo ~15 linhas por página. Se o
+            # contador é MAIOR e o número de linhas parou de crescer, a página
+            # está completa — o resto está nas próximas. Sem isto o loop ficava
+            # esperando o total inteiro renderizar numa página só e estourava o
+            # timeout: medido 108s em Guararapes e M. Dias Branco.
+            if st["n"] and st["n"] == ultimo_n and not st["carregando"]:
+                estaveis_n += 1
+                if estaveis_n >= 3:
+                    break
+            else:
+                ultimo_n, estaveis_n = st["n"], 0
             estavel = 0
             continue
         if exige_contador:
