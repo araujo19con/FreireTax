@@ -1081,6 +1081,39 @@ def _abrir_detalhe_terceiros(page, ctx, proc):
         return None
 
 
+# Anexos que acompanham TODA inicial — se o texto extraído começa com um destes,
+# pegamos o binário errado. Foi o que aconteceu na P J: procuração em 3 processos,
+# parecer COSIT em 2, cartão CNPJ em 1. Como o COSIT fala de COFINS, a tese até
+# "acertava" — por acidente. Um anexo NUNCA pode ser tratado como o objeto da ação.
+_ANEXO_MARCAS = (
+    "PROCURACAO", "SUBSTABELECIMENTO", "CONTRATO SOCIAL", "ALTERACAO CONTRATUAL",
+    "COMPROVANTE DE INSCRICAO", "CARTAO CNPJ", "SOLUCAO DE CONSULTA",
+    "PARECER NORMATIVO", "GUIA DE RECOLHIMENTO", "CUSTAS", "DOCUMENTO DE IDENTIFICACAO",
+    "CARTEIRA DE IDENTIDADE", "COMPROVANTE DE ENDERECO", "ATA DE ASSEMBLEIA",
+)
+# Marcas de peça processual de verdade (endereçamento e verbos de pedido).
+_PETICAO_MARCAS = (
+    "EXCELENTISSIM", "MERITISSIM", "JUIZ FEDERAL", "VARA FEDERAL", "IMPETRANTE",
+    "REQUER", "VEM, RESPEITOSAMENTE", "VEM RESPEITOSAMENTE", "MANDADO DE SEGURANCA",
+    "DOS FATOS", "DO DIREITO", "DOS PEDIDOS", "LIMINAR", "EXORDIAL", "INICIAL",
+)
+
+
+def peticao_valida(texto):
+    """O texto extraído é MESMO a peça inicial (e não um anexo)?
+
+    Vale como porta de qualidade: sem isso o classificador lê procuração/parecer
+    e crava tese com 'fonte: petição', dando falsa precisão.
+    """
+    t = _norm(texto or "")
+    if len(t) < 400:
+        return False
+    cabeca = t[:600]
+    if any(m in cabeca for m in _ANEXO_MARCAS):
+        return False
+    return any(m in t for m in _PETICAO_MARCAS)
+
+
 def _peticao_pdf_1x(ctx, base, id_processo):
     """PJe 1.x: TEXTO COMPLETO da petição inicial (PDF), via Paginador.
 
@@ -1088,8 +1121,7 @@ def _peticao_pdf_1x(ctx, base, id_processo):
     detalhe e o documentoHTML só diz "Em PDF."):
       1. abre  /pje/Processo/Paginador/paginator.seam?idProcesso=N
       2. selecionarFimPaginador()  -> vai ao documento MAIS ANTIGO = a inicial
-      3. na lista de binários, a PEÇA é a que NÃO se chama "Doc. NN - ..."
-         (essas são os anexos: procuração, contrato social, etc.)
+      3. na lista de binários, escolhe a PEÇA — ver `_ordenar_binarios`.
       4. clicar dispara POST -> 302 -> GET download.seam (application/pdf).
          O body NÃO pode ser lido do evento (o visualizador consome o recurso),
          então captura-se a URL e RE-BUSCA com a sessão do navegador.
@@ -1122,39 +1154,60 @@ def _peticao_pdf_1x(ctx, base, id_processo):
                 break
             pg.evaluate("() => { if (typeof voltarPaginador === 'function') voltarPaginador(); }")
             _ate(pg, tipo_doc, 20, diferente_de=atual)
-        idx = pg.evaluate(r"""() => {
-          const todos = [...document.querySelectorAll('a')];
-          let cand = -1;
-          todos.forEach((a, i) => {
+        # RANQUEIA os binários em vez de chutar um. A regra antiga ("a peça é a que
+        # NÃO se chama 'Doc. NN -'") pegava justamente os ANEXOS: na P J vieram 3
+        # procurações, 2 pareceres da Receita e 1 cartão CNPJ — nenhuma inicial.
+        cands = pg.evaluate(r"""() => {
+          const out = [];
+          [...document.querySelectorAll('a')].forEach((a, i) => {
             if (!/jsfcljs/.test(a.getAttribute('onclick') || '')) return;
             const tr = a.closest('tr'); if (!tr) return;
             const t = tr.innerText.replace(/\s+/g, ' ').trim();
             if (!/\d{2}\/\d{2}\/\d{4}/.test(t)) return;
-            if (/Doc\.\s*\d+\s*-/i.test(t)) return;      // anexo, não a peça
-            if (cand < 0) cand = i;
+            let peso = 0;
+            if (/inicial/i.test(t)) peso += 10;            // "Petição Inicial"
+            if (/peti[çc][ãa]o/i.test(t)) peso += 6;
+            // anexos clássicos da inicial — despriorizados, não excluídos
+            if (/procura[çc][ãa]o|substabelecimento|contrato social|comprovante|cart[ãa]o|identifica[çc][ãa]o|custas|guia|parecer|consulta/i.test(t))
+              peso -= 8;
+            if (/Doc\.\s*\d+\s*-/i.test(t)) peso -= 3;
+            out.push({i, peso, txt: t.slice(0, 90)});
           });
-          return cand;
-        }""")
-        if idx is None or idx < 0:
-            return ""
-        urls.clear()
-        pg.query_selector_all("a")[idx].click()
-        # espera o PDF chegar (em vez de 7s fixos) — costuma vir em 1-3s
-        for _ in range(30):
-            if any("application/pdf" in ct for ct, _u in urls):
-                break
-            pg.wait_for_timeout(500)
-        alvo = next((u for ct, u in urls if "application/pdf" in ct), None)
-        if not alvo:
-            return ""
-        r = pg.request.get(alvo, timeout=60000)
-        data = r.body()
-        if data[:4] != b"%PDF":
+          return out.sort((a, b) => b.peso - a.peso).slice(0, 5);
+        }""") or []
+        if not cands:
             return ""
         import io as _io
         import pypdf
-        rd = pypdf.PdfReader(_io.BytesIO(data))
-        return "\n".join((x.extract_text() or "") for x in rd.pages[:8])
+        for c in cands:
+            urls.clear()
+            try:
+                pg.query_selector_all("a")[c["i"]].click()
+            except Exception:
+                continue
+            # espera o PDF chegar (em vez de 7s fixos) — costuma vir em 1-3s
+            for _ in range(30):
+                if any("application/pdf" in ct for ct, _u in urls):
+                    break
+                pg.wait_for_timeout(500)
+            alvo = next((u for ct, u in urls if "application/pdf" in ct), None)
+            if not alvo:
+                continue
+            try:
+                data = pg.request.get(alvo, timeout=60000).body()
+                if data[:4] != b"%PDF":
+                    continue
+                rd = pypdf.PdfReader(_io.BytesIO(data))
+                txt = "\n".join((x.extract_text() or "") for x in rd.pages[:8])
+            except Exception:
+                continue
+            if peticao_valida(txt):
+                return txt
+            if len(txt) > len(melhor):
+                melhor = txt
+        # nenhum candidato passou na trava: devolve vazio em vez do maior anexo —
+        # classificar por anexo é pior que não classificar (dá falsa precisão).
+        return ""
     except Exception:
         return ""
     finally:

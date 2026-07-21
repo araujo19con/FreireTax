@@ -132,7 +132,10 @@ interface ProcTribRow {
   acao_id: string | null;
   detectado_em: string;
   acoes_tributarias: { nome: string } | null;
-  metadados: { tese_sugerida?: string } | null;
+  // teses_extras: uma inicial pode carregar MAIS DE UMA tese (ex.: mandado que
+  // pede exclusão de ICMS *e* de ISS da base do PIS/COFINS). Sem isso o sistema
+  // seguiria oferecendo a segunda tese a quem já a ajuizou.
+  metadados: { tese_sugerida?: string; teses_extras?: string[] } | null;
 }
 interface PastaLinkRow {
   pasta_id: string;
@@ -1114,7 +1117,11 @@ export function EmpresaDetailSheet({
                   (() => {
                     const jaTem = new Set<string>();
                     relations.eleg.forEach((e) => e.acao_id && jaTem.add(e.acao_id));
-                    relations.procTrib.forEach((p) => p.acao_id && jaTem.add(p.acao_id));
+                    relations.procTrib.forEach((p) => {
+                      if (p.acao_id) jaTem.add(p.acao_id);
+                      // um processo pode cobrir mais de uma tese
+                      p.metadados?.teses_extras?.forEach((id) => jaTem.add(id));
+                    });
                     const gap = relations.catalogo.filter((c) => !jaTem.has(c.id));
                     if (gap.length === 0) return null;
                     return (

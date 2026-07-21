@@ -83,14 +83,25 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
         : null;
 
       const meus = data.proc.filter((p) => p.empresa_id === id);
+      const nomePorId = new Map(data.catalogo.map((a) => [a.id, a.nome.trim()]));
       const jaAjuizadas = meus
         .filter((p) => p.acao_id)
-        .map((p) => ({
-          tese: ((p.acoes_tributarias as { nome: string } | null)?.nome || "").trim(),
-          numero: p.numero as string,
-          grau: (p.grau as string) || "",
-          orgao: (p.orgao as string) || "",
-        }));
+        .flatMap((p) => {
+          const base = {
+            numero: p.numero as string,
+            grau: (p.grau as string) || "",
+            orgao: (p.orgao as string) || "",
+          };
+          const extras = (p.metadados as { teses_extras?: string[] } | null)?.teses_extras || [];
+          return [
+            {
+              ...base,
+              tese: ((p.acoes_tributarias as { nome: string } | null)?.nome || "").trim(),
+            },
+            // mesma inicial, segunda tese — aparece como linha própria
+            ...extras.map((x) => ({ ...base, tese: nomePorId.get(x) || "" })),
+          ].filter((x) => x.tese);
+        });
       const sugeridas = meus
         .filter(
           (p) => !p.acao_id && (p.metadados as { tese_sugerida?: string } | null)?.tese_sugerida
@@ -101,6 +112,13 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
         }));
 
       const jaIds = new Set(meus.filter((p) => p.acao_id).map((p) => p.acao_id as string));
+      // uma inicial pode cobrir MAIS DE UMA tese (ex.: ICMS *e* ISS fora da base
+      // do PIS/COFINS no mesmo mandado) — as extras também saem da oferta
+      meus.forEach((p) =>
+        (p.metadados as { teses_extras?: string[] } | null)?.teses_extras?.forEach((x) =>
+          jaIds.add(x)
+        )
+      );
       // teses vinculadas (inclui as DESCARTADAS pelo × na ficha) saem da oferta
       data.eleg.filter((x) => x.empresa_id === id).forEach((x) => jaIds.add(x.acao_id));
       const podeEntrar = data.catalogo
