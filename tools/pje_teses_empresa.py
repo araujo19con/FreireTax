@@ -1475,7 +1475,12 @@ def _peticao_pdf_1x(ctx, base, id_processo):
             if "eti" in atual:                            # Petição
                 break
             pg.evaluate("() => { if (typeof voltarPaginador === 'function') voltarPaginador(); }")
-            _ate(pg, tipo_doc, 20, diferente_de=atual)
+            novo = _ate(pg, tipo_doc, 20, diferente_de=atual)
+            # Se o tipo NÃO mudou, o paginador não está respondendo — insistir
+            # custa 20s por tentativa e não muda nada. Era daí que vinham os
+            # ~167s das peças que não abrem (6 x 20s de espera vazia).
+            if novo == atual:
+                break
         # RANQUEIA os binários em vez de chutar um. A regra antiga ("a peça é a que
         # NÃO se chama 'Doc. NN -'") pegava justamente os ANEXOS: na P J vieram 3
         # procurações, 2 pareceres da Receita e 1 cartão CNPJ — nenhuma inicial.
