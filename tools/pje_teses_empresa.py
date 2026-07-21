@@ -571,7 +571,16 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
             if (!m) continue;
             const cells = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim());
-            out.push({proc:m[0], cells});
+            // PJe 1.x: ícone "Ver Detalhes" -> openPopUp('..','/pje/...idProcessoTrf=N')
+            let det = '';
+            const img = [...tr.querySelectorAll('img')]
+              .find(e => /detalhe/i.test(e.getAttribute('title') || ''));
+            if (img) {
+              const mm = (img.getAttribute('onclick') || '')
+                          .match(/openPopUp\([^,]+,\s*'([^']+)'/);
+              if (mm) det = mm[1];
+            }
+            out.push({proc:m[0], cells, det});
           }
           return out;
         }""")
@@ -587,8 +596,14 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             # abre a PETIÇÃO dos candidatos AGORA (página está nos resultados deste
             # grau — evita re-navegar). É o objeto real da tese.
             if not inspect and _eh_candidato(r["cells"], razao):
-                r["peticao"] = _abrir_peticao(page, r["proc"])
-                _fechar_abas_extras(page)
+                if r.get("det"):
+                    # PJe 1.x: detalhe direto -> assunto DA FONTE + petição em HTML
+                    base = "https://" + url.split("/")[2]
+                    a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
+                    r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                else:
+                    r["peticao"] = _abrir_peticao(page, r["proc"])
+                    _fechar_abas_extras(page)
             todos[r["proc"]] = {**r, "grau": grau}
     if inspect:
         return
@@ -599,7 +614,9 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
     # como sinal complementar (classe + assunto). Petição não lida -> só assunto.
     for c in candidatos:
         classe_dj, assuntos, _grau_dj, _org = datajud_meta(c["proc"])
-        c["assunto"] = "; ".join(assuntos) if assuntos else ""
+        # assunto DA FONTE (tela de detalhe do 1.x) tem prioridade sobre o DataJud,
+        # que é notoriamente impreciso. Só cai no DataJud quando a fonte não veio.
+        c["assunto"] = c.get("assunto_fonte") or ("; ".join(assuntos) if assuntos else "")
         tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "",
                                       catalogo_norm, c.get("peticao", ""))
         c["tese"], c["conf"] = tese, conf
@@ -669,11 +686,24 @@ def _buscar(page, cnpj_digits, razao):
     doc1x = (page.query_selector("input[id$=':cpfCpnjCNPJ']")
              or page.query_selector("input[id*='cpfCpnjCNPJ']"))
     if doc1x:
+        # LIMPA antes: o 1.x não zera a tabela ao iniciar nova busca, então a lista
+        # ANTERIOR continua na tela e o _esperar a lê como se fosse o resultado novo
+        # (dava contagem errada e sem os ícones de detalhe).
+        lim = page.query_selector("input[id$=':clearButton']")
+        if lim:
+            try:
+                lim.click()
+                page.wait_for_timeout(2500)
+            except Exception:
+                pass
+            # o clear re-renderiza o form via AJAX -> re-obtém o campo
+            doc1x = (page.query_selector("input[id$=':cpfCpnjCNPJ']")
+                     or page.query_selector("input[id*='cpfCpnjCNPJ']") or doc1x)
         doc1x.fill(cnpj_fmt)
         page.wait_for_timeout(300)
         page.click("input[value='Pesquisar'], input[id$=':searchButton'], "
                    "button:has-text('Pesquisar')")
-        _esperar(page)
+        _esperar(page, exige_contador=True)
         return "doc"
     nome = page.query_selector("input[id$=':nomeParte']") or page.query_selector("input[id*='nomeParte']")
     if nome and razao:
@@ -685,7 +715,7 @@ def _buscar(page, cnpj_digits, razao):
     return "?"
 
 
-def _esperar(page, timeout_s=90):
+def _esperar(page, timeout_s=90, exige_contador=False):
     """Espera o RESULTADO da busca. Antes olhava só o overlay [id$='status.start']
     (padrão do 2.x): no PJe 1.x ele não está visível no instante do poll, então
     saía em ~1,2s — mas o 1.x leva ~30s pra responder, e a busca voltava vazia.
@@ -693,6 +723,7 @@ def _esperar(page, timeout_s=90):
     OU ficou sem overlay por vários ciclos seguidos (aí é 0 resultado mesmo)."""
     page.wait_for_timeout(800)
     estavel = 0
+    ultimo_n, estaveis_n = -1, 0
     for _ in range(int(timeout_s / 1.5)):
         page.wait_for_timeout(1500)
         st = page.evaluate(r"""() => {
@@ -705,11 +736,38 @@ def _esperar(page, timeout_s=90):
           const t = document.body ? document.body.innerText : '';
           const n = [...document.querySelectorAll('table tr')]
             .filter(tr => /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/.test(tr.innerText)).length;
+          // o PJe informa quantos resultados existem — é o alvo exato a renderizar
+          const cm = t.replace(/\s+/g,' ').match(/Foram encontrados:\s*(\d+)\s*resultados?/i);
           return {carregando: visivel(ov) || load, n,
+                  esperado: cm ? parseInt(cm[1], 10) : null,
                   vazio: /nenhum registro|não foram encontrados/i.test(t)};
         }""")
-        if st["n"] or st["vazio"]:
+        if st["vazio"]:
             break
+        # quando o PJe diz o total, espera renderizar TODAS as linhas (a tabela
+        # monta aos poucos; sair na 1ª perdia processos e os ícones de detalhe).
+        esperado = st.get("esperado")
+        if esperado:
+            if st["n"] >= esperado:
+                break
+            estavel = 0
+            continue
+        if exige_contador:
+            # PJe 1.x: o overlay NÃO é detectável e a tabela mantém uma linha
+            # "fantasma" antes do resultado (medido: 16s com n=1 e sem contador).
+            # Só o contador "Foram encontrados: N" marca o fim de verdade.
+            continue
+        if st["n"]:
+            # NÃO sair na 1ª linha: a tabela renderiza aos poucos e os ícones
+            # ("Ver Detalhes", com a URL do processo) chegam por último. Só segue
+            # quando a contagem se repete — aí a lista está completa.
+            if st["n"] == ultimo_n and not st["carregando"]:
+                estaveis_n += 1
+                if estaveis_n >= 3:          # ~4,5s parado E sem overlay
+                    break
+            else:
+                ultimo_n, estaveis_n = st["n"], 0
+            continue
         # O 1.x responde em ~20-30s. Só conclui "0 resultado" após ~30s sem
         # nenhum indício de carregamento — antes disso ainda pode estar buscando.
         estavel = 0 if st["carregando"] else estavel + 1
@@ -783,6 +841,100 @@ def _eh_candidato(cells, razao):
     return any(k in cn for k in CLASSES_TESE)
 
 
+def _detalhe_peticao_1x(ctx, base, caminho_detalhe):
+    """PJe 1.x: abre a tela de DETALHE do processo direto pela URL (o link é um
+    openPopUp — navegar direto evita o bloqueador de pop-up) e retorna
+    (assunto, orgao, peticao).
+
+    Vantagem sobre o 2.x: o detalhe traz o ASSUNTO DA FONTE (não precisa do
+    DataJud, que engana) e a petição inicial abre como HTML (documentoHTML.seam),
+    não PDF — extração confiável e SEM gastar abertura de autos (sem limite diário).
+    """
+    assunto = orgao = peticao = ""
+    det = None
+    try:
+        det = ctx.new_page()
+        det.goto(base + caminho_detalhe, wait_until="domcontentloaded", timeout=60000)
+        det.wait_for_timeout(3500)
+        meta = det.evaluate(r"""() => {
+          const txt = id => { const e=document.querySelector('[id^="'+id+'"]');
+                              return e ? e.textContent.replace(/\s+/g,' ').trim() : ''; };
+          const t = (document.body?document.body.innerText:'').replace(/\s+/g,' ');
+          // "Assuntos ... Assunto <VALOR> Foram encontrados"
+          const m = t.match(/Assunto\s+(DIREITO[^]*?)\s+Foram encontrados/i);
+          return {orgao: txt('cabecalhoDadosProcessoActionOrgaoJul'),
+                  assunto: m ? m[1].trim() : ''};
+        }""")
+        assunto, orgao = meta.get("assunto", ""), meta.get("orgao", "")
+        # A lista traz só os documentos MAIS RECENTES (15) — a petição inicial é a
+        # mais antiga e não aparece. Então FILTRA por tipo "Petição Inicial".
+        # o select NÃO tem onchange: é preciso APLICAR no botão do próprio painel
+        # de documentos (prefixo dinâmico, ex. 'j_id1147:searchButton').
+        try:
+            sel = det.query_selector("select[id$=':tipoDocumentoFilter']")
+            det.select_option("select[id$=':tipoDocumentoFilter']", label="Petição Inicial")
+            pref = (sel.get_attribute("id") or "").split(":")[0]
+            if pref:
+                det.click(f"input[id='{pref}:searchButton']", timeout=8000)
+        except Exception:
+            pass
+        # procura a linha-FOLHA do documento (linha-container tem o dropdown inteiro
+        # no innerText e levaria ao doc errado — foi assim que veio uma certidão)
+        js_doc = r"""() => {
+          for (const a of document.querySelectorAll('a')) {
+            const oc = a.getAttribute('onclick') || '';
+            const m = oc.match(/'(\/pje\/[^']*documentoHTML[^']*)'/);
+            if (!m) continue;
+            const tr = a.closest('tr');
+            if (!tr || tr.querySelector('tr')) continue;      // só linha-folha
+            if (/peti[çc][ãa]o inicial/i.test(tr.innerText.replace(/\s+/g,' '))) return m[1];
+          }
+          return null;
+        }"""
+        js_desc = r"""() => {
+          for (const a of document.querySelectorAll('a')) {
+            const oc = a.getAttribute('onclick') || '';
+            if (!/documentoHTML/.test(oc)) continue;
+            const tr = a.closest('tr');
+            if (!tr || tr.querySelector('tr')) continue;
+            const t = tr.innerText.replace(/\s+/g,' ').trim();
+            if (/peti[çc][ãa]o inicial/i.test(t)) return t;
+          }
+          return '';
+        }"""
+        cam, desc = None, ""
+        for _ in range(20):                    # o filtro re-renderiza via AJAX
+            det.wait_for_timeout(1500)
+            cam = det.evaluate(js_doc)
+            if cam:
+                desc = det.evaluate(js_desc) or ""
+                break
+        if cam:
+            doc = ctx.new_page()
+            try:
+                doc.goto(base + cam.replace("&amp;", "&"), wait_until="domcontentloaded", timeout=60000)
+                doc.wait_for_timeout(2500)
+                peticao = doc.evaluate(
+                    "() => (document.body ? document.body.innerText : '')") or ""
+            except Exception:
+                pass
+            finally:
+                try: doc.close()
+                except Exception: pass
+            # Quando a inicial é PDF anexo, o documentoHTML só traz "Em PDF." + o
+            # carimbo de assinatura. A DESCRIÇÃO da linha costuma nomear o objeto,
+            # então entra junto no texto usado pra classificar.
+            if desc and "em pdf" in (peticao or "").lower()[:60]:
+                peticao = desc + " " + (peticao or "")
+    except Exception:
+        pass
+    finally:
+        if det is not None:
+            try: det.close()
+            except Exception: pass
+    return assunto, orgao, peticao
+
+
 def _fechar_abas_extras(page):
     """Fecha abas órfãs de autos, deixa só a consulta (evita acúmulo que trava)."""
     try:
@@ -854,8 +1006,9 @@ def filtrar_teses(todos, razao):
         if not any(k in cn for k in CLASSES_TESE):    # classe não é de tese
             motivos["nao_tese"] += 1; continue
         candidatos.append({"proc": proc, "grau": r["grau"], "classe": classe,
-                           "orgao": orgao, "situacao": situacao,
-                           "peticao": r.get("peticao", "")})
+                           "orgao": r.get("orgao_fonte") or orgao, "situacao": situacao,
+                           "peticao": r.get("peticao", ""),
+                           "assunto_fonte": r.get("assunto_fonte", "")})
     return candidatos, motivos
 
 
