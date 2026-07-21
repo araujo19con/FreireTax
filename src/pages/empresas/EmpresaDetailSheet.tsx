@@ -31,6 +31,8 @@ import {
   ScanSearch,
   Contact,
   Lightbulb,
+  X,
+  Undo2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -363,6 +365,44 @@ export function EmpresaDetailSheet({
     } finally {
       setSolicitandoTeses(false);
     }
+  };
+
+  // Descarta uma tese da OFERTA desta empresa (ramo/modelo de negócio não bate).
+  // Reusa `elegibilidade` como não-elegível + motivo — some do gap e fica
+  // registrado como decisão, não como dado perdido. Reversível abaixo.
+  const [descartando, setDescartando] = useState<string | null>(null);
+  const descartarTese = async (acaoId: string, nomeTese: string) => {
+    if (!empresa) return;
+    setDescartando(acaoId);
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const { error } = await supabase.from("elegibilidade").insert({
+        empresa_id: empresa.id,
+        acao_id: acaoId,
+        elegivel: false,
+        motivo_desqualificacao: "Não se encaixa no ramo/modelo de negócio da empresa",
+        user_id: auth.user?.id ?? "",
+      });
+      if (error) throw error;
+      toast.success(`"${nomeTese.trim()}" removida da oferta desta empresa.`);
+      void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+    } catch (e) {
+      toast.error("Falha ao descartar: " + ((e as Error).message ?? "erro"));
+    } finally {
+      setDescartando(null);
+    }
+  };
+
+  // Volta uma tese descartada para a oferta (remove a elegibilidade).
+  const devolverAOferta = async (elegId: string) => {
+    if (!empresa) return;
+    const { error } = await supabase.from("elegibilidade").delete().eq("id", elegId);
+    if (error) {
+      toast.error("Falha ao devolver: " + error.message);
+      return;
+    }
+    toast.success("Tese devolvida à oferta.");
+    void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
   };
 
   // Reseta aba para "overview" quando a empresa muda
@@ -992,6 +1032,18 @@ export function EmpresaDetailSheet({
                                 <Gavel className="mr-1 h-3 w-3" /> Marcar como já ajuizada
                               </Button>
                             )}
+                            {/* descartada da oferta -> permite voltar */}
+                            {!el.elegivel && !el.ja_ajuizada && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="ml-auto h-6 px-2 text-[10px] text-muted-foreground"
+                                onClick={() => void devolverAOferta(el.id)}
+                                title="Voltar esta tese para a lista de oferta"
+                              >
+                                <Undo2 className="mr-1 h-3 w-3" /> Devolver à oferta
+                              </Button>
+                            )}
                           </div>
                         </Card>
                       );
@@ -1075,21 +1127,35 @@ export function EmpresaDetailSheet({
                         </div>
                         <p className="text-[11px] text-muted-foreground">
                           Teses ativas do catálogo que a empresa ainda não ajuizou nem tem
-                          vinculada. Clique para abrir a tese no painel de Ações.
+                          vinculada. Clique para abrir no painel de Ações, ou use o × para descartar
+                          as que não se encaixam no ramo dela — some daqui e do relatório.
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {gap.map((c) => (
-                            <button
+                            <span
                               key={c.id}
-                              type="button"
-                              onClick={() => openAcaoForEmpresa(c.id)}
-                              className="group inline-flex items-center gap-1 rounded-full border border-success/30 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-success/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              title={`Abrir ${c.nome.trim()} no painel de Ações`}
+                              className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-background py-1 pl-2.5 pr-1 text-[11px] font-medium text-foreground transition-colors hover:bg-success/10"
                             >
-                              <Gavel className="h-3 w-3 text-success" />
-                              <span className="max-w-[220px] truncate">{c.nome.trim()}</span>
-                              <ExternalLink className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-60" />
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => openAcaoForEmpresa(c.id)}
+                                className="inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                title={`Abrir ${c.nome.trim()} no painel de Ações`}
+                              >
+                                <Gavel className="h-3 w-3 text-success" />
+                                <span className="max-w-[200px] truncate">{c.nome.trim()}</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={descartando === c.id}
+                                onClick={() => void descartarTese(c.id, c.nome)}
+                                className="ml-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+                                title="Não se encaixa nesta empresa — descartar da oferta"
+                                aria-label={`Descartar ${c.nome.trim()} da oferta`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
                           ))}
                         </div>
                       </div>

@@ -31,7 +31,7 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
     queryKey: ["relatorio-teses", empresaIds.join(",")],
     enabled: open && empresaIds.length > 0,
     queryFn: async () => {
-      const [empRes, procRes, catRes, critRes] = await Promise.all([
+      const [empRes, procRes, catRes, elegRes, critRes] = await Promise.all([
         supabase
           .from("empresas")
           .select(
@@ -45,6 +45,8 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
           )
           .in("empresa_id", empresaIds),
         supabase.from("acoes_tributarias").select("id, nome").eq("status", "Ativa").order("nome"),
+        // teses já vinculadas/descartadas p/ estas empresas — saem da oferta
+        supabase.from("elegibilidade").select("empresa_id, acao_id").in("empresa_id", empresaIds),
         supabase
           .from("criterios_elegibilidade")
           .select("acao_id, tipo_resposta, opcoes, regra_excludente")
@@ -54,6 +56,7 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
         empresas: (empRes.data || []) as unknown as Array<Record<string, unknown>>,
         proc: (procRes.data || []) as unknown as Array<Record<string, unknown>>,
         catalogo: (catRes.data || []) as unknown as Array<{ id: string; nome: string }>,
+        eleg: (elegRes.data || []) as unknown as Array<{ empresa_id: string; acao_id: string }>,
         criterios: (critRes.data || []) as unknown as Array<Record<string, unknown>>,
       };
     },
@@ -98,6 +101,8 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
         }));
 
       const jaIds = new Set(meus.filter((p) => p.acao_id).map((p) => p.acao_id as string));
+      // teses vinculadas (inclui as DESCARTADAS pelo × na ficha) saem da oferta
+      data.eleg.filter((x) => x.empresa_id === id).forEach((x) => jaIds.add(x.acao_id));
       const podeEntrar = data.catalogo
         .filter((a) => !jaIds.has(a.id))
         .filter((a) => {
