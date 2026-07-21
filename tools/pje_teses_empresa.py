@@ -121,6 +121,23 @@ def datajud_meta(numero):
     return classe, assuntos, grau, orgao
 
 
+def datajud_lote(numeros, paralelos=5):
+    """{numero: (classe, assuntos, grau, orgao)} buscando em PARALELO.
+
+    Cada consulta é HTTP puro e independente das outras — em série, uma empresa
+    com 13 candidatos pagava 13 idas e voltas enfileiradas. Concorrência modesta
+    (5) porque a API é pública e não vale a pena irritar o CNJ.
+    """
+    if not numeros:
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+    out = {}
+    with ThreadPoolExecutor(max_workers=min(paralelos, len(numeros))) as ex:
+        for n, r in zip(numeros, ex.map(datajud_meta, numeros)):
+            out[n] = r
+    return out
+
+
 def sb_upsert(path, body, on_conflict):
     """POST com upsert (merge) — usado pra gravar os processos detectados."""
     data = json.dumps(body).encode()
@@ -701,6 +718,31 @@ def _garantir_form(page, ctx, url, grau):
     return None
 
 
+def _dv_cnpj(base12):
+    """Dígitos verificadores de um CNPJ (mod 11) — para montar o CNPJ da matriz."""
+    def _d(nums, pesos):
+        s = sum(int(n) * p for n, p in zip(nums, pesos))
+        r = s % 11
+        return "0" if r < 2 else str(11 - r)
+    d1 = _d(base12, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+    d2 = _d(base12 + d1, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+    return d1 + d2
+
+
+def _cnpjs_a_buscar(cnpj_digits):
+    """O CNPJ alvo e, se ele for FILIAL, também o da MATRIZ.
+
+    Teses tributárias são ajuizadas pela matriz — é a mesma pessoa jurídica. Sem
+    isto, filial de grande grupo retornava 0 processo e a empresa entrava no CRM
+    como 'nunca ajuizou tese', o oposto da verdade.
+    """
+    alvos = [cnpj_digits]
+    if len(cnpj_digits) == 14 and cnpj_digits[8:12] != "0001":
+        base = cnpj_digits[:8] + "0001"
+        alvos.append(base + _dv_cnpj(base))
+    return alvos
+
+
 def _url_do_grau(grau, uf):
     """Resolve a URL do grau. '1x' = PJe 1.x da Seção Judiciária da UF da empresa
     (instância própria por estado); '2x' = PJe 1.x do 2º grau (TRF5)."""
@@ -737,76 +779,83 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
                 .map(e => ({id:e.id, name:e.name, type:e.type})).filter(e => e.id||e.name)""")
             print(f"=== [{grau}] CAMPOS ({len(campos)}) ==="); [print("  ", c) for c in campos[:40]]
-        with cron("busca", grau=grau, cnpj=cnpj_digits):
-            achou = _buscar(page, cnpj_digits, razao)
-        page.wait_for_timeout(700)
-        linhas = page.evaluate(r"""() => {
-          const out=[];
-          for (const tr of document.querySelectorAll('table tr')) {
-            // SÓ linha-folha: <tr> container de tabela aninhada também casa o
-            // número (do 1º processo da tabela interna) e vem ANTES no DOM —
-            // o dedup ficava com ele e todas as células saíam erradas.
-            if (tr.querySelector('tr')) continue;
-            const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
-            if (!m) continue;
-            const cells = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim());
-            // PJe 1.x: ícone "Ver Detalhes" -> openPopUp('..','/pje/...idProcessoTrf=N')
-            let det = '';
-            const img = [...tr.querySelectorAll('img')]
-              .find(e => /detalhe/i.test(e.getAttribute('title') || ''));
-            if (img) {
-              const mm = (img.getAttribute('onclick') || '')
-                          .match(/openPopUp\([^,]+,\s*'([^']+)'/);
-              if (mm) det = mm[1];
-            }
-            out.push({proc:m[0], cells, det});
-          }
-          return out;
-        }""")
-        print(f"[{grau}] busca por {'CNPJ' if achou=='doc' else 'razão social'}: {len(linhas)} linha(s)")
-        if inspect and linhas:
-            for r in linhas[:5]:
-                print(f"  proc={r['proc']}")
-                for idx, c in enumerate(r["cells"]):
-                    if c: print(f"     cell[{idx}]: {c[:120]}")
-        for r in linhas:
-            if r["proc"] in todos:
-                continue
-            # abre a PETIÇÃO dos candidatos AGORA (página está nos resultados deste
-            # grau — evita re-navegar). É o objeto real da tese.
-            if not inspect and _eh_candidato(r["cells"], razao):
-                base = "https://" + url.split("/")[2]
-                cach = _cache_ler(r["proc"])
-                if cach:
-                    r["assunto_fonte"] = cach.get("assunto", "")
-                    r["orgao_fonte"] = cach.get("orgao", "")
-                    r["peticao"] = cach.get("peticao", "")
-                    print(f"    {r['proc']}: petição em cache "
-                          f"({len(r['peticao'])} chars)")
-                elif r.get("det"):
-                    # PJe 1.x (consulta do advogado): detalhe por URL direta
-                    with cron("peticao", grau=grau, proc=r["proc"], via="detalhe"):
-                        a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
-                    r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
-                    _cache_gravar(r["proc"], a1, o1, p1)
-                elif grau in ("1x", "2x"):
-                    # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
-                    with cron("peticao", grau=grau, proc=r["proc"], via="terceiros"):
-                        det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
-                        if det is not None:
-                            try:
-                                a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
-                                r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
-                                _cache_gravar(r["proc"], a1, o1, p1)
-                            finally:
-                                try: det.close()
-                                except Exception: pass
-                else:
-                    with cron("peticao", grau=grau, proc=r["proc"], via="2x"):
-                        r["peticao"] = _abrir_peticao(page, r["proc"])
-                    _cache_gravar(r["proc"], "", "", r["peticao"])
-                    _fechar_abas_extras(page)
-            todos[r["proc"]] = {**r, "grau": grau}
+        # FILIAL: a tese é ajuizada pela MATRIZ (mesma pessoa jurídica, outro
+        # estabelecimento). Buscar só pelo CNPJ da filial devolvia 0 justamente
+        # nas maiores empresas da base — Riachuelo, Guararapes e M. Dias Branco
+        # vieram todas vazias antes disto.
+        for cnpj_busca in _cnpjs_a_buscar(cnpj_digits):
+            rotulo = "matriz" if cnpj_busca != cnpj_digits else "próprio"
+            with cron("busca", grau=grau, cnpj=cnpj_busca, alvo=rotulo):
+                achou = _buscar(page, cnpj_busca, razao)
+            page.wait_for_timeout(700)
+            linhas = page.evaluate(r"""() => {
+              const out=[];
+              for (const tr of document.querySelectorAll('table tr')) {
+                // SÓ linha-folha: <tr> container de tabela aninhada também casa o
+                // número (do 1º processo da tabela interna) e vem ANTES no DOM —
+                // o dedup ficava com ele e todas as células saíam erradas.
+                if (tr.querySelector('tr')) continue;
+                const m = tr.innerText.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/);
+                if (!m) continue;
+                const cells = [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim());
+                // PJe 1.x: ícone "Ver Detalhes" -> openPopUp('..','/pje/...idProcessoTrf=N')
+                let det = '';
+                const img = [...tr.querySelectorAll('img')]
+                  .find(e => /detalhe/i.test(e.getAttribute('title') || ''));
+                if (img) {
+                  const mm = (img.getAttribute('onclick') || '')
+                              .match(/openPopUp\([^,]+,\s*'([^']+)'/);
+                  if (mm) det = mm[1];
+                }
+                out.push({proc:m[0], cells, det});
+              }
+              return out;
+            }""")
+            print(f"[{grau}] busca por {'CNPJ' if achou=='doc' else 'razão social'}"
+                  f"{'' if rotulo == 'próprio' else ' da MATRIZ'}: {len(linhas)} linha(s)")
+            if inspect and linhas:
+                for r in linhas[:5]:
+                    print(f"  proc={r['proc']}")
+                    for idx, c in enumerate(r["cells"]):
+                        if c: print(f"     cell[{idx}]: {c[:120]}")
+            for r in linhas:
+                if r["proc"] in todos:
+                    continue
+                # abre a PETIÇÃO dos candidatos AGORA (página está nos resultados deste
+                # grau — evita re-navegar). É o objeto real da tese.
+                if not inspect and _eh_candidato(r["cells"], razao):
+                    base = "https://" + url.split("/")[2]
+                    cach = _cache_ler(r["proc"])
+                    if cach:
+                        r["assunto_fonte"] = cach.get("assunto", "")
+                        r["orgao_fonte"] = cach.get("orgao", "")
+                        r["peticao"] = cach.get("peticao", "")
+                        print(f"    {r['proc']}: petição em cache "
+                              f"({len(r['peticao'])} chars)")
+                    elif r.get("det"):
+                        # PJe 1.x (consulta do advogado): detalhe por URL direta
+                        with cron("peticao", grau=grau, proc=r["proc"], via="detalhe"):
+                            a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
+                        r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                        _cache_gravar(r["proc"], a1, o1, p1)
+                    elif grau in ("1x", "2x"):
+                        # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
+                        with cron("peticao", grau=grau, proc=r["proc"], via="terceiros"):
+                            det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
+                            if det is not None:
+                                try:
+                                    a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
+                                    r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                                    _cache_gravar(r["proc"], a1, o1, p1)
+                                finally:
+                                    try: det.close()
+                                    except Exception: pass
+                    else:
+                        with cron("peticao", grau=grau, proc=r["proc"], via="2x"):
+                            r["peticao"] = _abrir_peticao(page, r["proc"])
+                        _cache_gravar(r["proc"], "", "", r["peticao"])
+                        _fechar_abas_extras(page)
+                todos[r["proc"]] = {**r, "grau": grau}
     if inspect:
         return
 
@@ -814,9 +863,11 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
     # Crava a TESE pelo OBJETO DA PETIÇÃO (fonte da verdade — o assunto CNJ do
     # DataJud engana: PERSE vem tagado "Crédito Presumido", etc.). DataJud entra
     # como sinal complementar (classe + assunto). Petição não lida -> só assunto.
+    # busca TODOS os assuntos do DataJud de uma vez (paralelo) antes do laço
+    with cron("datajud", n=len(candidatos)):
+        metas = datajud_lote([c["proc"] for c in candidatos])
     for c in candidatos:
-        with cron("datajud", proc=c["proc"]):
-            classe_dj, assuntos, _grau_dj, _org = datajud_meta(c["proc"])
+        classe_dj, assuntos, _grau_dj, _org = metas.get(c["proc"], (None, [], None, None))
         # assunto DA FONTE (tela de detalhe do 1.x) tem prioridade sobre o DataJud,
         # que é notoriamente impreciso. Só cai no DataJud quando a fonte não veio.
         c["assunto"] = c.get("assunto_fonte") or ("; ".join(assuntos) if assuntos else "")
