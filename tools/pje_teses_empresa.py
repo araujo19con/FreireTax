@@ -256,9 +256,12 @@ def regras_tese():
          {"any": ["RECEITAS FINANCEIRAS", "RECEITA FINANCEIRA", "DECRETO 8.426",
                   "8.426"], "conf": "alta"}),
         ("NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
+         # o assunto do CNJ usa hífen ("Salário-Maternidade", "Auxílio-Creche") e o
+         # casamento é por palavra inteira — precisa das duas grafias.
          {"any": ["VERBAS INDENIZATORIAS", "VERBA INDENIZATORIA", "AVISO PREVIO INDENIZADO",
-                  "PRIMEIROS 15 DIAS", "AUXILIO CRECHE", "SALARIO MATERNIDADE",
-                  "ABONO PECUNIARIO"], "conf": "alta"}),
+                  "PRIMEIROS 15 DIAS", "AUXILIO CRECHE", "AUXILIO-CRECHE",
+                  "SALARIO MATERNIDADE", "SALARIO-MATERNIDADE",
+                  "ABONO PECUNIARIO", "ABONO ASSIDUIDADE"], "conf": "alta"}),
         # crédito presumido de ICMS fora da base do IRPJ/CSLL (sem PIS/COFISN acima)
         ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
          {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
