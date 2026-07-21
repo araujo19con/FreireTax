@@ -250,6 +250,11 @@ def regras_tese():
          {"all": ["ISS"], "any": ["PIS", "COFINS", "BASE DE CALCULO", "TEMA 118"], "conf": "alta"}),
         ("EXCLUSÃO DA GORJETA DA BASE DE CÁLCULO DO PIS E DA COFINS",
          {"any": ["GORJETA", "GORJETAS"], "conf": "alta"}),
+        # PIS/COFINS sobre RECEITAS FINANCEIRAS (Decreto 8.426/2015 restabeleceu
+        # as alíquotas por decreto). Vem antes da genérica de "própria base".
+        ("NÃO INCIDÊNCIA DE PIS E COFINS SOBRE RECEITAS FINANCEIRAS",
+         {"any": ["RECEITAS FINANCEIRAS", "RECEITA FINANCEIRA", "DECRETO 8.426",
+                  "8.426"], "conf": "alta"}),
         ("NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
          {"any": ["VERBAS INDENIZATORIAS", "VERBA INDENIZATORIA", "AVISO PREVIO INDENIZADO",
                   "PRIMEIROS 15 DIAS", "AUXILIO CRECHE", "SALARIO MATERNIDADE",
@@ -313,6 +318,8 @@ CORROB = [
     ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
                                     "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
                                     "NAO CUMULATIVIDADE"]),
+    ("RECEITAS FINANCEIRAS",       ["PIS", "COFINS", "RECEITA", "RECEITAS", "FINANCEIRA",
+                                    "FINANCEIRAS", "NAO CUMULATIVIDADE"]),
     ("ISS",                        ["ISS", "SERVICO"]),
     ("MAJORACAO",                  ["LUCRO PRESUMIDO", "ADICIONAL", "MAJORACAO", "IRPJ"]),
     ("PIS E DA COFINS DA SUA BASE",["PIS", "COFINS", "BASE DE CALCULO", "NAO CUMULATIVIDADE"]),
