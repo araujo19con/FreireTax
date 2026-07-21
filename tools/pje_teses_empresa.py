@@ -902,12 +902,17 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 if not inspect and _eh_candidato(r["cells"], razao):
                     base = "https://" + url.split("/")[2]
                     cach = _cache_ler(r["proc"])
-                    if cach:
+                    if _cache_utilizavel(cach):
                         r["assunto_fonte"] = cach.get("assunto", "")
                         r["orgao_fonte"] = cach.get("orgao", "")
                         r["peticao"] = cach.get("peticao", "")
-                        print(f"    {r['proc']}: petição em cache "
-                              f"({len(r['peticao'])} chars)")
+                        if cach.get("falhou"):
+                            print(f"    {r['proc']}: petição não abriu em "
+                                  f"{cach.get('tentativas')} tentativas — usando só o "
+                                  f"assunto (--sem-cache força tentar de novo)")
+                        else:
+                            print(f"    {r['proc']}: petição em cache "
+                                  f"({len(r['peticao'])} chars)")
                     elif r.get("det"):
                         # PJe 1.x (consulta do advogado): detalhe por URL direta
                         with cron("peticao", grau=grau, proc=r["proc"], via="detalhe"):
@@ -1682,18 +1687,42 @@ def _cache_ler(proc):
         return None
 
 
+MAX_TENTATIVAS_PETICAO = 2
+
+
 def _cache_gravar(proc, assunto, orgao, peticao):
-    """Só memoriza extração BEM-SUCEDIDA. Cachear vazio congelaria uma falha
-    transitória (sessão caída, PJe lento) como se fosse resultado real."""
-    if not USAR_CACHE or len(peticao or "") < 200:
+    """Memoriza o resultado — inclusive a FALHA, com contador de tentativas.
+
+    Cachear vazio de primeira congelaria uma falha transitória (sessão caída,
+    PJe lento) como se fosse resultado real; por isso conta as tentativas e só
+    desiste na segunda. Sem isso, peça que não abre era rebaixada em TODA
+    re-execução: 0800466-45.2013 foi tentada 4x a ~167s — 11 minutos num
+    processo só, e era o maior gasto isolado da varredura.
+    """
+    if not USAR_CACHE:
         return
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
+        if len(peticao or "") >= 200:
+            corpo = {"assunto": assunto, "orgao": orgao, "peticao": peticao}
+        else:
+            prev = _cache_ler(proc) or {}
+            corpo = {"assunto": assunto or prev.get("assunto", ""),
+                     "orgao": orgao or prev.get("orgao", ""), "peticao": "",
+                     "falhou": True, "tentativas": int(prev.get("tentativas", 0)) + 1}
         with open(_cache_path(proc), "w", encoding="utf-8") as fh:
-            json.dump({"assunto": assunto, "orgao": orgao, "peticao": peticao},
-                      fh, ensure_ascii=False)
+            json.dump(corpo, fh, ensure_ascii=False)
     except Exception:
         pass
+
+
+def _cache_utilizavel(cach):
+    """O cache responde por si? Sucesso sempre; falha só depois de insistir."""
+    if not cach:
+        return False
+    if cach.get("peticao"):
+        return True
+    return int(cach.get("tentativas", 0)) >= MAX_TENTATIVAS_PETICAO
 
 
 def _fechar_abas_extras(page):
