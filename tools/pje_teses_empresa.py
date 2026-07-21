@@ -223,8 +223,20 @@ def regras_tese():
         ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
          {"any": ["RAT", "FAP", "GILRAT", "SAT", "RISCOS AMBIENTAIS DO TRABALHO",
                   "ATIVIDADE PREPONDERANTE"], "conf": "alta"}),
+        # LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS das contribuições de terceiros/parafiscais
+        ("LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS DA BASE DAS CONTRIBUIÇÕES DE TERCEIROS",
+         {"any": ["20 SALARIOS MINIMOS", "VINTE SALARIOS MINIMOS", "CONTRIBUICOES PARAFISCAIS",
+                  "CONTRIBUICAO PARAFISCAL", "SALARIO EDUCACAO", "INCRA", "SEBRAE",
+                  "SENAI", "SENAC", "SESC", "SESI", "SENAT", "APEX", "ABDI"], "conf": "alta"}),
+        # CPP/RAT sobre VALORES RETIDOS do segurado (contribuição do empregado + IRRF)
+        ("EXCLUSÃO DOS VALORES RETIDOS DO SEGURADO DA BASE DA CPP E DO RAT",
+         {"any": ["VALORES RETIDOS", "VALOR RETIDO", "RETIDOS PELA", "RETIDOS A TITULO"],
+          "hint": ["CONTRIBUICAO PREVIDENCIARIA", "RAT", "PATRONAL"], "conf": "alta"}),
+        # IRRF de MUNICÍPIOS: exige o ente público, senão casava "retido na fonte"
+        # de qualquer petição e sugeria a tese para empresa privada.
         ("RECUPERAÇÃO IRRF E FOLHA PARA MUNICÍPIOS",
-         {"any": ["IRRF", "IMPOSTO DE RENDA RETIDO", "RETIDO NA FONTE"], "conf": "alta"}),
+         {"all": ["MUNICIPIO"],
+          "any": ["IRRF", "IMPOSTO DE RENDA RETIDO", "RETIDO NA FONTE"], "conf": "alta"}),
         ("EQUIPARAÇÃO DE CLÍNICAS A HOSPITAIS (IRPJ/CSLL)",
          {"any": ["SERVICO HOSPITALAR", "SERVICOS HOSPITALARES", "HOSPITALAR",
                   "EQUIPARACAO A HOSPITAL", "SERVICOS DE SAUDE"],
@@ -339,6 +351,11 @@ CORROB = [
     ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
                                     "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
                                     "NAO CUMULATIVIDADE"]),
+    ("20 SALARIOS MINIMOS",        ["INCRA", "SEBRAE", "SENAI", "SENAC", "SESC", "SESI",
+                                    "SALARIO EDUCACAO", "TERCEIROS", "CORPORATIVAS",
+                                    "CONTRIBUICAO", "CONTRIBUICOES"]),
+    ("VALORES RETIDOS DO SEGURADO", ["CONTRIBUICAO", "PREVIDENCIARIA", "FOLHA", "RAT",
+                                     "SALARIO DE CONTRIBUICAO", "IMPOSTO DE RENDA"]),
     ("PAT",                        ["PAT", "ALIMENTACAO", "IRPJ", "LUCRO"]),
     ("APRENDIZES",                 ["APRENDIZ", "APRENDIZES", "CONTRIBUICAO", "FOLHA",
                                     "RAT", "TERCEIROS", "PREVIDENCIARIA"]),
