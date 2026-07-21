@@ -238,8 +238,22 @@ def regras_tese():
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
          {"all": ["CREDITO PRESUMIDO"], "any": ["PIS", "COFINS", "NAO CUMULATIVIDADE"], "conf": "alta"}),
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
-         {"any": ["INCENTIVO FISCAL", "SUBVENCAO", "SUBVENCOES", "BENEFICIO FISCAL"],
+         {"any": ["INCENTIVO FISCAL", "INCENTIVOS FISCAIS", "SUBVENCAO", "SUBVENCOES",
+                  "BENEFICIO FISCAL", "BENEFICIOS FISCAIS"],
           "hint": ["ICMS"], "conf": "alta"}),
+        # teses do PDF que estavam no catálogo mas SEM regra de classificação —
+        # por isso caíam em "tributário, fora do catálogo".
+        ("EXCLUSÃO DO ICMS-ST DA BASE DE CÁLCULO DO PIS E DA COFINS",
+         {"any": ["ICMS-ST", "ICMS ST", "SUBSTITUICAO TRIBUTARIA", "SUBSTITUIDO"],
+          "hint": ["PIS", "COFINS"], "conf": "alta"}),
+        ("EXCLUSÃO DO ISS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 118)",
+         {"all": ["ISS"], "any": ["PIS", "COFINS", "BASE DE CALCULO", "TEMA 118"], "conf": "alta"}),
+        ("EXCLUSÃO DA GORJETA DA BASE DE CÁLCULO DO PIS E DA COFINS",
+         {"any": ["GORJETA", "GORJETAS"], "conf": "alta"}),
+        ("NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
+         {"any": ["VERBAS INDENIZATORIAS", "VERBA INDENIZATORIA", "AVISO PREVIO INDENIZADO",
+                  "PRIMEIROS 15 DIAS", "AUXILIO CRECHE", "SALARIO MATERNIDADE",
+                  "ABONO PECUNIARIO"], "conf": "alta"}),
         # crédito presumido de ICMS fora da base do IRPJ/CSLL (sem PIS/COFISN acima)
         ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
          {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
@@ -293,9 +307,11 @@ CORROB = [
     ("ICMS-ST",                    ["SUBSTITUICAO TRIBUTARIA", "ICMS-ST", "ICMS ST"]),
     ("IPI",                        ["IPI", "PRODUTOS INDUSTRIALIZADOS"]),
     ("POR DENTRO",                 ["ICMS", "POR DENTRO", "BASE DE CALCULO"]),
-    ("CREDITOS PRESUMIDOS",        ["CREDITO PRESUMIDO", "INCENTIVO", "SUBVENCAO", "BENEFICIO FISCAL",
+    ("CREDITOS PRESUMIDOS",        ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
+                                    "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
                                     "NAO CUMULATIVIDADE"]),
-    ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "SUBVENCAO", "BENEFICIO FISCAL",
+    ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
+                                    "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
                                     "NAO CUMULATIVIDADE"]),
     ("ISS",                        ["ISS", "SERVICO"]),
     ("MAJORACAO",                  ["LUCRO PRESUMIDO", "ADICIONAL", "MAJORACAO", "IRPJ"]),
@@ -607,11 +623,21 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             # abre a PETIÇÃO dos candidatos AGORA (página está nos resultados deste
             # grau — evita re-navegar). É o objeto real da tese.
             if not inspect and _eh_candidato(r["cells"], razao):
+                base = "https://" + url.split("/")[2]
                 if r.get("det"):
-                    # PJe 1.x: detalhe direto -> assunto DA FONTE + petição em HTML
-                    base = "https://" + url.split("/")[2]
+                    # PJe 1.x (consulta do advogado): detalhe por URL direta
                     a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
                     r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                elif grau in ("1x", "2x"):
+                    # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
+                    det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
+                    if det is not None:
+                        try:
+                            a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
+                            r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
+                        finally:
+                            try: det.close()
+                            except Exception: pass
                 else:
                     r["peticao"] = _abrir_peticao(page, r["proc"])
                     _fechar_abas_extras(page)
@@ -896,6 +922,54 @@ def _eh_candidato(cells, razao):
     return any(k in cn for k in CLASSES_TESE)
 
 
+MOTIVO_CONSULTA = os.environ.get("PJE_MOTIVO_CONSULTA",
+                                 "Analise de teses tributarias do cliente")
+
+
+def _abrir_detalhe_terceiros(page, ctx, proc):
+    """Abre o DETALHE a partir da lista de Terceiros do 1.x. O link é um postback
+    A4J (não tem URL) e o PJe exige informar o MOTIVO da consulta num modal —
+    a textarea precisa de CLIQUE antes de digitar (fill direto não funciona).
+    Retorna a página de detalhe (aba nova) ou None."""
+    idx = page.evaluate(r"""(proc) => {
+      const todos = [...document.querySelectorAll('a')];
+      for (const tr of document.querySelectorAll('tr')) {
+        if (tr.querySelector('tr') || !tr.innerText.includes(proc)) continue;
+        const a = [...tr.querySelectorAll('a')]
+          .find(x => /A4J|jsfcljs/.test(x.getAttribute('onclick') || ''));
+        if (a) return todos.indexOf(a);
+      }
+      return -1;
+    }""", proc)
+    if idx is None or idx < 0:
+        return None
+    try:
+        with ctx.expect_page(timeout=45000) as pinfo:
+            page.query_selector_all("a")[idx].click()
+            page.wait_for_timeout(4000)
+            # modal de motivo (pode não aparecer se já consultado nesta sessão)
+            alvo = page.evaluate(
+                """() => [...document.querySelectorAll('textarea')]
+                     .findIndex(e => /motivacao/i.test(e.id) && e.offsetParent !== null)"""
+            )
+            if alvo is not None and alvo >= 0:
+                h = page.query_selector_all("textarea")[alvo]
+                h.click()                                   # sem o clique não digita
+                page.keyboard.type(MOTIVO_CONSULTA, delay=25)
+                b = page.evaluate(
+                    """() => [...document.querySelectorAll('input[type=button]')]
+                         .findIndex(e => /gravar/i.test(e.value || '') && e.offsetParent !== null)"""
+                )
+                if b is not None and b >= 0:
+                    page.query_selector_all("input[type=button]")[b].click()
+        det = pinfo.value
+        det.wait_for_load_state("domcontentloaded")
+        det.wait_for_timeout(3500)
+        return det
+    except Exception:
+        return None
+
+
 def _peticao_pdf_1x(ctx, base, id_processo):
     """PJe 1.x: TEXTO COMPLETO da petição inicial (PDF), via Paginador.
 
@@ -967,6 +1041,23 @@ def _peticao_pdf_1x(ctx, base, id_processo):
         if pg is not None:
             try: pg.close()
             except Exception: pass
+
+
+def _extrair_detalhe_1x(det, ctx, base):
+    """De uma página de DETALHE já aberta (1.x): (assunto da fonte, órgão, petição)."""
+    meta = det.evaluate(r"""() => {
+      const txt = id => { const e=document.querySelector('[id^="'+id+'"]');
+                          return e ? e.textContent.replace(/\s+/g,' ').trim() : ''; };
+      const t = (document.body?document.body.innerText:'').replace(/\s+/g,' ');
+      const m = t.match(/Assunto\s+(DIREITO[^]*?)\s+Foram encontrados/i);
+      return {orgao: txt('cabecalhoDadosProcessoActionOrgaoJul'),
+              assunto: m ? m[1].trim() : ''};
+    }""")
+    peticao = ""
+    m = re.search(r"idProcessoTrf=(\d+)", det.url or "")
+    if m:
+        peticao = _peticao_pdf_1x(ctx, base, m.group(1))
+    return meta.get("assunto", ""), meta.get("orgao", ""), peticao
 
 
 def _detalhe_peticao_1x(ctx, base, caminho_detalhe):
