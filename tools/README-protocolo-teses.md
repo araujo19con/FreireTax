@@ -76,12 +76,19 @@ O 1.x é um sistema **diferente** do 2.x, não só outro host. O que muda:
 - **Assunto da fonte**: a tela de detalhe traz o assunto oficial
   (`DIREITO TRIBUTÁRIO|Crédito Tributário|…`), usado com **prioridade sobre o
   DataJud**. É um ganho de precisão — o DataJud erra com frequência.
-- **Petição inicial**: fica fora dos 15 documentos exibidos (é a mais antiga), por
-  isso é localizada via filtro _Tipo de documento = Petição Inicial_ + o botão
-  **do painel de documentos** (`<prefixo>:searchButton`, prefixo dinâmico).
-  ⚠️ Quando a inicial é **PDF anexo**, o `documentoHTML` traz só `"Em PDF."` + o
-  carimbo de assinatura — o endpoint do binário **não foi localizado**. Nesses
-  casos a classificação se apoia no assunto da fonte, não no corpo da peça.
+- **Petição inicial (texto COMPLETO)**: a inicial não está nos 15 documentos
+  exibidos (é a mais antiga) e o `documentoHTML` só diz `"Em PDF."`. A peça é
+  obtida pelo **Paginador** (`_peticao_pdf_1x`), receita validada ao vivo:
+  1. `paginator.seam?idProcesso=N`
+  2. `selecionarFimPaginador()` → salta para o documento **mais antigo** = a inicial
+  3. na lista de binários, a **peça** é a que **não** se chama `Doc. NN - …`
+     (essas são os anexos: procuração, contrato social…)
+  4. clicar dispara `POST → 302 → GET download.seam` (`application/pdf`). O corpo
+     **não** pode ser lido do evento (o visualizador consome o recurso): captura-se
+     a **URL** e re-busca com `page.request.get()`; o texto sai por `pypdf`.
+
+  Resultado medido: **9 páginas / ~15 mil caracteres** de peça real — bem mais que
+  o 2.x, que só lê a 1ª página via PDF.js.
 
 ## Como a tese é decidida (qualidade)
 

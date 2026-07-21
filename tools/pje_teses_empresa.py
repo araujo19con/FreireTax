@@ -841,6 +841,68 @@ def _eh_candidato(cells, razao):
     return any(k in cn for k in CLASSES_TESE)
 
 
+def _peticao_pdf_1x(ctx, base, id_processo):
+    """PJe 1.x: TEXTO COMPLETO da petição inicial (PDF), via Paginador.
+
+    Receita descoberta ao vivo (a inicial não aparece nos 15 docs da tela de
+    detalhe e o documentoHTML só diz "Em PDF."):
+      1. abre  /pje/Processo/Paginador/paginator.seam?idProcesso=N
+      2. selecionarFimPaginador()  -> vai ao documento MAIS ANTIGO = a inicial
+      3. na lista de binários, a PEÇA é a que NÃO se chama "Doc. NN - ..."
+         (essas são os anexos: procuração, contrato social, etc.)
+      4. clicar dispara POST -> 302 -> GET download.seam (application/pdf).
+         O body NÃO pode ser lido do evento (o visualizador consome o recurso),
+         então captura-se a URL e RE-BUSCA com a sessão do navegador.
+    Retorna o texto extraído (pypdf) ou "".
+    """
+    pg = None
+    try:
+        pg = ctx.new_page()
+        urls = []
+        pg.on("response", lambda r: urls.append(
+            (r.headers.get("content-type", "") or "", r.url)))
+        pg.goto(f"{base}/pje/Processo/Paginador/paginator.seam?idProcesso={id_processo}"
+                "&acessoProcessoTerceiros=", wait_until="domcontentloaded", timeout=90000)
+        pg.wait_for_timeout(6000)
+        pg.evaluate("() => { if (typeof selecionarFimPaginador === 'function') selecionarFimPaginador(); }")
+        pg.wait_for_timeout(8000)
+        idx = pg.evaluate(r"""() => {
+          const todos = [...document.querySelectorAll('a')];
+          let cand = -1;
+          todos.forEach((a, i) => {
+            if (!/jsfcljs/.test(a.getAttribute('onclick') || '')) return;
+            const tr = a.closest('tr'); if (!tr) return;
+            const t = tr.innerText.replace(/\s+/g, ' ').trim();
+            if (!/\d{2}\/\d{2}\/\d{4}/.test(t)) return;
+            if (/Doc\.\s*\d+\s*-/i.test(t)) return;      // anexo, não a peça
+            if (cand < 0) cand = i;
+          });
+          return cand;
+        }""")
+        if idx is None or idx < 0:
+            return ""
+        urls.clear()
+        pg.query_selector_all("a")[idx].click()
+        pg.wait_for_timeout(7000)
+        alvo = next((u for ct, u in urls if "application/pdf" in ct), None)
+        if not alvo:
+            return ""
+        r = pg.request.get(alvo, timeout=60000)
+        data = r.body()
+        if data[:4] != b"%PDF":
+            return ""
+        import io as _io
+        import pypdf
+        rd = pypdf.PdfReader(_io.BytesIO(data))
+        return "\n".join((x.extract_text() or "") for x in rd.pages[:8])
+    except Exception:
+        return ""
+    finally:
+        if pg is not None:
+            try: pg.close()
+            except Exception: pass
+
+
 def _detalhe_peticao_1x(ctx, base, caminho_detalhe):
     """PJe 1.x: abre a tela de DETALHE do processo direto pela URL (o link é um
     openPopUp — navegar direto evita o bloqueador de pop-up) e retorna
@@ -926,6 +988,14 @@ def _detalhe_peticao_1x(ctx, base, caminho_detalhe):
             # então entra junto no texto usado pra classificar.
             if desc and "em pdf" in (peticao or "").lower()[:60]:
                 peticao = desc + " " + (peticao or "")
+        # Se a inicial é PDF anexo, o texto acima é só o carimbo. Busca a peça
+        # COMPLETA pelo Paginador (é o objeto real da tese).
+        if len(peticao) < 1200:
+            m = re.search(r"idProcessoTrf=(\d+)", caminho_detalhe or "")
+            if m:
+                corpo = _peticao_pdf_1x(ctx, base, m.group(1))
+                if len(corpo) > len(peticao):
+                    peticao = corpo
     except Exception:
         pass
     finally:
