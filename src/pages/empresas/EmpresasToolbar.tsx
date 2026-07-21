@@ -50,6 +50,8 @@ interface EmpresasToolbarProps {
   onBulkMovePasta: () => void;
   onBulkVincularAcao: () => void;
   onBulkDelete: () => void;
+  /** Relatório em PDF das teses (já ajuizadas × aplicáveis) das selecionadas. */
+  onRelatorioTeses: () => void;
   onExport: (format: "csv" | "xlsx") => void;
   onClearSelection: () => void;
   totalCount: number;
@@ -80,6 +82,7 @@ export function EmpresasToolbar({
   onBulkMovePasta,
   onBulkVincularAcao,
   onBulkDelete,
+  onRelatorioTeses,
   onExport,
   onClearSelection,
   totalCount,
@@ -225,6 +228,10 @@ export function EmpresasToolbar({
             <Button variant="ghost" size="sm" onClick={onBulkVincularAcao} className="h-8">
               <Gavel className="mr-1.5 h-3.5 w-3.5" />
               Vincular ação
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onRelatorioTeses} className="h-8">
+              <FileText className="mr-1.5 h-3.5 w-3.5" />
+              Relatório de teses
             </Button>
             <Button variant="ghost" size="sm" onClick={() => onExport("xlsx")} className="h-8">
               <Download className="mr-1.5 h-3.5 w-3.5" />

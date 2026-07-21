@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { FolderPlus, Folder, FolderOpen, X, Gavel, Users, Sparkles, Upload } from "lucide-react";
 import { BulkEnrichDialog } from "./empresas/BulkEnrichDialog";
+import { RelatorioTesesDialog } from "./empresas/RelatorioTesesDialog";
 import { ImportarParaPastaDialog } from "./empresas/ImportarParaPastaDialog";
 
 import { PageHeader } from "@/components/PageHeader";
@@ -154,6 +155,7 @@ export default function Empresas() {
     null
   );
   const [bulkEnrichOpen, setBulkEnrichOpen] = useState(false);
+  const [relatorioTesesOpen, setRelatorioTesesOpen] = useState(false);
 
   // drag-drop to pasta/ação
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -667,6 +669,7 @@ export default function Empresas() {
             onBulkMovePasta={handleBulkMovePasta}
             onBulkVincularAcao={handleBulkVincularAcao}
             onBulkDelete={handleBulkDelete}
+            onRelatorioTeses={() => setRelatorioTesesOpen(true)}
             onExport={(format) => {
               void handleExport(format);
             }}
@@ -821,6 +824,11 @@ export default function Empresas() {
 
       {/* Bulk enrich dialog */}
       <BulkEnrichDialog open={bulkEnrichOpen} onOpenChange={setBulkEnrichOpen} />
+      <RelatorioTesesDialog
+        open={relatorioTesesOpen}
+        onOpenChange={setRelatorioTesesOpen}
+        empresaIds={Array.from(selectedIds)}
+      />
 
       {/* Detail Sheet */}
       <EmpresaDetailSheet
