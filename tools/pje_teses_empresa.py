@@ -984,31 +984,32 @@ def _total_encontrado(page):
 
 
 def _proxima_pagina(page):
-    """Avança o datascroller da LISTA de resultados. True se avançou.
+    """Avança a página da LISTA de resultados. True se avançou.
 
-    A lista do PJe mostra ~15 por página. Sem virar, empresa com muitos processos
-    era lida só na 1ª página — e como as execuções fiscais (onde ela é ré) são as
-    mais recentes, a tese ajuizada por ela costuma estar nas páginas seguintes.
+    O paginador do PJe 1.x NÃO é um datascroller de links — é um RichFaces
+    **inputNumberSlider**. No texto ele aparece como "Foram encontrados: 51
+    resultados  1  4" (página atual e última), e os números são só RÓTULOS:
+    clicar neles não faz nada, e o input da página é `readonly`. A virada se faz
+    por JS — remover o readonly, setar o valor e disparar os eventos.
+
+    Sem virar, empresa com muitos processos era lida só na 1ª página. E o viés é
+    perverso: execução fiscal (onde ela é RÉ) é recente e ocupa a 1ª página,
+    enquanto a tese que ela ajuizou é antiga e cai nas seguintes.
     """
     try:
         return bool(page.evaluate(r"""() => {
-          // RichFaces datascroller: <td class="rich-datascr-button"> com onclick
-          const cands = [...document.querySelectorAll(
-              'td[class*="datascr"], a[id*="scroller"], td[id*="scroller"], '
-              + '[class*="rich-datascr"]')];
-          const proximo = cands.find(e => {
-            const t = (e.innerText || '').trim().toLowerCase();
-            const ti = (e.getAttribute('title') || '').toLowerCase();
-            return t === '»' || t === '>' || t === 'próxima' || t === 'proxima'
-                || ti.includes('próxima') || ti.includes('proxima') || ti.includes('next');
-          });
-          if (!proximo) return false;
-          // desabilitado = última página
-          const cls = proximo.className || '';
-          if (/dsabled|disabled/i.test(cls)) return false;
-          proximo.click();
+          const inp = document.querySelector("input[class*='inslider-field']");
+          if (!inp) return false;
+          const maxEl = document.querySelector('.rich-inslider-right-num');
+          const max = maxEl ? parseInt(maxEl.innerText.trim(), 10) : NaN;
+          const atual = parseInt(inp.value, 10);
+          if (!isFinite(max) || !isFinite(atual) || atual >= max) return false;
+          inp.removeAttribute('readonly');
+          inp.value = String(atual + 1);
+          for (const ev of ['input', 'change', 'keyup', 'blur'])
+            inp.dispatchEvent(new Event(ev, {bubbles: true}));
           return true;
-        }""") )
+        }"""))
     except Exception:
         return False
 
