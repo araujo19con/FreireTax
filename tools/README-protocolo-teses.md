@@ -80,15 +80,22 @@ O 1.x é um sistema **diferente** do 2.x, não só outro host. O que muda:
   exibidos (é a mais antiga) e o `documentoHTML` só diz `"Em PDF."`. A peça é
   obtida pelo **Paginador** (`_peticao_pdf_1x`), receita validada ao vivo:
   1. `paginator.seam?idProcesso=N`
-  2. `selecionarFimPaginador()` → salta para o documento **mais antigo** = a inicial
-  3. na lista de binários, a **peça** é a que **não** se chama `Doc. NN - …`
-     (essas são os anexos: procuração, contrato social…)
+  2. `selecionarFimPaginador()` → salta para o documento **mais antigo**; a inicial
+     costuma estar na **penúltima** página, então volta até achar tipo "Petição"
+  3. na lista de binários, os candidatos são **ranqueados** (peso alto para
+     "Petição Inicial"; penalidade para procuração/contrato social/comprovante/
+     parecer) e testados em ordem até um passar em `peticao_valida()`.
+     ⚠️ **Não** use a regra antiga "a peça é a que não se chama `Doc. NN - …`":
+     ela escolhia exatamente os anexos. Numa auditoria das 8 peças da P J,
+     **nenhuma** era a inicial — vieram 3 procurações, 2 pareceres da Receita e
+     1 cartão CNPJ, e a tese "acertava" por acidente.
   4. clicar dispara `POST → 302 → GET download.seam` (`application/pdf`). O corpo
      **não** pode ser lido do evento (o visualizador consome o recurso): captura-se
      a **URL** e re-busca com `page.request.get()`; o texto sai por `pypdf`.
 
-  Resultado medido: **9 páginas / ~15 mil caracteres** de peça real — bem mais que
-  o 2.x, que só lê a 1ª página via PDF.js.
+  Resultado medido: iniciais reais de **13 a 15 mil caracteres**, abrindo com o
+  endereçamento ("JUÍZO FEDERAL DE UMA DAS VARAS DA SEÇÃO JUDICIÁRIA DO RN…") —
+  bem mais que o 2.x, que só lê a 1ª página via PDF.js.
 
 ## Como a tese é decidida (qualidade)
 
