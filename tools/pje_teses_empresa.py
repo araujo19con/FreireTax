@@ -250,6 +250,18 @@ def regras_tese():
          {"all": ["ISS"], "any": ["PIS", "COFINS", "BASE DE CALCULO", "TEMA 118"], "conf": "alta"}),
         ("EXCLUSÃO DA GORJETA DA BASE DE CÁLCULO DO PIS E DA COFINS",
          {"any": ["GORJETA", "GORJETAS"], "conf": "alta"}),
+        # PAT — Decreto 10.854/2021 limitou a dedução do Programa de Alimentação
+        # do Trabalhador; a tese afasta a limitação.
+        ("MANUTENÇÃO DA DEDUÇÃO DO PAT (DECRETO 10.854/2021)",
+         {"any": ["PAT", "PROGRAMA DE ALIMENTACAO DO TRABALHADOR", "DECRETO 10.854",
+                  "10.854"], "conf": "alta"}),
+        # Aprendizes fora da base da CPP/terceiros/RAT
+        ("EXCLUSÃO DOS APRENDIZES DA BASE DA CPP, TERCEIROS E RAT",
+         {"any": ["APRENDIZ", "APRENDIZES", "MENOR APRENDIZ"], "conf": "alta"}),
+        # Tema 69 do STF — ICMS fora da base do PIS/COFINS (a tese mais clássica)
+        ("EXCLUSÃO DO ICMS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 69)",
+         {"all": ["ICMS"], "any": ["TEMA 69", "EXCLUSAO - ICMS", "FATURAMENTO",
+                                   "RECEITA BRUTA"], "hint": ["PIS", "COFINS"], "conf": "alta"}),
         # PIS/COFINS sobre RECEITAS FINANCEIRAS (Decreto 8.426/2015 restabeleceu
         # as alíquotas por decreto). Vem antes da genérica de "própria base".
         ("NÃO INCIDÊNCIA DE PIS E COFINS SOBRE RECEITAS FINANCEIRAS",
@@ -291,7 +303,13 @@ def _norm(s):
 
 
 def assunto_tributario(assunto):
+    """O assunto é matéria TRIBUTÁRIA? O assunto do CNJ vem hierarquizado
+    ('DIREITO TRIBUTÁRIO|...' / 'DIREITO ADMINISTRATIVO|...'). Quando o ramo é
+    ADMINISTRATIVO e não há ramo tributário junto, NÃO é tese nossa — antes
+    entravam licitação, contrato administrativo e equilíbrio financeiro."""
     a = _norm(assunto)
+    if "DIREITO ADMINISTRATIVO" in a and "DIREITO TRIBUTARIO" not in a:
+        return False
     return any(k in a for k in ASSUNTO_TRIB)
 
 
@@ -321,6 +339,11 @@ CORROB = [
     ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
                                     "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
                                     "NAO CUMULATIVIDADE"]),
+    ("PAT",                        ["PAT", "ALIMENTACAO", "IRPJ", "LUCRO"]),
+    ("APRENDIZES",                 ["APRENDIZ", "APRENDIZES", "CONTRIBUICAO", "FOLHA",
+                                    "RAT", "TERCEIROS", "PREVIDENCIARIA"]),
+    ("TEMA 69",                    ["ICMS", "EXCLUSAO - ICMS", "BASE DE CALCULO", "PIS",
+                                    "COFINS", "FATURAMENTO"]),
     ("RECEITAS FINANCEIRAS",       ["PIS", "COFINS", "RECEITA", "RECEITAS", "FINANCEIRA",
                                     "FINANCEIRAS", "NAO CUMULATIVIDADE"]),
     ("ISS",                        ["ISS", "SERVICO"]),
@@ -672,6 +695,22 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
         # ou o assunto está vazio — processo novo não indexado).
         c["corrob"] = assunto_corrobora(tese, c["assunto"]) if tese else False
         c["fonte_tese"] = "petição" if c.get("peticao") else "assunto(DataJud)"
+
+    # Uma empresa NÃO ajuíza a MESMA tese duas vezes (regra do escritório). Se
+    # dois processos caíram na mesma tese, no máximo um está certo: mantém o de
+    # melhor evidência (corroborado > petição lida) e rebaixa os outros a
+    # SUGESTÃO, pra revisão manual — em vez de cravar duplicata errada.
+    for tese_nome in {c["tese"] for c in candidatos if c.get("tese")}:
+        mesmos = [c for c in candidatos if c.get("tese") == tese_nome]
+        if len(mesmos) < 2:
+            continue
+        mesmos.sort(key=lambda c: (bool(c.get("corrob")), bool(c.get("peticao"))), reverse=True)
+        for c in mesmos[1:]:
+            c["corrob"] = False
+            c["dup"] = True
+        print(f"  [dup] {len(mesmos)} processos caíram em '{tese_nome.strip()[:48]}' — "
+              f"mantido {mesmos[0]['proc']}, os demais viram sugestão.", flush=True)
+
     analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, len(todos), True)
 
     # persiste no CRM SÓ o que é de fato tributário (tese cravada OU assunto
