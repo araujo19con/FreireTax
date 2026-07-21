@@ -159,13 +159,30 @@ custaram classificação errada:
   da filial devolvia ZERO justamente nas maiores empresas da base — Riachuelo,
   Guararapes e M. Dias Branco vieram todas vazias. `_cnpjs_a_buscar()` acrescenta
   o CNPJ da matriz (raiz + `0001` + DV por mod 11) quando o alvo é filial.
-- **A lista é paginada (~15 por página).** Sem virar página, só a 1ª era lida —
+- **A lista é paginada (~15 por página) e o paginador é um SLIDER.** Não é
+  datascroller: não existe nada com classe `rich-datascr` na página. É um
+  RichFaces `inputNumberSlider` — no texto sai como
+  `Foram encontrados: 51 resultados  1  4` (página atual e última). Os números
+  são **rótulos inertes** (clicar não faz nada) e o input da página é `readonly`
+  (o `fill` do Playwright dá timeout: _element is not editable_). Vira-se por JS:
+  remover o readonly, setar o valor e disparar `input/change/keyup/blur`.
+  Sem virar página, só a 1ª era lida —
   e o viés é perverso: as execuções fiscais (onde a empresa é **ré**) são as mais
   recentes e ocupam a 1ª página, enquanto a tese que ela ajuizou é mais antiga e
   cai nas seguintes. Resultado típico: "15 linhas, 15 descartadas como ré, 0
   candidatos". Pior, o `_esperar` ficava aguardando as linhas renderizadas
   alcançarem o contador do PJe — alvo inatingível numa página só, 108 s de
   timeout por busca.
+
+### Limite: matriz fora do TRF5
+
+Buscar o CNPJ da matriz resolve o caso da filial **cuja matriz litiga no TRF5**.
+Quando a matriz é de outra região (Coteminas → MG, Amcor → SP, Três Corações →
+MG), a tese dela tramita no TRF1/TRF3/TRF6 — que este protocolo não consulta.
+
+Para essas, **"0 teses" significa "0 teses no TRF5"**, não "nunca ajuizou". Elas
+aparecem no RN só como rés em execução fiscal. Não leia o resultado como
+oportunidade comercial livre sem antes checar a região da matriz.
 
 ## Eficiência
 
