@@ -328,8 +328,12 @@ def regras_tese():
         # então crédito presumido + não-cumulatividade => variante PIS/COFINS. Isso
         # desempata quando a petição (só 1ª página) não traz "PIS/COFINS" literal mas
         # o assunto CNJ do DataJud é "Não Cumulatividade; Crédito Presumido".
+        # exige ICMS explícito: crédito presumido de IPI é OUTRA tese (e não está
+        # no catálogo). Sem isso um MS sobre "Exclusão - IPI | Não Cumulatividade"
+        # da Três Corações foi cravado como incentivo de ICMS.
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
-         {"all": ["CREDITO PRESUMIDO"], "any": ["PIS", "COFINS", "NAO CUMULATIVIDADE"], "conf": "alta"}),
+         {"all": ["CREDITO PRESUMIDO", "ICMS"],
+          "any": ["PIS", "COFINS", "NAO CUMULATIVIDADE"], "conf": "alta"}),
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
          {"any": ["INCENTIVO FISCAL", "INCENTIVOS FISCAIS", "SUBVENCAO", "SUBVENCOES",
                   "BENEFICIO FISCAL", "BENEFICIOS FISCAIS"],
@@ -370,15 +374,18 @@ def regras_tese():
          {"any": ["RECEITAS FINANCEIRAS", "RECEITA FINANCEIRA", "DECRETO 8.426",
                   "8.426"], "conf": "alta"}),
         # crédito presumido de ICMS fora da base do IRPJ/CSLL (sem PIS/COFISN acima)
+        # o nome da tese diz ICMS — a regra tem de exigir. Crédito presumido de
+        # IPI é outra tese (e não está no catálogo): melhor cair em "a mapear".
         ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
-         {"all": ["CREDITO PRESUMIDO"], "conf": "alta"}),
+         {"all": ["CREDITO PRESUMIDO", "ICMS"], "conf": "alta"}),
         # creditamento PIS/COFINS sobre ICMS na aquisição (exige AQUISICAO p/ não
         # colidir com crédito presumido)
         ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS",
          {"all": ["AQUISICAO"], "any": ["PIS", "COFINS"], "hint": ["ICMS", "CREDIT"], "conf": "alta"}),
         # IPI — exclusão do IPI da base do PIS/COFINS (indústria: bebidas, etc.)
         ("EXCLUSÃO DO IPI DA BASE DE CÁLCULO DO PIS E DA COFINS",
-         {"any": ["IPI", "IMPOSTO SOBRE PRODUTOS INDUSTRIALIZADOS"], "conf": "alta"}),
+         {"any": ["IPI", "IMPOSTO SOBRE PRODUTOS INDUSTRIALIZADOS"],
+          "nao": ["CREDITO PRESUMIDO"], "conf": "alta"}),
         # ICMS "por dentro" — exclusão do ICMS da própria base de cálculo
         ("EXCLUSÃO DO ICMS DA PRÓPRIA BASE DE CÁLCULO (ICMS POR DENTRO)",
          {"all": ["ICMS"], "any": ["POR DENTRO", "PROPRIA BASE", "NA PROPRIA BASE", "NA SUA BASE"],
@@ -428,10 +435,13 @@ CORROB = [
     ("POR DENTRO",                 ["ICMS", "POR DENTRO", "BASE DE CALCULO"]),
     ("CREDITOS PRESUMIDOS",        ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
                                     "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
-                                    "NAO CUMULATIVIDADE"]),
+                                    "ICMS"]),
+    # "NAO CUMULATIVIDADE" sozinha NÃO confirma: ela aparece em assunto de IPI
+    # ("IPI | Não Cumulatividade") e fazia um caso de IPI ser cravado como ICMS.
+    # O que confirma é o incentivo/crédito presumido ou o próprio ICMS.
     ("INCENTIVOS FISCAIS DE ICMS", ["CREDITO PRESUMIDO", "INCENTIVO", "INCENTIVOS", "SUBVENCAO",
                                     "SUBVENCOES", "BENEFICIO FISCAL", "BENEFICIOS FISCAIS",
-                                    "NAO CUMULATIVIDADE"]),
+                                    "ICMS"]),
     ("20 SALARIOS MINIMOS",        ["INCRA", "SEBRAE", "SENAI", "SENAC", "SESC", "SESI",
                                     "SALARIO EDUCACAO", "TERCEIROS", "CORPORATIVAS",
                                     "CONTRIBUICAO", "CONTRIBUICOES"]),
@@ -516,6 +526,11 @@ def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
         # uma com várias grafias (ex.: creditar + ICMS-ST). "all" não serve porque
         # exigiria TODAS as grafias de uma vez.
         if "any2" in rg and not any(_tem(t, texto) for t in rg["any2"]):
+            continue
+        # veto: termo que DESCARACTERIZA a tese. "Crédito presumido de IPI" é
+        # ressarcimento na exportação (Lei 9.363/96) — outra tese, fora do
+        # catálogo — e estava sendo lida como "exclusão do IPI da base".
+        if "nao" in rg and any(_tem(t, texto) for t in rg["nao"]):
             continue
         # confiança base da regra; hint presente sobe "media" -> "alta"
         conf = rg.get("conf", "media")
