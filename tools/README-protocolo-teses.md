@@ -68,6 +68,20 @@ O 1.x é um sistema **diferente** do 2.x, não só outro host. O que muda:
 - **WAF/captcha**: navegação programática pode cair num desafio anti-bot
   ("What code is in the image?"). Se acontecer, resolva o captcha **manualmente**
   na janela do Chrome; a sessão libera em seguida.
+- **Fim da busca**: o 1.x não expõe overlay detectável e mantém uma linha
+  **fantasma** antes do resultado (medido: 16s com 1 linha falsa). O fim é
+  marcado pelo contador **"Foram encontrados: N"** — espera-se renderizar as N
+  linhas. Também é preciso **Limpar** antes de cada busca (o 1.x não zera a
+  tabela entre consultas, e a lista antiga era lida como resultado novo).
+- **Assunto da fonte**: a tela de detalhe traz o assunto oficial
+  (`DIREITO TRIBUTÁRIO|Crédito Tributário|…`), usado com **prioridade sobre o
+  DataJud**. É um ganho de precisão — o DataJud erra com frequência.
+- **Petição inicial**: fica fora dos 15 documentos exibidos (é a mais antiga), por
+  isso é localizada via filtro _Tipo de documento = Petição Inicial_ + o botão
+  **do painel de documentos** (`<prefixo>:searchButton`, prefixo dinâmico).
+  ⚠️ Quando a inicial é **PDF anexo**, o `documentoHTML` traz só `"Em PDF."` + o
+  carimbo de assinatura — o endpoint do binário **não foi localizado**. Nesses
+  casos a classificação se apoia no assunto da fonte, não no corpo da peça.
 
 ## Como a tese é decidida (qualidade)
 
