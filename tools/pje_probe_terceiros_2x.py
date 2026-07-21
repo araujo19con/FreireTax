@@ -14,6 +14,7 @@ USO (com o Chrome REAL já aberto e A3 do TRF5 logado):
   python tools/pje_probe_terceiros_2x.py --cnpj 01.611.866/0001-00 --port 9223
 """
 import re
+import time
 import argparse
 from playwright.sync_api import sync_playwright
 
@@ -44,16 +45,31 @@ def sondar(ctx, caminho, cnpj):
     try:
         pg.goto(HOST + caminho, wait_until="domcontentloaded", timeout=90000)
         pg.wait_for_timeout(4000)
-        if any(k in pg.url.lower() for k in ("sso", "login", "auth")):
-            return "PRECISA LOGIN A3", []
+        # NÃO desiste no SSO: espera o A3 ser concluído na janela (o certificado é
+        # apresentado pelo usuário; o script só observa o form aparecer).
+        avisou = False
         campo = None
-        for _ in range(30):                      # o form entra por AJAX
-            campo = pg.query_selector(SEL_CNPJ)
-            if campo:
-                break
-            pg.wait_for_timeout(1000)
+        for _ in range(300):                     # até ~5 min
+            # durante o SSO a página navega várias vezes; qualquer consulta ao DOM
+            # no meio disso estoura "Execution context was destroyed". Ignorar e
+            # tentar de novo é o comportamento correto — não é erro, é redirect.
+            try:
+                campo = pg.query_selector(SEL_CNPJ)
+                if campo:
+                    break
+                url = pg.url.lower()
+            except Exception:
+                url = ""
+            if not avisou and any(k in url for k in ("sso", "login", "auth")):
+                print("    >>> faça o LOGIN A3 do TRF5 nesta janela do Chrome "
+                      "(aguardando o formulário de consulta)...")
+                avisou = True
+            try:
+                pg.wait_for_timeout(1000)
+            except Exception:
+                time.sleep(1)
         if not campo:
-            return "campo de CNPJ não encontrado", []
+            return "campo de CNPJ não encontrado (login não concluído?)", []
         campo.click()
         campo.fill(re.sub(r"\D", "", cnpj))
         pg.keyboard.press("Tab")

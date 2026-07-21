@@ -95,19 +95,63 @@ O 1.x é um sistema **diferente** do 2.x, não só outro host. O que muda:
 1. **Filtro**: só a empresa como **autora** em classe de tese (MS, procedimento
    comum, declaratória…). Descarta ré, embargos/execução/cumprimento.
 2. **Petição inicial** é a fonte do objeto real (o assunto CNJ do DataJud engana).
+   O que chega tem de ser a **peça**, não um anexo: os binários são ranqueados e
+   cada candidato passa por `peticao_valida()`, que exige o **endereçamento**
+   ("JUÍZO FEDERAL…", "EXCELENTÍSSIMO…") no cabeçalho. Se nenhum passa, o texto
+   volta **vazio** e a tese é decidida só pelo assunto — com a fonte rotulada como
+   tal. Não classificar é melhor que classificar por anexo: procuração, contrato
+   social, parecer COSIT e cartão CNPJ acompanham TODA inicial e citam tributos,
+   então dariam falsa precisão.
 3. **Corroboração**: a tese só é **cravada** (`acao_id`) se o assunto do DataJud
    **confirmar** o que a petição indicou. Sem confirmação (assunto vazio ou
    divergente) ela fica só como `metadados.tese_sugerida` — aparece na UI como
    "tese sugerida (revisar)" e **não** entra no cálculo do gap.
 4. Objeto administrativo pontual (CND/certidão) **não é tese** — descartado.
+5. **Uma empresa não entra duas vezes na mesma tese**: se 2+ processos caem na
+   mesma, mantém o de melhor evidência e os demais viram sugestão para revisão.
+6. **Uma inicial pode carregar mais de uma tese** (ex.: MS que pede exclusão de
+   ICMS _e_ de ISS da base do PIS/COFINS). As demais ficam em
+   `metadados.teses_extras` — a ficha e o relatório descontam todas da oferta.
+7. **Rescisória só existe no 2º grau** (competência originária do tribunal). Há
+   teses que dependem da classe processual, não só das palavras.
 
 Na UI: verde = cravada · amarelo = sugerida (revisar) · itálico = "tese a mapear"
 (tributário fora do catálogo).
+
+### Ao criar uma regra nova
+
+O casamento é por **palavra inteira** (`\bTOKEN\b`). Duas armadilhas que já
+custaram classificação errada:
+
+- **Token truncado nunca casa**: `CREDIT` não casa em "créditos", `HOSPITA` não
+  casa em "hospitalar". Escreva a palavra completa e todas as variantes.
+- **Plural do CNJ**: o assunto vem quase sempre no plural — `CONTRIBUICAO` não
+  casa em "Contribuições". Inclua as duas formas.
+- Sigla genérica **não** distingue tese: `RAT` aparece em toda petição
+  previdenciária ("CPP, terceiros e RAT"). Use o que é próprio da tese
+  (atividade preponderante, grau de risco, FAP).
+- Chaves disponíveis: `all` (todos), `any` (pelo menos um), `any2` (segundo grupo
+  obrigatório — para exigir duas ideias, cada uma com várias grafias), `hint`
+  (sobe a confiança), `classe` (restringe à classe processual).
 
 ## Limitações conhecidas
 
 - **Limite diário** de abertura de autos no TRF5: quando estoura, a petição não é
   lida e a tese cai para "a mapear". Rode em lotes ao longo dos dias.
 - A **sessão A3 federal expira rápido** — rode os lotes em sequência.
-- A extração da petição pega a **1ª página** do PDF.js; termos que só aparecem
-  adiante podem escapar (por isso a corroboração existe).
+- No 2.x a extração pega a **1ª página** via PDF.js; no 1.x a peça vem completa
+  (~8 páginas, pypdf). Por isso a corroboração existe.
+- **O DataJud não publica as partes** — só classe/assunto/movimentos por número.
+  Não dá para pré-filtrar empresas por CNPJ por lá; o scrape do PJe é a única
+  porta de entrada (testado e descartado em 21/07/2026).
+
+## Eficiência
+
+- `"Foram encontrados: 0"` é resposta **completa**. Tratar o zero como "sem
+  contador" fazia cada empresa sem processo gastar o timeout inteiro (90 s) —
+  e essa é a maioria da base.
+- A petição inicial é **imutável**: fica em `tools/.cache/peticoes/<numero>.json`.
+  Como o catálogo cresce a cada objeto confirmado, **reanalisar é a operação mais
+  frequente** — com cache ela custa ~0. Só grava extração bem-sucedida; use
+  `--sem-cache` se suspeitar de extração truncada.
+- Espera **condicional** (`_ate`) em vez de sleep fixo em todo o fluxo do PJe.
