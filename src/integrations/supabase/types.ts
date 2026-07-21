@@ -551,6 +551,11 @@ export type Database = {
           contato_principal_telefone: string | null;
           contato_principal_whatsapp: boolean;
           valor_potencial_total: number | null;
+          teses_status: string;
+          teses_solicitada_em: string | null;
+          teses_solicitada_por: string | null;
+          teses_analisada_em: string | null;
+          teses_erro: string | null;
         };
         Insert: {
           bairro?: string | null;
@@ -604,6 +609,11 @@ export type Database = {
           contato_principal_telefone?: string | null;
           contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
+          teses_status?: string;
+          teses_solicitada_em?: string | null;
+          teses_solicitada_por?: string | null;
+          teses_analisada_em?: string | null;
+          teses_erro?: string | null;
         };
         Update: {
           bairro?: string | null;
@@ -657,6 +667,11 @@ export type Database = {
           contato_principal_telefone?: string | null;
           contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
+          teses_status?: string;
+          teses_solicitada_em?: string | null;
+          teses_solicitada_por?: string | null;
+          teses_analisada_em?: string | null;
+          teses_erro?: string | null;
         };
         Relationships: [
           {

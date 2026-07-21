@@ -141,6 +141,13 @@ interface CatalogoRow {
   nome: string;
   tipo: string | null;
 }
+/** Estado do protocolo de análise de teses no PJe (fila consumida pelo tool local). */
+interface TesesProtocoloRow {
+  teses_status: string;
+  teses_solicitada_em: string | null;
+  teses_analisada_em: string | null;
+  teses_erro: string | null;
+}
 
 function useEmpresaRelations(empresaId: string | undefined) {
   return useQuery({
@@ -157,6 +164,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
           prospeccoes: [],
           procTrib: [],
           catalogo: [],
+          teses: null,
         } as {
           eleg: ElegRow[];
           tarefas: TarefaRow[];
@@ -166,57 +174,72 @@ function useEmpresaRelations(empresaId: string | undefined) {
           prospeccoes: ProspeccaoTimelineRow[];
           procTrib: ProcTribRow[];
           catalogo: CatalogoRow[];
+          teses: TesesProtocoloRow | null;
         };
-      const [elegRes, tarRes, reunRes, pastasRes, auditRes, prospRes, procTribRes, catRes] =
-        await Promise.all([
-          supabase
-            .from("elegibilidade")
-            .select(
-              "id, acao_id, elegivel, justificativa, valor_potencial_estimado, ja_ajuizada, ajuizada_por_nos, ajuizamento_notas, acoes_tributarias(nome, tipo)"
-            )
-            .eq("empresa_id", empresaId),
-          supabase
-            .from("tarefas")
-            .select("id, titulo, status, prazo, prioridade, created_at")
-            .eq("empresa_id", empresaId)
-            .order("created_at", { ascending: false })
-            .limit(20),
-          supabase
-            .from("reunioes")
-            .select("id, titulo, data_inicio, status")
-            .eq("empresa_id", empresaId)
-            .order("data_inicio", { ascending: false })
-            .limit(20),
-          supabase
-            .from("pasta_empresa_items")
-            .select("pasta_id, pastas_empresas(nome)")
-            .eq("empresa_id", empresaId),
-          supabase
-            .from("audit_logs")
-            .select("id, acao, created_at, detalhes")
-            .eq("tabela", "empresas")
-            .eq("registro_id", empresaId)
-            .order("created_at", { ascending: false })
-            .limit(30),
-          supabase
-            .from("prospeccoes")
-            .select("id, status_prospeccao, created_at, acoes_tributarias(nome)")
-            .eq("empresa_id", empresaId)
-            .order("created_at", { ascending: false })
-            .limit(20),
-          supabase
-            .from("empresa_processos_tributarios")
-            .select(
-              "id, numero, grau, classe, orgao, situacao, assunto, acao_id, detectado_em, metadados, acoes_tributarias(nome)"
-            )
-            .eq("empresa_id", empresaId)
-            .order("detectado_em", { ascending: false }),
-          supabase
-            .from("acoes_tributarias")
-            .select("id, nome, tipo")
-            .eq("status", "Ativa")
-            .order("nome"),
-        ]);
+      const [
+        elegRes,
+        tarRes,
+        reunRes,
+        pastasRes,
+        auditRes,
+        prospRes,
+        procTribRes,
+        catRes,
+        tesesRes,
+      ] = await Promise.all([
+        supabase
+          .from("elegibilidade")
+          .select(
+            "id, acao_id, elegivel, justificativa, valor_potencial_estimado, ja_ajuizada, ajuizada_por_nos, ajuizamento_notas, acoes_tributarias(nome, tipo)"
+          )
+          .eq("empresa_id", empresaId),
+        supabase
+          .from("tarefas")
+          .select("id, titulo, status, prazo, prioridade, created_at")
+          .eq("empresa_id", empresaId)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        supabase
+          .from("reunioes")
+          .select("id, titulo, data_inicio, status")
+          .eq("empresa_id", empresaId)
+          .order("data_inicio", { ascending: false })
+          .limit(20),
+        supabase
+          .from("pasta_empresa_items")
+          .select("pasta_id, pastas_empresas(nome)")
+          .eq("empresa_id", empresaId),
+        supabase
+          .from("audit_logs")
+          .select("id, acao, created_at, detalhes")
+          .eq("tabela", "empresas")
+          .eq("registro_id", empresaId)
+          .order("created_at", { ascending: false })
+          .limit(30),
+        supabase
+          .from("prospeccoes")
+          .select("id, status_prospeccao, created_at, acoes_tributarias(nome)")
+          .eq("empresa_id", empresaId)
+          .order("created_at", { ascending: false })
+          .limit(20),
+        supabase
+          .from("empresa_processos_tributarios")
+          .select(
+            "id, numero, grau, classe, orgao, situacao, assunto, acao_id, detectado_em, metadados, acoes_tributarias(nome)"
+          )
+          .eq("empresa_id", empresaId)
+          .order("detectado_em", { ascending: false }),
+        supabase
+          .from("acoes_tributarias")
+          .select("id, nome, tipo")
+          .eq("status", "Ativa")
+          .order("nome"),
+        supabase
+          .from("empresas")
+          .select("teses_status, teses_solicitada_em, teses_analisada_em, teses_erro")
+          .eq("id", empresaId)
+          .maybeSingle(),
+      ]);
       const pastaLinks = (pastasRes.data || []) as unknown as PastaLinkRow[];
       return {
         eleg: (elegRes.data || []) as unknown as ElegRow[],
@@ -227,6 +250,7 @@ function useEmpresaRelations(empresaId: string | undefined) {
         prospeccoes: (prospRes.data || []) as unknown as ProspeccaoTimelineRow[],
         procTrib: (procTribRes.data || []) as unknown as ProcTribRow[],
         catalogo: (catRes.data || []) as unknown as CatalogoRow[],
+        teses: (tesesRes.data ?? null) as unknown as TesesProtocoloRow | null,
       };
     },
   });
@@ -312,6 +336,33 @@ export function EmpresaDetailSheet({
     if (!empresa) return;
     onClose();
     navigate(`/acoes?acao=${acaoId}&empresa=${empresa.id}`);
+  };
+
+  // Protocolo de teses: a UI só ENFILEIRA (o scraper roda local, precisa do A3).
+  // O tool `pje_teses_empresa.py --fila` consome as pendentes e escreve o resultado.
+  const [solicitandoTeses, setSolicitandoTeses] = useState(false);
+  const solicitarAnaliseTeses = async () => {
+    if (!empresa) return;
+    setSolicitandoTeses(true);
+    try {
+      const { data: auth } = await supabase.auth.getUser();
+      const { error } = await supabase
+        .from("empresas")
+        .update({
+          teses_status: "pendente",
+          teses_solicitada_em: new Date().toISOString(),
+          teses_solicitada_por: auth.user?.id ?? null,
+          teses_erro: null,
+        })
+        .eq("id", empresa.id);
+      if (error) throw error;
+      toast.success("Análise de teses solicitada — entra na próxima rodada do protocolo.");
+      void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+    } catch (e) {
+      toast.error("Falha ao solicitar análise: " + ((e as Error).message ?? "erro"));
+    } finally {
+      setSolicitandoTeses(false);
+    }
   };
 
   // Reseta aba para "overview" quando a empresa muda
@@ -748,6 +799,61 @@ export function EmpresaDetailSheet({
 
               {/* AÇÕES */}
               <TabsContent value="acoes" className="mt-0 space-y-3">
+                {/* Protocolo padrão: varre TRF5 PJe 2.x (1º/2º grau) + PJe 1.x da
+                    Seção Judiciária da UF, classifica a tese e grava aqui. */}
+                {(() => {
+                  const st = relations?.teses?.teses_status ?? "nao_analisado";
+                  const naFila = st === "pendente" || st === "processando";
+                  const legenda =
+                    st === "pendente"
+                      ? "Na fila — será processada na próxima rodada do protocolo."
+                      : st === "processando"
+                        ? "Processando agora no PJe..."
+                        : st === "erro"
+                          ? `Erro: ${relations?.teses?.teses_erro ?? "falha na análise"}`
+                          : st === "concluido"
+                            ? `Última análise: ${formatDateTime(relations?.teses?.teses_analisada_em)}`
+                            : "Nunca analisada. Busca no PJe quais teses a empresa já ajuizou.";
+                  return (
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-2">
+                          <ScanSearch className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Protocolo de teses no PJe
+                            </p>
+                            <p
+                              className={cn(
+                                "mt-0.5 text-[11px]",
+                                st === "erro" ? "text-destructive" : "text-muted-foreground"
+                              )}
+                            >
+                              {legenda}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 shrink-0 px-2 text-[11px]"
+                          disabled={naFila || solicitandoTeses}
+                          onClick={() => void solicitarAnaliseTeses()}
+                        >
+                          {naFila ? (
+                            "Na fila"
+                          ) : (
+                            <>
+                              <ScanSearch className="mr-1 h-3 w-3" />
+                              {st === "concluido" ? "Reanalisar" : "Analisar teses"}
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {loadingRel ? (
                   <Skeleton className="h-20 w-full" />
                 ) : !relations?.eleg.length ? (

@@ -43,6 +43,21 @@ GRAUS = {
     "1gf": "https://pje1g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
     "2gf": "https://pje2g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
 }
+# PJe 1.x do TRF5: instância PRÓPRIA por Seção Judiciária (uma por estado). Os
+# processos antigos ficaram lá — o 2.x (pje1g/pje2g.trf5) não os mostra. Qual
+# instância consultar depende da UF DA EMPRESA. Grau "1x" resolve em runtime.
+PJE_1X = {
+    "RN": "https://pje.jfrn.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "PB": "https://pje.jfpb.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "PE": "https://pje.jfpe.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "AL": "https://pje.jfal.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "SE": "https://pje.jfse.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+    "CE": "https://pje.jfce.jus.br/pje/Processo/ConsultaProcesso/listView.seam",
+}
+PJE_1X_2G = "https://pje.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam"
+# PROTOCOLO PADRÃO de análise de teses (o que roda quando a UI pede): federal
+# 2.x (1º e 2º grau) + PJe 1.x da Seção Judiciária da UF da empresa.
+PROTOCOLO_PADRAO = "1gf,2gf,1x"
 RE_PROC = re.compile(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}")
 TESE_ID = {}  # norm(nome da tese) -> acao_id; preenchido em main()
 
@@ -113,6 +128,21 @@ def sb_upsert(path, body, on_conflict):
                  "Prefer": "resolution=merge-duplicates,return=minimal"})
     with urllib.request.urlopen(req, timeout=40) as r:
         return r.status
+
+
+def sb_patch(path, body):
+    """PATCH — usado pra mover o status do protocolo (fila da UI)."""
+    req = urllib.request.Request(
+        f"{SUPABASE_URL}/rest/v1/{path}", data=json.dumps(body).encode(), method="PATCH",
+        headers={"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}",
+                 "Content-Type": "application/json", "Prefer": "return=minimal"})
+    with urllib.request.urlopen(req, timeout=40) as r:
+        return r.status
+
+
+def _agora():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +350,9 @@ def main():
     ap.add_argument("--cnpj", help="CNPJ único a analisar")
     ap.add_argument("--cnpjs", help="lista de CNPJs separados por vírgula (1 login, N empresas)")
     ap.add_argument("--acao", metavar="ACAO_ID", help="analisa TODAS as empresas de uma ação (via elegibilidade)")
+    ap.add_argument("--fila", action="store_true",
+                    help="PROTOCOLO PADRÃO: consome as empresas que a UI marcou como pendentes "
+                         f"(botão 'Analisar teses'), com --graus {PROTOCOLO_PADRAO}")
     ap.add_argument("--limit", type=int, default=200, help="máx de empresas no modo --acao")
     ap.add_argument("--autos", action="store_true",
                     help="abre os autos dos candidatos p/ ler o assunto CNJ e cravar a tese exata "
@@ -329,7 +362,9 @@ def main():
     ap.add_argument("--inspect", action="store_true",
                     help="1ª vez: loga, dumpa os campos do form + linhas cruas de resultado e sai")
     ap.add_argument("--graus", default="1g,2g,1gf,2gf",
-                    help="graus a buscar: 1g/2g=TJRN estadual, 1gf/2gf=TRF5 federal (default todos)")
+                    help="graus: 1g/2g=TJRN estadual, 1gf/2gf=TRF5 federal PJe 2.x, "
+                         "1x=PJe 1.x da Seção Judiciária da UF da empresa (jfrn/jfpb/jfpe/jfal/jfse/jfce), "
+                         "2x=PJe 1.x do 2º grau (trf5)")
     ap.add_argument("--cdp", action="store_true",
                     help="conecta no Chrome REAL (via chrome-cdp.ps1) — NECESSÁRIO pro A3 federal "
                          "(TRF5/PDPJ): o Chromium do Playwright não apresenta o certificado no SSO")
@@ -338,9 +373,20 @@ def main():
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: rode `. tools\\pje-env.local.ps1` antes.")
 
-    # ---- monta a lista de CNPJs alvo (single / lista / ação) ----
+    # ---- monta a lista de CNPJs alvo (fila da UI / single / lista / ação) ----
     alvos = []  # [cnpj_digits]
-    if args.acao:
+    fila_map = {}  # cnpj_digits -> empresa_id (só no modo --fila, p/ mover o status)
+    if args.fila:
+        if args.graus == ap.get_default("graus"):
+            args.graus = PROTOCOLO_PADRAO  # protocolo padrão quando não sobrescrito
+        rows = sb("empresas?select=id,cnpj,nome&teses_status=eq.pendente"
+                  f"&order=teses_solicitada_em.asc&limit={args.limit}")
+        for r in rows:
+            c = re.sub(r"\D", "", r.get("cnpj") or "")
+            if len(c) == 14:
+                alvos.append(c); fila_map[c] = r["id"]
+        print(f"[fila] {len(alvos)} empresa(s) pendente(s) | graus={args.graus}")
+    elif args.acao:
         rows = sb(f"elegibilidade?select=empresas!inner(cnpj)&acao_id=eq.{args.acao}&limit={args.limit}")
         for r in rows:
             c = re.sub(r"\D", "", ((r.get("empresas") or {}).get("cnpj") or ""))
@@ -351,7 +397,7 @@ def main():
         alvos = [re.sub(r"\D", "", args.cnpj)]
     alvos = [c for c in dict.fromkeys(alvos) if len(c) == 14]  # dedup + válidos
     if not alvos:
-        sys.exit("Nada a analisar. Passe --cnpj, --cnpjs ou --acao.")
+        sys.exit("Nada a analisar. Passe --fila (protocolo pedido na UI), --cnpj, --cnpjs ou --acao.")
 
     cat_rows = sb("acoes_tributarias?select=id,nome&status=eq.Ativa")
     catalogo = [r["nome"] for r in cat_rows]
@@ -361,7 +407,8 @@ def main():
     print(f"{len(alvos)} empresa(s) a analisar | catálogo: {len(catalogo)} teses")
 
     from playwright.sync_api import sync_playwright
-    graus = [g.strip() for g in args.graus.split(",") if g.strip() in GRAUS]
+    graus_validos = set(GRAUS) | {"1x", "2x"}
+    graus = [g.strip() for g in args.graus.split(",") if g.strip() in graus_validos]
 
     with sync_playwright() as p:
         if args.cdp:
@@ -379,14 +426,32 @@ def main():
         page.on("dialog", _aceitar)
 
         # LOGIN UMA VEZ (na 1ª busca); depois roda todos os CNPJs na mesma sessão.
-        page = _login_once(ctx, page, GRAUS[graus[0]])
+        # login inicial numa instância fixa; cada grau/instância pede o seu A3 no
+        # _garantir_form (o 1.x é outro domínio por seção — login próprio).
+        page = _login_once(ctx, page, GRAUS.get(graus[0]) or PJE_1X_2G)
         if page is None:
             print("Timeout aguardando login."); return
 
         for i, cnpj_digits in enumerate(alvos, 1):
             print(f"\n———— [{i}/{len(alvos)}] ————", flush=True)
-            _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm,
-                            args.inspect, args.autos, args.gravar)
+            eid = fila_map.get(cnpj_digits)
+            if eid:
+                try: sb_patch(f"empresas?id=eq.{eid}", {"teses_status": "processando"})
+                except Exception: pass
+            try:
+                _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm,
+                                args.inspect, args.autos, args.gravar)
+                if eid:
+                    sb_patch(f"empresas?id=eq.{eid}", {
+                        "teses_status": "concluido", "teses_analisada_em": _agora(),
+                        "teses_erro": None})
+            except Exception as e:
+                print(f"  [erro] {cnpj_digits}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+                if eid:
+                    try:
+                        sb_patch(f"empresas?id=eq.{eid}", {
+                            "teses_status": "erro", "teses_erro": f"{type(e).__name__}: {str(e)[:400]}"})
+                    except Exception: pass
             if args.inspect:
                 print("\n[INSPECT] fim (só a 1ª empresa). Rode sem --inspect.")
                 break
@@ -451,17 +516,32 @@ def _garantir_form(page, ctx, url, grau):
     return None
 
 
+def _url_do_grau(grau, uf):
+    """Resolve a URL do grau. '1x' = PJe 1.x da Seção Judiciária da UF da empresa
+    (instância própria por estado); '2x' = PJe 1.x do 2º grau (TRF5)."""
+    if grau == "1x":
+        return PJE_1X.get((uf or "").strip().upper())
+    if grau == "2x":
+        return PJE_1X_2G
+    return GRAUS.get(grau)
+
+
 def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, inspect, autos=False, gravar=False):
     cnpj_fmt = f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
-    emp = sb(f"empresas?select=id,nome,razao_social&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
+    emp = sb(f"empresas?select=id,nome,razao_social,uf&or=(cnpj.eq.{urllib.parse.quote(cnpj_fmt)},cnpj.eq.{cnpj_digits})")
     empresa = emp[0] if emp else None
     empresa_id = (empresa or {}).get("id")
+    uf = (empresa or {}).get("uf") or ""
     razao = (empresa or {}).get("razao_social") or (empresa or {}).get("nome") or ""
     print(f"CNPJ {cnpj_fmt} | {razao or '(não está no CRM)'}", flush=True)
 
     todos = {}
     for grau in graus:
-        url = GRAUS[grau]
+        url = _url_do_grau(grau, uf)
+        if not url:
+            print(f"[{grau}] sem instância PJe 1.x para a UF '{uf or '?'}' "
+                  f"(TRF5 cobre {'/'.join(PJE_1X)}) — pulando este grau.")
+            continue
         pg = _garantir_form(page, ctx, url, grau)
         if pg is None:
             print(f"[{grau}] form indisponível (login não concluído nesta instância) — pulando este grau.")
