@@ -1144,8 +1144,21 @@ def _esperar(page, timeout_s=90, exige_contador=False):
             # Com `if esperado:` o zero caía no ramo de espera e o loop rodava o
             # timeout inteiro — 90s parados em CADA empresa sem processo, que é a
             # maioria. Era a principal fonte de lentidão da varredura.
-            if esperado == 0 or st["n"] >= esperado:
+            if esperado == 0:
                 break
+            if st["n"] >= esperado:
+                # Chegou ao total, mas as CÉLULAS ainda podem estar montando (os
+                # ícones "Ver Detalhes" chegam por último). Sair aqui lia o polo
+                # pela metade e a empresa AUTORA virava "ré": a mesma busca de
+                # Três Corações deu 0 candidato num ciclo e 1 no seguinte.
+                # Confirma estabilidade antes de seguir.
+                if not st["carregando"]:
+                    estaveis_n += 1
+                    if estaveis_n >= 2:
+                        break
+                else:
+                    estaveis_n = 0
+                continue
             # PAGINAÇÃO: a lista mostra no máximo ~15 linhas por página. Se o
             # contador é MAIOR e o número de linhas parou de crescer, a página
             # está completa — o resto está nas próximas. Sem isto o loop ficava
