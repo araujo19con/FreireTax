@@ -643,8 +643,13 @@ def main():
                 with cron("empresa", cnpj=cnpj_digits, graus=",".join(graus)):
                     _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm,
                                     args.inspect, args.autos, args.gravar)
-                if eid:
-                    sb_patch(f"empresas?id=eq.{eid}", {
+                # CARIMBA SEMPRE, não só no modo --fila. Empresa sem candidato não
+                # deixa linha em empresa_processos_tributarios, então parecia nunca
+                # ter sido varrida e voltava na fila do próximo lote — M. Dias
+                # Branco foi rodada 4 vezes à toa.
+                alvo_id = eid or _empresa_id_por_cnpj(cnpj_digits)
+                if alvo_id:
+                    sb_patch(f"empresas?id=eq.{alvo_id}", {
                         "teses_status": "concluido", "teses_analisada_em": _agora(),
                         "teses_erro": None})
             except Exception as e:
@@ -716,6 +721,18 @@ def _garantir_form(page, ctx, url, grau):
             avisou = True
         page.wait_for_timeout(1000)
     return None
+
+
+def _empresa_id_por_cnpj(cnpj_digits):
+    """id da empresa no CRM a partir do CNPJ (formatado ou só dígitos)."""
+    f = (f"{cnpj_digits[0:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}"
+         f"/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}")
+    try:
+        r = sb(f"empresas?select=id&or=(cnpj.eq.{urllib.parse.quote(f)},"
+               f"cnpj.eq.{cnpj_digits})&limit=1")
+        return r[0]["id"] if r else None
+    except Exception:
+        return None
 
 
 def _dv_cnpj(base12):
@@ -1424,6 +1441,12 @@ def _peticao_pdf_1x(ctx, base, id_processo):
           });
           return out.sort((a, b) => b.peso - a.peso).slice(0, 5);
         }""") or []
+        # NÃO baixar o que o ranking já reconheceu como anexo: cada tentativa é um
+        # clique + espera do PDF + parse (~30s). Medido 163s numa peça só porque
+        # procuração e contrato social entravam na fila de tentativas. Se nada tem
+        # peso positivo, tenta os 2 melhores mesmo assim (rótulo pode estar vazio).
+        positivos = [c for c in cands if c.get("peso", 0) > 0]
+        cands = positivos[:3] if positivos else cands[:2]
         if not cands:
             return ""
         import io as _io
