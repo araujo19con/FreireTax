@@ -41,6 +41,34 @@ disso tem o grau `1x` pulado (com aviso). Cada instância é um domínio própri
 Os graus estaduais (`1g`/`2g` = TJRN) existem mas **não entram no protocolo padrão**:
 as teses tributárias são federais.
 
+### PJe 1.x — particularidades (calibrado em 21/07/2026)
+
+O 1.x é um sistema **diferente** do 2.x, não só outro host. O que muda:
+
+- **Login**: usa **PJeOffice** (assinador desktop, porta local 8800) — não o SSO
+  PDPJ do 2.x. O PJeOffice precisa estar **rodando** (fica na bandeja). A tela
+  "Verificação de Ambiente" reclama de Firefox/plugin Java: é legado do applet e
+  pode ser ignorada **desde que o assinador seja detectado**.
+- **Login por seção**: cada `pje.jf{uf}` é um domínio próprio ⇒ um A3 por seção.
+- **Campos do formulário são outros** (por isso a busca voltava vazia):
+
+  |        | PJe 2.x                                 | PJe 1.x                                          |
+  | ------ | --------------------------------------- | ------------------------------------------------ |
+  | CNPJ   | `…:documentoParte` (+ radio de máscara) | `…:cpfCpnjRadioCPFCNPJ:cpfCpnjCNPJ`              |
+  | Nome   | `…:nomeParte`                           | `…:nomeParteDecoration:nomeParte`                |
+  | Buscar | `input[value=Pesquisar]` (submit)       | `…:searchButton` (`type=button`, AJAX RichFaces) |
+
+- **É LENTO**: a consulta leva **20-30s** (o 2.x responde em segundos). O
+  `_esperar()` detecta os dois tipos de overlay e só conclui "0 resultado" após
+  ~30s sem sinal de carregamento. Consequência: lotes com `1x` demoram bem mais.
+- **Layout da lista é outro**: o 2.x tem colunas fixas (5=classe, 6=ativo,
+  7=passivo); o 1.x traz os polos **rotulados** na própria célula
+  (`IMPETRANTE Fulano` / `IMPETRADO Ministério…`). `_linha_campos()` resolve os
+  dois — sem isso todo processo do 1.x era descartado como "ré".
+- **WAF/captcha**: navegação programática pode cair num desafio anti-bot
+  ("What code is in the image?"). Se acontecer, resolva o captcha **manualmente**
+  na janela do Chrome; a sessão libera em seguida.
+
 ## Como a tese é decidida (qualidade)
 
 1. **Filtro**: só a empresa como **autora** em classe de tese (MS, procedimento

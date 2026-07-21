@@ -426,9 +426,21 @@ def main():
         page.on("dialog", _aceitar)
 
         # LOGIN UMA VEZ (na 1ª busca); depois roda todos os CNPJs na mesma sessão.
-        # login inicial numa instância fixa; cada grau/instância pede o seu A3 no
-        # _garantir_form (o 1.x é outro domínio por seção — login próprio).
-        page = _login_once(ctx, page, GRAUS.get(graus[0]) or PJE_1X_2G)
+        # login inicial: se o 1º grau é o 1.x (instância por seção), resolve pela
+        # UF da PRIMEIRA empresa — senão cairia no domínio errado e daria timeout.
+        # Cada instância seguinte pede o seu próprio A3 no _garantir_form.
+        login_url = GRAUS.get(graus[0])
+        if not login_url:
+            if graus[0] == "2x":
+                login_url = PJE_1X_2G
+            else:
+                c0 = alvos[0]
+                f0 = f"{c0[0:2]}.{c0[2:5]}.{c0[5:8]}/{c0[8:12]}-{c0[12:14]}"
+                e0 = sb(f"empresas?select=uf&or=(cnpj.eq.{urllib.parse.quote(f0)},cnpj.eq.{c0})")
+                uf0 = ((e0[0].get("uf") if e0 else "") or "").upper()
+                login_url = PJE_1X.get(uf0) or PJE_1X_2G
+                print(f">>> PJe 1.x da seção {uf0 or '?'}: {login_url.split('/')[2]}", flush=True)
+        page = _login_once(ctx, page, login_url)
         if page is None:
             print("Timeout aguardando login."); return
 
@@ -647,24 +659,61 @@ def _buscar(page, cnpj_digits, razao):
         # a máscara do campo espera o formato pontuado; .fill seta o valor direto.
         doc.fill(cnpj_fmt)
         page.wait_for_timeout(200)
-        page.click("input[value='Pesquisar'], button:has-text('Pesquisar')")
+        page.click("input[value='Pesquisar'], input[id$=':searchButton'], "
+                   "button:has-text('Pesquisar')")
+        _esperar(page)
+        return "doc"
+    # PJe 1.x (instância da Seção Judiciária): o CNPJ tem campo PRÓPRIO
+    # (consultarProcessoForm:cpfCpnjRadioCPFCNPJ:cpfCpnjCNPJ), não o documentoParte
+    # do 2.x. Sem isto caía no fallback por razão social e voltava 0 linhas.
+    doc1x = (page.query_selector("input[id$=':cpfCpnjCNPJ']")
+             or page.query_selector("input[id*='cpfCpnjCNPJ']"))
+    if doc1x:
+        doc1x.fill(cnpj_fmt)
+        page.wait_for_timeout(300)
+        page.click("input[value='Pesquisar'], input[id$=':searchButton'], "
+                   "button:has-text('Pesquisar')")
         _esperar(page)
         return "doc"
     nome = page.query_selector("input[id$=':nomeParte']") or page.query_selector("input[id*='nomeParte']")
     if nome and razao:
         nome.fill(razao)
-        page.click("input[value='Pesquisar'], button:has-text('Pesquisar')")
+        page.click("input[value='Pesquisar'], input[id$=':searchButton'], "
+                   "button:has-text('Pesquisar')")
         _esperar(page)
         return "nome"
     return "?"
 
 
-def _esperar(page):
-    for _ in range(40):
-        page.wait_for_timeout(700)
-        vis = page.evaluate("() => { const e=document.querySelector('[id$=\"status.start\"]');"
-                            "return e ? getComputedStyle(e).display!=='none' : false; }")
-        if not vis:
+def _esperar(page, timeout_s=90):
+    """Espera o RESULTADO da busca. Antes olhava só o overlay [id$='status.start']
+    (padrão do 2.x): no PJe 1.x ele não está visível no instante do poll, então
+    saía em ~1,2s — mas o 1.x leva ~30s pra responder, e a busca voltava vazia.
+    Agora encerra quando: aparecem linhas de processo, OU há mensagem de vazio,
+    OU ficou sem overlay por vários ciclos seguidos (aí é 0 resultado mesmo)."""
+    page.wait_for_timeout(800)
+    estavel = 0
+    for _ in range(int(timeout_s / 1.5)):
+        page.wait_for_timeout(1500)
+        st = page.evaluate(r"""() => {
+          const visivel = e => !!e && getComputedStyle(e).display !== 'none'
+                            && getComputedStyle(e).visibility !== 'hidden';
+          // 2.x: overlay a4j [id$='status.start'] | 1.x: showLoading() (id/classe 'loading')
+          const ov = document.querySelector('[id$="status.start"]');
+          const load = [...document.querySelectorAll(
+              '[id*="loading"],[class*="loading"],[id*="Loading"],[class*="Loading"]')].some(visivel);
+          const t = document.body ? document.body.innerText : '';
+          const n = [...document.querySelectorAll('table tr')]
+            .filter(tr => /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/.test(tr.innerText)).length;
+          return {carregando: visivel(ov) || load, n,
+                  vazio: /nenhum registro|não foram encontrados/i.test(t)};
+        }""")
+        if st["n"] or st["vazio"]:
+            break
+        # O 1.x responde em ~20-30s. Só conclui "0 resultado" após ~30s sem
+        # nenhum indício de carregamento — antes disso ainda pode estar buscando.
+        estavel = 0 if st["carregando"] else estavel + 1
+        if estavel >= 20:
             break
     page.wait_for_timeout(500)
 
@@ -689,11 +738,45 @@ def _empresa_polo(razao, ativo, passivo):
     return "?"
 
 
+POLO_ATIVO_ROT = ("AUTOR", "IMPETRANTE", "EXEQUENTE", "REQUERENTE", "RECLAMANTE",
+                  "EMBARGANTE", "AGRAVANTE", "APELANTE")
+POLO_PASSIVO_ROT = ("REU", "IMPETRADO", "EXECUTADO", "REQUERIDO", "RECLAMADO",
+                    "EMBARGADO", "AGRAVADO", "APELADO", "INTERESSADO")
+
+
+def _linha_campos(cells, razao):
+    """(polo, classe, orgao, situacao) tolerante ao LAYOUT.
+    PJe 2.x: colunas fixas (3=órgão, 5=classe, 6=ativo, 7=passivo, 8=situação).
+    PJe 1.x: não tem essas colunas — a linha traz os polos ROTULADOS
+    ('IMPETRANTE Fulano' / 'IMPETRADO Ministério...') e a classe junto do número.
+    Sem isto, todo processo do 1.x caía como polo '?' e era descartado como ré."""
+    classe, orgao, situacao = _col(cells, 5), _col(cells, 3), _col(cells, 8)
+    polo = _empresa_polo(razao, _col(cells, 6), _col(cells, 7))
+    if polo != "?":
+        return polo, classe, orgao, situacao          # layout 2.x: inalterado
+    ativo = passivo = ""
+    for c in cells:
+        cn = _norm(c)
+        if not cn:
+            continue
+        if not ativo and any(cn.startswith(m) for m in POLO_ATIVO_ROT):
+            ativo = c
+        elif not passivo and any(cn.startswith(m) for m in POLO_PASSIVO_ROT):
+            passivo = c
+        if not classe and any(k in cn for k in CLASSES_TESE + CLASSES_SEM_VALOR):
+            m = RE_PROC.search(c)                      # classe vem antes do número
+            classe = (c[:m.start()] if m else c).strip()
+        if not orgao and any(k in cn for k in ("VARA", "TURMA", "JUIZADO", "GABINETE")):
+            orgao = c
+    return _empresa_polo(razao, ativo, passivo), classe, orgao, situacao
+
+
 def _eh_candidato(cells, razao):
     """True se a linha é candidata a tese: empresa AUTORA + classe de tese +
     não é embargos/execução/cumprimento. (mesma regra do filtrar_teses, por linha)"""
-    cn = _norm(_col(cells, 5))
-    if _empresa_polo(razao, _col(cells, 6), _col(cells, 7)) != "ativo":
+    polo, classe, _o, _s = _linha_campos(cells, razao)
+    cn = _norm(classe)
+    if polo != "ativo":
         return False
     if any(k in cn for k in CLASSES_SEM_VALOR):
         return False
@@ -762,8 +845,7 @@ def filtrar_teses(todos, razao):
     candidatos, motivos = [], {"re": 0, "sem_valor": 0, "nao_tese": 0}
     for proc, r in todos.items():
         cells = r["cells"]
-        classe, orgao = _col(cells, 5), _col(cells, 3)
-        polo = _empresa_polo(razao, _col(cells, 6), _col(cells, 7))
+        polo, classe, orgao, situacao = _linha_campos(cells, razao)
         cn = _norm(classe)
         if polo != "ativo":                          # ré = sem valor
             motivos["re"] += 1; continue
@@ -772,7 +854,7 @@ def filtrar_teses(todos, razao):
         if not any(k in cn for k in CLASSES_TESE):    # classe não é de tese
             motivos["nao_tese"] += 1; continue
         candidatos.append({"proc": proc, "grau": r["grau"], "classe": classe,
-                           "orgao": orgao, "situacao": _col(cells, 8),
+                           "orgao": orgao, "situacao": situacao,
                            "peticao": r.get("peticao", "")})
     return candidatos, motivos
 
