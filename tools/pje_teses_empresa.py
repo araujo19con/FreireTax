@@ -255,6 +255,11 @@ def regras_tese():
           "hint": ["ICMS"], "conf": "alta"}),
         # teses do PDF que estavam no catálogo mas SEM regra de classificação —
         # por isso caíam em "tributário, fora do catálogo".
+        # ICMS-ST: CRÉDITO (substituído aproveita o ST pago pelo substituto) vem
+        # ANTES da de exclusão da base — são objetos diferentes.
+        ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS-ST PAGO PELO SUBSTITUTO",
+         {"all": ["CREDIT"], "any": ["ICMS-ST", "ICMS ST", "SUBSTITUTO", "SUBSTITUIDO",
+                                     "SUBSTITUICAO TRIBUTARIA"], "conf": "alta"}),
         ("EXCLUSÃO DO ICMS-ST DA BASE DE CÁLCULO DO PIS E DA COFINS",
          {"any": ["ICMS-ST", "ICMS ST", "SUBSTITUICAO TRIBUTARIA", "SUBSTITUIDO"],
           "hint": ["PIS", "COFINS"], "conf": "alta"}),
