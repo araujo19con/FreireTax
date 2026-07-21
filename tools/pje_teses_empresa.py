@@ -783,12 +783,32 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
         # estabelecimento). Buscar só pelo CNPJ da filial devolvia 0 justamente
         # nas maiores empresas da base — Riachuelo, Guararapes e M. Dias Branco
         # vieram todas vazias antes disto.
-        for cnpj_busca in _cnpjs_a_buscar(cnpj_digits):
+        for i_cnpj, cnpj_busca in enumerate(_cnpjs_a_buscar(cnpj_digits)):
             rotulo = "matriz" if cnpj_busca != cnpj_digits else "próprio"
+            if i_cnpj:
+                # PÁGINA NOVA entre buscas. Reaproveitar a tela obriga o "Limpar",
+                # que re-renderiza o form e RESETA o seletor CPF/CNPJ: o CNPJ é
+                # preenchido mas não filtra, e o PJe devolve o ACERVO INTEIRO
+                # (219 mil). Foi o que aconteceu com Guararapes e M. Dias Branco;
+                # Riachuelo só escapou porque a 1ª busca voltou vazia.
+                pg2 = _garantir_form(page, ctx, url, grau)
+                if pg2 is None:
+                    break
+                page = pg2
             with cron("busca", grau=grau, cnpj=cnpj_busca, alvo=rotulo):
                 achou = _buscar(page, cnpj_busca, razao)
             page.wait_for_timeout(700)
             total_dito = _total_encontrado(page)
+            # TRAVA: filtro que não pegou devolve o acervo. Nenhuma empresa tem
+            # milhares de processos numa seção — isso é busca sem filtro, e tratar
+            # essas linhas como dela contaminaria o CRM com processo de terceiro.
+            if total_dito and total_dito > 500:
+                print(f"[{grau}] BUSCA SEM FILTRO ({total_dito} resultados) — "
+                      f"descartando esta consulta ({rotulo}).")
+                with cron("busca_sem_filtro", grau=grau, cnpj=cnpj_busca,
+                          total=total_dito):
+                    pass
+                continue
             linhas, pagina = [], 1
             while True:
               linhas_pg = page.evaluate(r"""() => {
