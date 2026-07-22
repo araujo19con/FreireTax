@@ -617,7 +617,10 @@ def main():
     with sync_playwright() as p:
         if args.cdp:
             # Chrome REAL (chrome-cdp.ps1) — onde o A3 federal já foi logado.
-            browser = p.chromium.connect_over_cdp(f"http://localhost:{args.port}")
+            # 127.0.0.1 e NÃO "localhost": o Chrome escuta só em IPv4, mas
+            # "localhost" pode resolver primeiro para ::1 e a conexão falha com
+            # "ECONNREFUSED" mesmo com o browser vivo e a porta aberta.
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{args.port}")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         else:
             ctx = p.chromium.launch_persistent_context(PROFILE, headless=False,
