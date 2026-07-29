@@ -19,7 +19,7 @@ O perfil e separado (.chrome-cdp-profile) p/ nao mexer no seu Chrome do dia a di
 NUNCA fechar pelo scraper (no CDP nao ha browser.close()) -> fecharia suas abas.
 #>
 param(
-    [ValidateSet("rs", "sc", "sp", "pr", "trf4", "trf2", "trf6", "trf5", "pb")]
+    [ValidateSet("rs", "sc", "sp", "pr", "trf4", "trf2", "trf6", "trf5", "pb", "rn")]
     [string]$Tj = "rs",
     [int]$Port = 9222
 )
@@ -36,6 +36,7 @@ $targets = @{
     trf6 = @{ url = "https://eproc1g.trf6.jus.br/eproc/"; cmd = "python tools\eproc_skiptrace.py --tj trf6 --inspect --cdp" }
     trf5 = @{ url = "https://pje1g.trf5.jus.br/pje/login.seam"; cmd = "python tools\pje_rn_skiptrace.py --tj trf5 --limit 150 --cdp" }
     pb = @{ url = "https://pje.tjpb.jus.br/pje/login.seam"; cmd = "python tools\pje_rn_skiptrace.py --tj pb --limit 20 --cdp" }
+    rn = @{ url = "https://pje1g.tjrn.jus.br/pje/login.seam"; cmd = "# logue com o A3 e avise o Claude (leitura de autos por numero)" }
 }
 $t = $targets[$Tj]
 
@@ -64,4 +65,21 @@ Write-Host "  2. Noutro terminal rode (1a vez --inspect p/ calibrar; depois troq
 Write-Host "     $($t.cmd)" -ForegroundColor Green
 Write-Host ""
 
-& $chrome "--remote-debugging-port=$Port" "--user-data-dir=$profileDir" $t.url
+# O PJe 1.x (JFRN etc.) fala com o PJeOffice em http://localhost:8800 a partir de
+# uma pagina HTTPS. O Chrome bloqueia esse acesso ao loopback, derrubando o
+# assinador ("Carregando o assinador..." trava). Dois modelos, conforme a versao:
+#   - <=~137: Private Network Access (BlockInsecurePrivateNetworkRequests etc.)
+#   - >=138/150: Local Network Access (LocalNetworkAccessChecks) — vira PERMISSAO
+#     de loopback; em automacao o prompt nao aparece e o Chrome AUTO-NEGA
+#     ("Permission was denied ... `loopback` address space"). Precisa desabilitar
+#     a checagem NOVA, senao o login A3 no 1.x nao fecha. Nomes de feature
+#     desconhecidos sao ignorados pelo Chrome, entao manter os dois conjuntos e seguro.
+# (--allow-running-insecure-content cobre o mixed content.)
+$flags = @(
+    "--remote-debugging-port=$Port",
+    "--user-data-dir=$profileDir",
+    "--disable-features=LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults",
+    "--allow-running-insecure-content",
+    "--disable-popup-blocking"
+)
+& $chrome @flags $t.url

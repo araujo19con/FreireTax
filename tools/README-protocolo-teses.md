@@ -41,6 +41,16 @@ disso tem o grau `1x` pulado (com aviso). Cada instância é um domínio própri
 Os graus estaduais (`1g`/`2g` = TJRN) existem mas **não entram no protocolo padrão**:
 as teses tributárias são federais.
 
+> **Chrome 150+ (25/07):** o assinador do 1.x trava em "Carregando o assinador..."
+> porque o Chrome renomeou _Private Network Access_ → **Local Network Access** e
+> volta a bloquear `http://localhost:8800`. O `chrome-cdp.ps1` já inclui
+> `LocalNetworkAccessChecks` no `--disable-features` — se travar de novo após um
+> update do Chrome, confira que esse flag continua lá.
+
+> **Modo `--ementa` (25/07):** funciona end-to-end. A EMENTA do julgado é o sinal
+> autoritativo e resgata a tese mesmo quando a petição inicial não abre (limite
+> diário de autos). Use em CNPJs confundíveis (é lento — navega o Paginador).
+
 ### PJe 1.x — particularidades (calibrado em 21/07/2026)
 
 O 1.x é um sistema **diferente** do 2.x, não só outro host. O que muda:

@@ -58,11 +58,28 @@ PJE_1X = {
     "SE": "https://pje.jfse.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
     "CE": "https://pje.jfce.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam",
 }
-PJE_1X_2G = "https://pje.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam"
-# PROTOCOLO PADRÃO de análise de teses (o que roda quando a UI pede): federal
-# 2.x (1º e 2º grau) + PJe 1.x da Seção Judiciária da UF da empresa.
-PROTOCOLO_PADRAO = "1gf,2gf,1x"
+# TRF5 2º grau (1.x) — usar a Consulta de TERCEIROS (a ConsultaProcesso do advogado
+# só devolve processos do advogado LOGADO). Aqui vivem os processos do 1º grau
+# REMETIDOS ao TRF5 (recurso/remessa necessária): o JFRN 1.x mostra os metadados mas
+# BLOQUEIA os documentos ("Processo remetido ao TRF5 ... utilize o sistema do TRF5"),
+# então a petição/acórdão só é lida por aqui. Instância própria -> login A3 próprio.
+PJE_1X_2G = "https://pje.trf5.jus.br/pje/Processo/ConsultaProcessoTerceiros/listView.seam"
+# PROTOCOLO PADRÃO de análise de teses (o que roda quando a UI pede): as teses
+# tributárias federais são de 1º GRAU e vivem em DOIS sistemas — o 2.x (pje1g.trf5)
+# e o 1.x da Seção Judiciária (pje.jfrn etc.), onde ficaram os processos ANTIGOS que
+# o 2.x não mostra. NÃO se busca o 2º grau (pje2g.trf5 = recursos): a tese não nasce
+# lá. Por isso 1gf (2.x, 1º grau) + 1x (1.x, 1º grau) — sem 2gf.
+PROTOCOLO_PADRAO = "1gf,1x"
 RE_PROC = re.compile(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}")
+
+# QUALIDADE (23/07): estas teses têm assunto CNJ GENÉRICO (previdenciário) que o
+# DataJud sobre-classifica — auditoria mostrou 60-73% delas cravadas SÓ pelo
+# assunto, sem ler a inicial. Para estas, exige-se a PETIÇÃO INICIAL válida para
+# CRAVAR (acao_id); sem ela vira sugestão (amarelo), não "ajuizada" (verde).
+TESES_SO_COM_PETICAO_RAW = (
+    "LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS DA BASE DAS CONTRIBUIÇÕES DE TERCEIROS",
+    "NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
+)
 TESE_ID = {}  # norm(nome da tese) -> acao_id; preenchido em main()
 
 
@@ -220,6 +237,10 @@ CLASSES_TESE = [
     "MANDADO DE SEGURANCA", "PROCEDIMENTO COMUM", "ACAO ORDINARIA",
     "ACAO DECLARATORIA", "DECLARATORIA", "ANULATORIA", "REPETICAO DE INDEBITO",
     "ACAO DE REPETICAO", "CONSIGNACAO EM PAGAMENTO", "TUTELA ANTECIPADA ANTECEDENTE",
+    # classes RECURSAIS do 2º grau (grau 2x/TRF5) — o processo de 1º grau REMETIDO
+    # sobe como apelação/remessa/agravo e carrega a MESMA tese; sem elas o 2x dava
+    # "classe diversa" pra tudo. (Embargos/execução seguem em CLASSES_SEM_VALOR.)
+    "APELACAO", "REMESSA NECESSARIA", "REEXAME NECESSARIO", "AGRAVO DE INSTRUMENTO",
 ]
 # Classes SEM valor comercial — defesa/cobrança/execução. Descartadas mesmo em
 # vara fazendária (não é uma tese que a gente ajuíza pra vender).
@@ -272,6 +293,16 @@ def regras_tese():
         # PERSE — setor de eventos (assunto CNJ costuma NÃO citar; só a petição)
         ("MANUTENÇÃO NO PERSE (PROGRAMA EMERGENCIAL DE RETOMADA DO SETOR DE EVENTOS)",
          {"any": ["PERSE", "PROGRAMA EMERGENCIAL DE RETOMADA", "SETOR DE EVENTOS"], "conf": "alta"}),
+        # FGTS / LC 110/2001 — contribuição social do FGTS (adicional de 10% na
+        # rescisão sem justa causa, art. 1º; e 0,5% mensal, art. 2º), cuja exigência
+        # é questionada por já ter cumprido a finalidade (expurgos inflacionários).
+        # Marcador INEQUÍVOCO é a própria lei — "LC 110" / "110/2001" casam nos 6
+        # processos específicos do CRM e em 0 dos 963 não-FGTS (calibrado 28/07). O
+        # assunto genérico "FGTS/Fundo de Garantia" (depósito/CND) NÃO basta: só a
+        # petição/ementa que cita a LC 110 crava (política de fonte direta).
+        ("INEXIGIBILIDADE DA CONTRIBUIÇÃO SOCIAL DO FGTS (LC 110/2001)",
+         {"any": ["LC 110", "110/2001", "LEI COMPLEMENTAR 110", "LEI COMPLEMENTAR N 110"],
+          "conf": "alta"}),
         # RESCISÓRIA só é protocolada no 2º GRAU (competência originária do
         # tribunal). Sem o gate de classe, esta regra casava "1/3 de férias" e
         # sequestrava ações de 1º grau que discutem CPP sobre verbas indenizatórias
@@ -309,10 +340,14 @@ def regras_tese():
         # RAT..."), então casar por ela fazia esta regra sequestrar aprendizes e
         # valores retidos. O que distingue ESTA tese é a atividade preponderante /
         # grau de risco / FAP — não a sigla.
+        # "ENQUADRAMENTO" solto era genérico demais (enquadramento no Simples/legal/
+        # da atividade) e casava acórdão de PIS/COFINS como RAT (25/07). Trocado por
+        # termos próprios do RAT: reenquadramento, enquadramento NO GRAU DE RISCO, GILRAT.
         ("REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE",
-         {"any": ["ATIVIDADE PREPONDERANTE", "FAP", "GRAU DE RISCO", "ENQUADRAMENTO",
+         {"any": ["ATIVIDADE PREPONDERANTE", "FAP", "GRAU DE RISCO", "REENQUADRAMENTO",
+                  "ENQUADRAMENTO NO GRAU", "ENQUADRAMENTO DA ATIVIDADE",
                   "RISCO LEVE", "RISCO MEDIO", "RISCO GRAVE", "ALIQUOTA DO RAT",
-                  "ALIQUOTA DO SAT", "REDUCAO DO RAT"], "conf": "alta"}),
+                  "ALIQUOTA DO SAT", "REDUCAO DO RAT", "RAT/SAT", "GILRAT"], "conf": "alta"}),
         # IRRF de MUNICÍPIOS: exige o ente público, senão casava "retido na fonte"
         # de qualquer petição e sugeria a tese para empresa privada.
         ("RECUPERAÇÃO IRRF E FOLHA PARA MUNICÍPIOS",
@@ -332,7 +367,10 @@ def regras_tese():
         # no catálogo). Sem isso um MS sobre "Exclusão - IPI | Não Cumulatividade"
         # da Três Corações foi cravado como incentivo de ICMS.
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
-         {"all": ["CREDITO PRESUMIDO", "ICMS"],
+         {"all": ["ICMS"],
+          # PLURAL: a ementa quase sempre diz "créditos presumidos" — o token singular
+          # "CREDITO PRESUMIDO" (\b) não casava e a tese caía em sugerida.
+          "any2": ["CREDITO PRESUMIDO", "CREDITOS PRESUMIDOS"],
           "any": ["PIS", "COFINS", "NAO CUMULATIVIDADE"], "conf": "alta"}),
         ("NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS",
          {"any": ["INCENTIVO FISCAL", "INCENTIVOS FISCAIS", "SUBVENCAO", "SUBVENCOES",
@@ -354,8 +392,12 @@ def regras_tese():
           "hint": ["PIS", "COFINS"], "conf": "alta"}),
         ("EXCLUSÃO DO ISS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 118)",
          {"all": ["ISS"], "any": ["PIS", "COFINS", "BASE DE CALCULO", "TEMA 118"], "conf": "alta"}),
+        # a tese é gorjeta FORA da base do PIS/COFINS (restaurante/hotelaria — a gorjeta
+        # é do empregado, não receita do estabelecimento). "GORJETA" sozinho casava a
+        # gorjeta citada na definição de SALÁRIO (CLT 457) de uma ação de CPP/folha
+        # (AFICAL 0808359: "integram o salário... inclusive as gorjetas"). Exige PIS/COFINS.
         ("EXCLUSÃO DA GORJETA DA BASE DE CÁLCULO DO PIS E DA COFINS",
-         {"any": ["GORJETA", "GORJETAS"], "conf": "alta"}),
+         {"any": ["GORJETA", "GORJETAS"], "any2": ["PIS", "COFINS"], "conf": "alta"}),
         # PAT — Decreto 10.854/2021 limitou a dedução do Programa de Alimentação
         # do Trabalhador; a tese afasta a limitação.
         ("MANUTENÇÃO DA DEDUÇÃO DO PAT (DECRETO 10.854/2021)",
@@ -365,9 +407,22 @@ def regras_tese():
         ("EXCLUSÃO DOS APRENDIZES DA BASE DA CPP, TERCEIROS E RAT",
          {"any": ["APRENDIZ", "APRENDIZES", "MENOR APRENDIZ"], "conf": "alta"}),
         # Tema 69 do STF — ICMS fora da base do PIS/COFINS (a tese mais clássica)
+        # Tema 69: incluir as grafias NATURAIS da ementa ("exclusão DO ICMS", "ICMS
+        # não integra/compõe") além da grafia do DataJud ("EXCLUSAO - ICMS"). Sem
+        # elas, um MS de exclusão do ICMS caía na genérica "PIS/COFINS própria base"
+        # (CAICO 0802431-22). Exige contexto PIS/COFINS (any2) — distingue do ICMS
+        # "por dentro" (ICMS na base do próprio ICMS, sem PIS/COFINS).
         ("EXCLUSÃO DO ICMS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 69)",
-         {"all": ["ICMS"], "any": ["TEMA 69", "EXCLUSAO - ICMS", "FATURAMENTO",
-                                   "RECEITA BRUTA"], "hint": ["PIS", "COFINS"], "conf": "alta"}),
+         {"all": ["ICMS"],
+          "any": ["TEMA 69", "EXCLUSAO - ICMS", "EXCLUSAO DO ICMS", "EXCLUIR O ICMS",
+                  "ICMS FORA DA BASE", "ICMS NAO INTEGRA", "ICMS NAO COMPOE",
+                  # "ICMS destacado na nota fiscal" é o conceito-núcleo do Tema 69
+                  # (o RE 574.706 decidiu pelo ICMS destacado). Pega ementas com
+                  # frasagem invertida/confusa que não têm "exclusão do ICMS" literal
+                  # (O MOVELEIRO 0805230: "exclusão de PIS/COFINS da base do ICMS destacado").
+                  "ICMS DESTACADO", "ICMS DA NOTA FISCAL",
+                  "FATURAMENTO", "RECEITA BRUTA"],
+          "any2": ["PIS", "COFINS"], "conf": "alta"}),
         # PIS/COFINS sobre RECEITAS FINANCEIRAS (Decreto 8.426/2015 restabeleceu
         # as alíquotas por decreto). Vem antes da genérica de "própria base".
         ("NÃO INCIDÊNCIA DE PIS E COFINS SOBRE RECEITAS FINANCEIRAS",
@@ -377,7 +432,8 @@ def regras_tese():
         # o nome da tese diz ICMS — a regra tem de exigir. Crédito presumido de
         # IPI é outra tese (e não está no catálogo): melhor cair em "a mapear".
         ("EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS",
-         {"all": ["CREDITO PRESUMIDO", "ICMS"], "conf": "alta"}),
+         {"all": ["ICMS"],
+          "any2": ["CREDITO PRESUMIDO", "CREDITOS PRESUMIDOS"], "conf": "alta"}),
         # creditamento PIS/COFINS sobre ICMS na aquisição (exige AQUISICAO p/ não
         # colidir com crédito presumido)
         ("CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS",
@@ -385,16 +441,35 @@ def regras_tese():
         # IPI — exclusão do IPI da base do PIS/COFINS (indústria: bebidas, etc.)
         ("EXCLUSÃO DO IPI DA BASE DE CÁLCULO DO PIS E DA COFINS",
          {"any": ["IPI", "IMPOSTO SOBRE PRODUTOS INDUSTRIALIZADOS"],
-          "nao": ["CREDITO PRESUMIDO"], "conf": "alta"}),
+          "nao": ["CREDITO PRESUMIDO", "CREDITOS PRESUMIDOS"], "conf": "alta"}),
         # ICMS "por dentro" — exclusão do ICMS da própria base de cálculo
         ("EXCLUSÃO DO ICMS DA PRÓPRIA BASE DE CÁLCULO (ICMS POR DENTRO)",
          {"all": ["ICMS"], "any": ["POR DENTRO", "PROPRIA BASE", "NA PROPRIA BASE", "NA SUA BASE"],
           "conf": "alta"}),
+        # MAJORAÇÃO de 10% do IRPJ sobre o LUCRO PRESUMIDO. EXIGE "lucro presumido":
+        # o token "MAJORACAO"/"ADICIONAL DE 10" sozinho casava o ADICIONAL DE 10% do
+        # FGTS (Contribuição Social da LC 110/2001) e "majoração" solto em ementa de
+        # 1/3 de férias — falsos-positivos reais (25/07). Veta FGTS/LC 110 por garantia.
         ("MAJORAÇÃO DE 10% SOBRE O LUCRO PRESUMIDO",
-         {"any": ["ADICIONAL DE 10", "MAJORACAO"], "hint": ["LUCRO PRESUMIDO", "IRPJ"], "conf": "media"}),
-        # GENÉRICA por último: PIS/COFINS na PRÓPRIA base
+         {"all": ["LUCRO PRESUMIDO"],
+          "any": ["ADICIONAL DE 10", "ADICIONAL DO IRPJ", "ADICIONAL DO IMPOSTO DE RENDA",
+                  "MAJORACAO", "ADICIONAL"],
+          "nao": ["FGTS", "LC 110", "110/2001", "LEI COMPLEMENTAR 110", "LEI COMPLEMENTAR N 110"],
+          "hint": ["IRPJ"], "conf": "media"}),
+        # GENÉRICA (por último): PIS/COFINS na PRÓPRIA base (o "filhote" do Tema 69 —
+        # PIS/COFINS não integram a própria base de cálculo). ANTES era `any:[PIS,COFINS]`
+        # — larga demais: casava QUALQUER ementa citando "PIS/COFINS base de cálculo",
+        # inclusive Tema 962/SELIC (ASPERBRAS: "IRPJ/CSLL sobre SELIC... PIS/COFINS base...
+        # INCIDÊNCIA DEVIDA") e Tema 69 disfarçado. Agora exige o sinal de AUTO-exclusão
+        # (excluir o PIS/COFINS da PRÓPRIA base) e veta SELIC. Genuína (RECICLA):
+        # "EXCLUSÃO DAS CONTRIBUIÇÕES DAS RESPECTIVAS BASES-DE-CÁLCULO".
         ("EXCLUSÃO DO PIS E DA COFINS DA SUA BASE DE CÁLCULO",
-         {"all": ["BASE DE CALCULO"], "any": ["PIS", "COFINS"], "conf": "media"}),
+         {"all": ["BASE DE CALCULO"],
+          "any": ["EXCLUSAO DO PIS E DA COFINS", "EXCLUSAO DAS CONTRIBUICOES",
+                  "EXCLUIR O PIS E A COFINS", "RESPECTIVAS BASES", "PROPRIA BASE",
+                  "PIS E DA COFINS DA SUA", "PIS E A COFINS DA BASE", "SOBRE SI MESM",
+                  "NA BASE DELAS", "DA BASE DE CALCULO DELAS"],
+          "nao": ["SELIC"], "conf": "media"}),
     ]
 
 
@@ -541,6 +616,74 @@ def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
 
 
 # ---------------------------------------------------------------------------
+# Classificação pelos PEDIDOS (23/07) — o OBJETO real da ação está nos pedidos
+# finais, não no corpo argumentativo, que cita precedentes (o RE 574.706/Tema 69
+# aparece como fundamento em quase toda ação de "exclusão da base" e puxava o
+# match pra ICMS mesmo em ação de CPP/ISS). Camadas: pedidos > peça > assunto.
+# ---------------------------------------------------------------------------
+_JURIS_RE = re.compile(
+    r"(\bRE\s*\d[\d.\-/]*|\bRESP\b|RECURSO\s+(?:ESPECIAL|EXTRAORDIN)|\bTEMA\s*\d+|"
+    r"S[ÚU]MULA|MINISTR[OA]|DESEMBARGADOR|RELATOR[AiI]?|\bSTF\b|\bSTJ\b|\bTRF\b|"
+    r"574\.?706|julgamento:|\bRel\.|repercuss[ãa]o geral|paradigma)", re.I)
+_FECHO_RE = re.compile(
+    r"(pede[- ]?se?\s+(?:e\s+espera\s+)?deferimento|termos?\s+em\s+que|"
+    r"nestes?\s+termos|\bp\.?\s*deferimento\b|pede\s+e\s+espera)", re.I)
+_PED_INI_RE = re.compile(
+    r"(DOS?\s+PEDIDOS?|ANTE\s+O\s+EXPOSTO|DIANTE\s+DO\s+EXPOSTO|ISTO\s+POSTO|"
+    r"REQUER[,:]?\s+(?:a\b|ao\b|se\b|,|ainda|portanto|então)|"
+    r"SEJA\s+(?:CONCEDID|DECLARAD|RECONHECID|JULGAD)|OBJETO\b.{0,40}PEDIDO\b)", re.I)
+_PROCED_RE = re.compile(
+    r"(certid[ãa]o de|expedi[çc][ãa]o de of[íi]cio|habilita[çc][ãa]o de cr[ée]dito|"
+    r"cumprimento de senten|execu[çc][ãa]o do julgado|penhora|levantamento de|"
+    r"objeto e p[ée]|intima[çc][õo]es?\b[^.]{0,60}\bem nome\b)", re.I)
+_MERITO_RE = re.compile(
+    r"declar|reconhec|inexig|inconstitucional|il[eé]gal|direito de\s+(?:excluir|n[ãa]o|"
+    r"compensar|creditar|restitu|deduzir)|afast|exclus[ãa]o d", re.I)
+
+
+def zona_pedidos(texto):
+    """Bloco dos PEDIDOS FINAIS: do último marcador de pedido até o fecho
+    ('pede deferimento'), sem a assinatura/rodapé nem o corpo argumentativo."""
+    t = texto or ""
+    fechos = list(_FECHO_RE.finditer(t))
+    fim = fechos[-1].start() if fechos else len(t)
+    corpo = t[:fim]
+    inis = list(_PED_INI_RE.finditer(corpo))
+    ini = inis[-1].start() if inis else max(0, fim - 2000)
+    return corpo[ini:fim]
+
+
+def strip_jurisprudencia(texto):
+    """Remove as frases que citam precedente — senão o RE 574.706 (Tema 69),
+    fundamento de quase toda ação de exclusão da base, contamina o match."""
+    frases = re.split(r"(?<=[.;])\s+", texto or "")
+    limpo = " ".join(f for f in frases if not _JURIS_RE.search(f))
+    return limpo
+
+
+def pedido_procedimental(zona):
+    """A zona é de uma petição POSTERIOR (execução/certidão/habilitação), não da
+    inicial de mérito? Nesses casos o objeto não é a tese."""
+    z = zona or ""
+    return bool(_PROCED_RE.search(z)) and not _MERITO_RE.search(z)
+
+
+def classificar_por_pedidos(assunto, classe, catalogo_norm, peticao):
+    """(tese, conf, fonte) priorizando os PEDIDOS FINAIS (jurisprudência removida).
+    fonte ∈ {'pedidos','peça','assunto'}. Cai pra peça/assunto quando os pedidos
+    não decidem (peça posterior, ou nenhuma regra casou)."""
+    if peticao and peticao_valida(peticao):
+        z = zona_pedidos(peticao)
+        if not pedido_procedimental(z):
+            tese, _ = classificar_tese("", "", catalogo_norm, strip_jurisprudencia(z))
+            if tese:
+                return tese, "alta", "pedidos"
+    tese, conf = classificar_tese(assunto, classe, catalogo_norm, peticao)
+    fonte = "peça" if (peticao and peticao_valida(peticao)) else "assunto"
+    return tese, conf, fonte
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():
@@ -570,10 +713,16 @@ def main():
     ap.add_argument("--sem-cache", action="store_true",
                     help="ignora o cache de petições e rebaixa tudo do PJe (use só se "
                          "suspeitar de extração truncada/errada)")
+    ap.add_argument("--ementa", action="store_true",
+                    help="lê a SENTENÇA/ementa (1.x) como sinal AUTORITATIVO do objeto "
+                         "da tese — desambigua ICMS x CPP x creditamento")
     args = ap.parse_args()
     if args.sem_cache:
         global USAR_CACHE
         USAR_CACHE = False
+    if args.ementa:
+        global LER_SENTENCA
+        LER_SENTENCA = True
     if not SUPABASE_URL or not SERVICE_KEY:
         sys.exit("ERRO: rode `. tools\\pje-env.local.ps1` antes.")
 
@@ -702,11 +851,15 @@ def _login_once(ctx, page, url):
                     return pg
             except Exception:
                 pass
+        # Re-navega ao form QUALQUER aba PJe já autenticada (não só tjrn): no
+        # FEDERAL, após o SSO a aba cai no QuadroAviso e nunca mostra o form
+        # sozinha. Só re-navega quem NÃO está em tela de login (recarregar por
+        # baixo do A3 impede o certificado).
         alvo = None
         for pg in list(ctx.pages):
             try:
                 u = (pg.url or "").lower()
-                if "tjrn.jus.br" in u and not any(m in u for m in LOGIN_MARKERS):
+                if (("pje" in u) or ("jus.br" in u)) and not any(m in u for m in LOGIN_MARKERS):
                     alvo = pg
             except Exception:
                 pass
@@ -737,6 +890,16 @@ def _garantir_form(page, ctx, url, grau):
         if i == 6 and not avisou:  # ~6s sem form => provável login desta instância
             print(f">>> [{grau}] Se pedir, faça LOGIN A3 nesta instância (Chrome). Aguardando...", flush=True)
             avisou = True
+        # Após o login, a aba federal cai no QuadroAviso e não volta ao form
+        # sozinha — re-navega qualquer aba PJe já autenticada (não em login).
+        if i >= 6 and i % 4 == 0:
+            for pg in list(ctx.pages):
+                try:
+                    u = (pg.url or "").lower()
+                    if (("pje" in u) or ("jus.br" in u)) and not any(m in u for m in LOGIN_MARKERS):
+                        pg.goto(url, wait_until="domcontentloaded"); break
+                except Exception:
+                    pass
         page.wait_for_timeout(1000)
     return None
 
@@ -905,7 +1068,18 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 if not inspect and _eh_candidato(r["cells"], razao):
                     base = "https://" + url.split("/")[2]
                     cach = _cache_ler(r["proc"])
-                    if _cache_utilizavel(cach):
+                    # Decide se o cache responde SEM abrir autos:
+                    #  - modo normal: precisa da petição (ou falha já esgotada).
+                    #  - modo --ementa: a EMENTA cacheada BASTA (autoritativa, uso
+                    #    direto) MESMO com a petição falha — a ementa é o sinal que
+                    #    crava; ou petição-utilizável + id_trf (lê a sentença 1x).
+                    #    Sem nada disso, abre o detalhe (popula id_trf + lê + cacheia).
+                    if LER_SENTENCA:
+                        usar_cache = bool(cach and (cach.get("sentenca")
+                                          or (_cache_utilizavel(cach) and cach.get("id_trf"))))
+                    else:
+                        usar_cache = _cache_utilizavel(cach)
+                    if usar_cache:
                         r["assunto_fonte"] = cach.get("assunto", "")
                         r["orgao_fonte"] = cach.get("orgao", "")
                         r["peticao"] = cach.get("peticao", "")
@@ -916,29 +1090,56 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                         else:
                             print(f"    {r['proc']}: petição em cache "
                                   f"({len(r['peticao'])} chars)")
+                        # --ementa: usa a ementa CACHEADA (imutável) se já houver;
+                        # senão lê DIRETO do idProcessoTrf cacheado e memoriza. Só
+                        # gasta abertura de autos no que ainda falta.
+                        if LER_SENTENCA:
+                            r["sentenca"] = cach.get("sentenca") or ""
+                            if not r["sentenca"] and cach.get("id_trf"):
+                                r["sentenca"] = _sentenca_pdf_1x(ctx, base, cach["id_trf"])
+                                _cache_sentenca(r["proc"], r["sentenca"])
                     elif r.get("det"):
                         # PJe 1.x (consulta do advogado): detalhe por URL direta
                         with cron("peticao", grau=grau, proc=r["proc"], via="detalhe"):
                             a1, o1, p1 = _detalhe_peticao_1x(ctx, base, r["det"])
                         r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
-                        _cache_gravar(r["proc"], a1, o1, p1)
+                        _m = re.search(r"idProcessoTrf=(\d+)", r["det"] or "")
+                        _idt = _m.group(1) if _m else ""
+                        _cache_gravar(r["proc"], a1, o1, p1, id_trf=_idt)
+                        if LER_SENTENCA and _idt:
+                            r["sentenca"] = _sentenca_pdf_1x(ctx, base, _idt)
+                            _cache_sentenca(r["proc"], r["sentenca"])
                     elif grau in ("1x", "2x"):
                         # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
                         with cron("peticao", grau=grau, proc=r["proc"], via="terceiros"):
                             det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
                             if det is not None:
+                                _idt = ""
                                 try:
                                     a1, o1, p1 = _extrair_detalhe_1x(det, ctx, base)
                                     r["assunto_fonte"], r["orgao_fonte"], r["peticao"] = a1, o1, p1
-                                    _cache_gravar(r["proc"], a1, o1, p1)
+                                    _m = re.search(r"idProcessoTrf=(\d+)", det.url or "")
+                                    _idt = _m.group(1) if _m else ""
+                                    _cache_gravar(r["proc"], a1, o1, p1, id_trf=_idt)
                                 finally:
                                     try: det.close()
                                     except Exception: pass
+                                if LER_SENTENCA and _idt:
+                                    r["sentenca"] = _sentenca_pdf_1x(ctx, base, _idt)
+                                    _cache_sentenca(r["proc"], r["sentenca"])
                     else:
                         with cron("peticao", grau=grau, proc=r["proc"], via="2x"):
                             r["peticao"] = _abrir_peticao(page, r["proc"])
                         _cache_gravar(r["proc"], "", "", r["peticao"])
                         _fechar_abas_extras(page)
+                    if LER_SENTENCA:
+                        # detector (opt-in) de esgotamento: registra se ESTE candidato
+                        # obteve ALGUMA fonte assertiva (ementa/petição).
+                        _registrar_autos(bool((r.get("sentenca") or "").strip())
+                                         or peticao_valida(r.get("peticao") or ""))
+                    # higiene de abas: evita acúmulo (detalhe/paginador órfãos) que
+                    # degrada o expect_page e causa a flakiness de leitura no run longo.
+                    _fechar_abas_extras(page)
                 todos[r["proc"]] = {**r, "grau": grau}
     if inspect:
         return
@@ -955,14 +1156,41 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
         # assunto DA FONTE (tela de detalhe do 1.x) tem prioridade sobre o DataJud,
         # que é notoriamente impreciso. Só cai no DataJud quando a fonte não veio.
         c["assunto"] = c.get("assunto_fonte") or ("; ".join(assuntos) if assuntos else "")
-        tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "",
-                                      catalogo_norm, c.get("peticao", ""))
-        c["tese"], c["conf"] = tese, conf
-        # só CRAVA a tese se o assunto do DataJud CORROBORA a petição; senão fica
-        # como sugestão (evita cravar tese errada quando a petição casou termo solto
-        # ou o assunto está vazio — processo novo não indexado).
-        c["corrob"] = assunto_corrobora(tese, c["assunto"]) if tese else False
-        c["fonte_tese"] = "petição" if c.get("peticao") else "assunto(DataJud)"
+        # MULTI-SINAL — SÓ com --ementa (LER_SENTENCA). Ementa > pedidos > peça >
+        # assunto. AINDA EM CALIBRAÇÃO: o leitor de sentença achou 0 no piloto e o
+        # "pedidos sozinho" não bate a classificação por peça (poluição do Tema 69).
+        # Por isso NÃO é o padrão — o fluxo normal mantém a classificação validada.
+        if LER_SENTENCA:
+            tese_em, _ = classificar_por_ementa(catalogo_norm, c.get("sentenca") or "")
+            if tese_em:
+                tese, conf, c["fonte_tese"] = tese_em, "alta", "ementa"
+            else:
+                tese, conf, c["fonte_tese"] = classificar_por_pedidos(
+                    c["assunto"], classe_dj or c.get("classe") or "", catalogo_norm, c.get("peticao") or "")
+            c["tese"], c["conf"] = tese, conf
+        else:
+            # PADRÃO VALIDADO (~74%): classifica pela peça/assunto; fonte "petição"
+            # só com inicial válida (peticao_valida); senão assunto do DataJud.
+            tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "",
+                                          catalogo_norm, c.get("peticao", ""))
+            c["tese"], c["conf"] = tese, conf
+            c["fonte_tese"] = "petição" if peticao_valida(c.get("peticao") or "") else "assunto(DataJud)"
+        # POLÍTICA (25/07, do usuário): NENHUMA tese é cravada só pelo ASSUNTO. O
+        # assunto CNJ é genérico (engana ~1/4) e serve APENAS como COMPLEMENTO. Crava
+        # (acao_id) exige FONTE DIRETA ASSERTIVA: ementa/pedidos (o juiz/o pedido
+        # enunciam o objeto — autoritativas) ou a PETIÇÃO/peça (cruzada com o assunto
+        # p/ conter a poluição do Tema 69). Assunto sozinho -> no máximo SUGESTÃO.
+        fonte_direto = c["fonte_tese"] in ("ementa", "pedidos", "peça", "petição")
+        c["fonte_direto"] = fonte_direto
+        if not tese:
+            c["corrob"] = False
+        elif c["fonte_tese"] in ("ementa", "pedidos"):
+            c["corrob"] = True                                   # fonte direta autoritativa
+        elif fonte_direto:                                       # peça/petição — assunto complementa
+            c["corrob"] = assunto_corrobora(tese, c["assunto"])
+        else:                                                    # assunto/DataJud sozinho
+            c["corrob"] = False
+            c["so_datajud_risco"] = True
 
     # Uma empresa NÃO ajuíza a MESMA tese duas vezes (regra do escritório). Se
     # dois processos caíram na mesma tese, no máximo um está certo: mantém o de
@@ -994,21 +1222,50 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             print("  [gravar] nenhum processo tributário (os candidatos não são teses "
                   "pelo assunto CNJ) — nada gravado.")
         else:
-            body = [{
-                "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
-                "classe": c.get("classe"), "orgao": c.get("orgao"),
-                "situacao": c.get("situacao"), "polo": "ativo",
-                "assunto": c.get("assunto") or None,
-                # crava acao_id só se corroborado; senão tese vai como SUGESTÃO
-                "acao_id": (TESE_ID.get(_norm(c["tese"]))
-                            if (c.get("tese") and c.get("corrob")) else None),
-                "metadados": ({"tese_sugerida": c["tese"], "conf": c.get("conf")}
-                              if (c.get("tese") and not c.get("corrob")) else {}),
-                "fonte": "pje_tjrn+datajud",
-            } for c in persistir]
+            # ANTI-REGRESSÃO: uma tese JÁ CRAVADA (acao_id no CRM) não pode ser
+            # rebaixada por evidência FRACA de hoje — se os autos não abriram (limite
+            # diário do TRF5), a leitura de hoje não é prova de erro, é ausência de
+            # prova. Só rebaixa quando HOUVE leitura assertiva (ementa/petição, mesmo
+            # do cache) e ela não confirmou. Busca o estado atual p/ comparar.
+            atual = {}
+            try:
+                inl = ",".join('"' + c["proc"] + '"' for c in persistir)
+                for row in sb(f"empresa_processos_tributarios?select=numero,acao_id"
+                              f"&empresa_id=eq.{empresa_id}&numero=in.({inl})"):
+                    atual[row["numero"]] = row.get("acao_id")
+            except Exception:
+                atual = {}
+            body, mantidos = [], 0
+            for c in persistir:
+                # leu de fato hoje? (senteça/ementa não-vazia OU petição válida — o
+                # cache conta: é fonte assertiva já lida). Se não, autos bloqueados.
+                leu_hoje = bool((c.get("sentenca") or "").strip()) or peticao_valida(c.get("peticao") or "")
+                novo = (TESE_ID.get(_norm(c["tese"])) if (c.get("tese") and c.get("corrob")) else None)
+                prev = atual.get(c["proc"])
+                md = {}
+                if novo is None and prev and not leu_hoje:
+                    # tinha crava e hoje NÃO confirmaria — mas os autos não abriram:
+                    # PRESERVA a crava anterior (verificada em sessão passada).
+                    novo = prev
+                    md = {"motivo": "mantido_autos_bloqueados"}
+                    mantidos += 1
+                elif c.get("tese") and novo is None:
+                    md = {"tese_sugerida": c["tese"], "conf": c.get("conf"),
+                          "motivo_sugerida": ("refutado_fonte_direta" if leu_hoje else "autos_bloqueados")}
+                body.append({
+                    "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
+                    "classe": c.get("classe"), "orgao": c.get("orgao"),
+                    "situacao": c.get("situacao"), "polo": "ativo",
+                    "assunto": c.get("assunto") or None,
+                    "acao_id": novo,          # NUNCA vem só do assunto (corrob exige fonte direta)
+                    "metadados": md,
+                    "fonte": "pje_tjrn+datajud",
+                })
             try:
                 sb_upsert("empresa_processos_tributarios", body, "empresa_id,numero")
-                print(f"  [gravar] {len(body)} processo(s) tributário(s) gravado(s) no CRM.")
+                extra = (f" ({mantidos} crava(s) preservada(s) — autos bloqueados hoje)"
+                         if mantidos else "")
+                print(f"  [gravar] {len(body)} processo(s) tributário(s) gravado(s) no CRM.{extra}")
             except Exception as e:
                 print(f"  [gravar] falha: {e}")
 
@@ -1355,48 +1612,71 @@ MOTIVO_CONSULTA = os.environ.get("PJE_MOTIVO_CONSULTA",
                                  "Analise de teses tributarias do cliente")
 
 
-def _abrir_detalhe_terceiros(page, ctx, proc):
+def _abrir_detalhe_terceiros(page, ctx, proc, tentativas=3):
     """Abre o DETALHE a partir da lista de Terceiros do 1.x. O link é um postback
     A4J (não tem URL) e o PJe exige informar o MOTIVO da consulta num modal —
     a textarea precisa de CLIQUE antes de digitar (fill direto não funciona).
-    Retorna a página de detalhe (aba nova) ou None."""
-    idx = page.evaluate(r"""(proc) => {
-      const todos = [...document.querySelectorAll('a')];
-      for (const tr of document.querySelectorAll('tr')) {
-        if (tr.querySelector('tr') || !tr.innerText.includes(proc)) continue;
-        const a = [...tr.querySelectorAll('a')]
-          .find(x => /A4J|jsfcljs/.test(x.getAttribute('onclick') || ''));
-        if (a) return todos.indexOf(a);
-      }
-      return -1;
-    }""", proc)
-    if idx is None or idx < 0:
-        return None
-    try:
-        with ctx.expect_page(timeout=45000) as pinfo:
-            page.query_selector_all("a")[idx].click()
-            page.wait_for_timeout(4000)
-            # modal de motivo (pode não aparecer se já consultado nesta sessão)
-            alvo = page.evaluate(
-                """() => [...document.querySelectorAll('textarea')]
-                     .findIndex(e => /motivacao/i.test(e.id) && e.offsetParent !== null)"""
-            )
-            if alvo is not None and alvo >= 0:
-                h = page.query_selector_all("textarea")[alvo]
-                h.click()                                   # sem o clique não digita
-                page.keyboard.type(MOTIVO_CONSULTA, delay=25)
-                b = page.evaluate(
-                    """() => [...document.querySelectorAll('input[type=button]')]
-                         .findIndex(e => /gravar/i.test(e.value || '') && e.offsetParent !== null)"""
+    Retorna a página de detalhe (aba nova) ou None.
+
+    RETRY (25/07): a abertura é FLAKY em runs longos — o `expect_page` às vezes
+    perde a aba nova, o modal de motivo não renderiza a tempo, ou abre-se uma aba
+    que não é o detalhe esperado. Isso gerava `falhou`/`id_trf` vazio (sem ementa)
+    para processos cujos autos abrem NORMALMENTE (confirmado ao vivo). Re-tenta
+    algumas vezes, validando que veio o `idProcessoTrf`, e limpa abas órfãs entre
+    as tentativas (o acúmulo de abas era parte da causa)."""
+    for _try in range(max(1, tentativas)):
+        idx = page.evaluate(r"""(proc) => {
+          const todos = [...document.querySelectorAll('a')];
+          for (const tr of document.querySelectorAll('tr')) {
+            if (tr.querySelector('tr') || !tr.innerText.includes(proc)) continue;
+            const a = [...tr.querySelectorAll('a')]
+              .find(x => /A4J|jsfcljs/.test(x.getAttribute('onclick') || ''));
+            if (a) return todos.indexOf(a);
+          }
+          return -1;
+        }""", proc)
+        if idx is None or idx < 0:
+            return None                     # proc não está na lista — re-tentar não ajuda
+        det = None
+        try:
+            with ctx.expect_page(timeout=45000) as pinfo:
+                page.query_selector_all("a")[idx].click()
+                page.wait_for_timeout(4000)
+                # modal de motivo (pode não aparecer se já consultado nesta sessão)
+                alvo = page.evaluate(
+                    """() => [...document.querySelectorAll('textarea')]
+                         .findIndex(e => /motivacao/i.test(e.id) && e.offsetParent !== null)"""
                 )
-                if b is not None and b >= 0:
-                    page.query_selector_all("input[type=button]")[b].click()
-        det = pinfo.value
-        det.wait_for_load_state("domcontentloaded")
-        det.wait_for_timeout(3500)
-        return det
-    except Exception:
-        return None
+                if alvo is not None and alvo >= 0:
+                    h = page.query_selector_all("textarea")[alvo]
+                    h.click()                               # sem o clique não digita
+                    page.keyboard.type(MOTIVO_CONSULTA, delay=25)
+                    b = page.evaluate(
+                        """() => [...document.querySelectorAll('input[type=button]')]
+                             .findIndex(e => /gravar/i.test(e.value || '') && e.offsetParent !== null)"""
+                    )
+                    if b is not None and b >= 0:
+                        page.query_selector_all("input[type=button]")[b].click()
+            det = pinfo.value
+            det.wait_for_load_state("domcontentloaded")
+            det.wait_for_timeout(3500)
+            # só aceita se abriu o DETALHE de verdade (tem idProcessoTrf); senão re-tenta
+            if re.search(r"idProcessoTrf=(\d+)", det.url or ""):
+                return det
+        except Exception:
+            pass
+        # tentativa falhou: fecha a aba errada e órfãs, espera e re-tenta
+        try:
+            if det is not None:
+                det.close()
+        except Exception:
+            pass
+        for pg in list(ctx.pages):
+            if pg is not page:
+                try: pg.close()
+                except Exception: pass
+        page.wait_for_timeout(1500)
+    return None
 
 
 # Anexos que acompanham TODA inicial — se o texto extraído começa com um destes,
@@ -1552,6 +1832,163 @@ def _peticao_pdf_1x(ctx, base, id_processo):
             except Exception: pass
 
 
+_SENT_TIPO = re.compile(r"senten[çc]a|ac[óo]rd[ãa]o|decis[ãa]o de m[ée]rito|ementa", re.I)
+
+
+# ---------------------------------------------------------------------------
+# DETECTOR DE ESGOTAMENTO DE AUTOS — OPT-IN (default DESLIGADO). A hipótese de um
+# "limite diário do TRF5" se mostrou FALSA (25/07): os autos continuam abrindo
+# manualmente; as leituras vazias em lote eram FLAKINESS do _abrir_detalhe_terceiros
+# num run longo, não bloqueio do servidor. Um detector que desiste amplifica a
+# flakiness (para de ler quando bastava re-tentar). Por isso fica DESLIGADO por
+# padrão; só liga com AUTOS_LIMITE>0 no ambiente, se algum dia houver limite real.
+# ---------------------------------------------------------------------------
+_AUTOS_VAZIOS = 0
+_AUTOS_LIMITE = int(os.environ.get("AUTOS_LIMITE", "0") or "0")   # 0 = desligado
+_AUTOS_ESGOTADO = False
+
+
+def _autos_esgotado():
+    return _AUTOS_LIMITE > 0 and _AUTOS_ESGOTADO
+
+
+def _registrar_autos(ok):
+    """Só atua se AUTOS_LIMITE>0. ok=True reseta; vazio soma; ao cruzar o limite,
+    sinaliza esgotado e o _sentenca_pdf_1x passa a curto-circuitar."""
+    global _AUTOS_VAZIOS, _AUTOS_ESGOTADO
+    if _AUTOS_LIMITE <= 0:
+        return
+    if ok:
+        _AUTOS_VAZIOS = 0
+        return
+    _AUTOS_VAZIOS += 1
+    if _AUTOS_VAZIOS >= _AUTOS_LIMITE and not _AUTOS_ESGOTADO:
+        _AUTOS_ESGOTADO = True
+        print(f"  [autos] {_AUTOS_LIMITE} leituras vazias seguidas (AUTOS_LIMITE ligado) "
+              f"— parando de abrir autos nesta sessão.", flush=True)
+
+
+def _sentenca_pdf_1x(ctx, base, id_processo):
+    """PJe 1.x: texto da SENTENÇA/ACÓRDÃO via Paginador, achando o doc pelo TIPO
+    CADASTRADO ('Sentença'/'Acórdão'/'Decisão') — não há lista de links sob acesso
+    de terceiros, então NAVEGA checando o 'Tipo de Documento:' de cada peça (como
+    o leitor da inicial). A ementa do julgado é o OBJETO autoritativo da tese."""
+    if _autos_esgotado():        # limite diário do TRF5 já detectado nesta sessão
+        return ""
+    pg = None
+    try:
+        pg = ctx.new_page()
+        urls = []
+        pg.on("response", lambda r: urls.append((r.headers.get("content-type", "") or "", r.url)))
+        pg.goto(f"{base}/pje/Processo/Paginador/paginator.seam?idProcesso={id_processo}"
+                "&acessoProcessoTerceiros=", wait_until="domcontentloaded", timeout=90000)
+        # Lê TIPO + IDENTIFICADOR do doc corrente. O movimento é detectado pelo
+        # IDENTIFICADOR (o tipo se repete — várias "Certidão de Intimação" seguidas
+        # enganavam a detecção por tipo, parando a navegação no 2º doc).
+        meta_js = """() => {
+          const t=(document.body?document.body.innerText:'').replace(/\\s+/g,' ');
+          const tipo=(t.match(/Tipo de Documento:\\s*([^]{0,55}?)\\s+(?:Documento|N\\.? do documento|Id|Identificador)/i)||[])[1]||'';
+          const ident=(t.match(/Identificador:\\s*([\\d.]+)/i)||[])[1]||'';
+          return {tipo, ident};
+        }"""
+        # normaliza o início no doc MAIS RECENTE (fim = mais ANTIGO); a sentença/
+        # acórdão é anterior ao trânsito -> avança rumo ao antigo com adiantarPaginador.
+        pg.evaluate("() => { try { if (typeof selecionarInicioPaginador==='function') selecionarInicioPaginador(); } catch(e){} }")
+        pg.wait_for_timeout(1200)
+        # O julgado (Decisão/Sentença/Acórdão) renderiza como HTML NO BODY do
+        # paginador (não é PDF). Navega coletando os julgados de MÉRITO e devolve o
+        # melhor — pula decisão de ADMISSIBILIDADE de REsp (não enuncia a tese) e
+        # prefere EMENTA (acórdão) > dispositivo ("julgo procedente"/"concedo a
+        # segurança"). Percorre até ~55 docs (a sentença de 1º grau é antiga).
+        vistos = set()
+        julgados = []   # (score, corpo)
+        for _ in range(55):
+            m = pg.evaluate(meta_js)
+            tipo, ident = (m.get("tipo") or ""), (m.get("ident") or "")
+            if os.environ.get("DBG_SENTENCA"):
+                print(f"      [DBG_SENTENCA {id_processo}] tipo='{tipo[:40]}' id={ident}", flush=True)
+            if _SENT_TIPO.search(tipo) and ident and ident not in vistos:
+                vistos.add(ident)
+                corpo = pg.evaluate("() => document.body ? document.body.innerText : ''") or ""
+                score = 0
+                if re.search(r"\bEMENTA\b", corpo, re.I): score += 6
+                if re.search(r"julg[uo]\b[^.]{0,45}(proced|improced)", corpo, re.I): score += 5
+                if re.search(r"concedo[^.]{0,25}seguran|reconhe[çc][^.]{0,30}direito|declar[oa][^.]{0,30}(direito|inexig)", corpo, re.I): score += 4
+                if re.search(r"\bDISPOSITIVO\b", corpo, re.I): score += 2
+                if re.search(r"admissibilidade|inadmito|admito o recurso|ju[íi]zo de admiss|sobresta", corpo, re.I): score -= 6
+                # EMBARGOS DE DECLARAÇÃO e EXTINÇÃO por desistência/sem-mérito NÃO
+                # enunciam a tese de mérito — quando há o julgado de mérito junto, ele
+                # deve vencer; quando só há isto, melhor devolver vazio (cai na petição,
+                # que É a fonte do objeto). Penaliza p/ não gravar embargos/extinção
+                # como se fosse o mérito (era ~1/3 das sugeridas "lidas mas não casam").
+                if re.search(r"embargos de declara", corpo, re.I): score -= 5
+                if re.search(r"sem resolu[çc][ãa]o do?\s*m[ée]rito|homolog[uo][^.]{0,30}(desist|ren[úu]nc)|extin[çc][ãa]o[^.]{0,25}(desist|sem m[ée]rito)|desist[êe]ncia (?:do|da) (?:impetr|autor)", corpo, re.I): score -= 5
+                if len(corpo) > 400 and score > 0:
+                    if score >= 6:            # acórdão/sentença de mérito claro -> para já
+                        return corpo
+                    julgados.append((score, corpo))
+            if not pg.evaluate("() => { try { if (typeof adiantarPaginador==='function') { adiantarPaginador(); return 1; } return 0; } catch(e){ return -1; } }"):
+                break
+            moveu = False
+            for _ in range(20):
+                pg.wait_for_timeout(400)
+                if (pg.evaluate(meta_js).get("ident") or "") != ident:
+                    moveu = True
+                    break
+            if not moveu:   # chegou ao fim (mais antigo)
+                break
+        if julgados:
+            julgados.sort(key=lambda x: x[0], reverse=True)
+            return julgados[0][1]
+        return ""
+    except Exception:
+        return ""
+    finally:
+        if pg is not None:
+            try: pg.close()
+            except Exception: pass
+
+
+def zona_ementa(texto):
+    """Extrai a EMENTA (cabeçalho canônico do julgado). Fica logo após 'EMENTA'
+    até 'ACÓRDÃO'/'RELATÓRIO'/'Vistos'. Sem ementa formal (sentença de 1º grau),
+    usa o DISPOSITIVO ('julgo procedente ... para') que enuncia o objeto."""
+    t = texto or ""
+    m = re.search(r"\bEMENTA\b\s*[:\-]?\s*(.{80,2500}?)(?:\bAC[ÓO]RD[ÃA]O\b|\bRELAT[ÓO]RIO\b|\bVISTOS\b|\bA C[ÓO] R D)", t, re.I | re.S)
+    if m:
+        return m.group(1)
+    # EMENTA SEM marcador de fechamento (sentença curta, ex.: ato procedural cuja
+    # ementa é "CUMPRIMENTO DE SENTENÇA. HOMOLOGAÇÃO DA EXTINÇÃO. ACOLHIMENTO."):
+    # captura da 'EMENTA' até o 1º item numerado ("1.")/quebra dupla/"A parte". Sem
+    # isto a zona vinha VAZIA -> classificava a sentença INTEIRA (ruidosa) e o
+    # texto do corpo (citações da IN RFB etc.) casava tokens genéricos por acidente.
+    m = re.search(r"\bEMENTA\b\s*[:\-]?\s*(.{30,900}?)(?:\n\s*\d{1,2}\s*[.\-)]|\n\s*\n|\bA\s+parte\b|\bTrata-se\b)", t, re.I | re.S)
+    if m and len(m.group(1).strip()) >= 30:
+        return m.group(1)
+    m = re.search(r"(julg[uo][^.]{0,40}proced[^.]{0,900}|conced[oi][^.]{0,40}(?:a\s+)?seguran[çc]a[^.]{0,900}|dou provimento[^.]{0,900})", t, re.I | re.S)
+    return m.group(1) if m else ""
+
+
+def classificar_por_ementa(catalogo_norm, sentenca):
+    """(tese, 'ementa') classificando a EMENTA do julgado — sinal AUTORITATIVO,
+    pois o juiz enuncia o objeto sem a poluição de precedentes. '' se sem ementa."""
+    if not sentenca:
+        return None, None
+    # acórdão traz EMENTA canônica; sentença de 1º grau não tem ementa formal —
+    # aí classifica a peça INTEIRA sem jurisprudência (o dispositivo enuncia a tese).
+    z = zona_ementa(sentenca)
+    base = z if z else sentenca
+    # ATO PROCEDURAL não enuncia a tese de MÉRITO: cumprimento de sentença,
+    # habilitação de crédito, homologação de extinção/desistência, execução. Quando
+    # a zona_ementa vem vazia e classifica a sentença INTEIRA, esses atos casam
+    # tokens genéricos por acidente (ex.: MEGAFRAL 0802506-90 — "habilitação do
+    # crédito tributário" + "substituto" incidental => CREDITAMENTO ICMS-ST falso).
+    if pedido_procedimental(base):
+        return None, None
+    tese, _ = classificar_tese("", "", catalogo_norm, strip_jurisprudencia(base))
+    return (tese, "ementa") if tese else (None, None)
+
+
 def _extrair_detalhe_1x(det, ctx, base):
     """De uma página de DETALHE já aberta (1.x): (assunto da fonte, órgão, petição)."""
     meta = det.evaluate(r"""() => {
@@ -1679,6 +2116,7 @@ def _detalhe_peticao_1x(ctx, base, caminho_detalhe):
 # ---------------------------------------------------------------------------
 CACHE_DIR = str(ROOT / "tools" / ".cache" / "peticoes")
 USAR_CACHE = True
+LER_SENTENCA = False  # --ementa: lê a SENTENÇA/ementa como sinal autoritativo do objeto
 
 
 def _cache_path(proc):
@@ -1698,7 +2136,7 @@ def _cache_ler(proc):
 MAX_TENTATIVAS_PETICAO = 2
 
 
-def _cache_gravar(proc, assunto, orgao, peticao):
+def _cache_gravar(proc, assunto, orgao, peticao, id_trf=""):
     """Memoriza o resultado — inclusive a FALHA, com contador de tentativas.
 
     Cachear vazio de primeira congelaria uma falha transitória (sessão caída,
@@ -1706,20 +2144,47 @@ def _cache_gravar(proc, assunto, orgao, peticao):
     desiste na segunda. Sem isso, peça que não abre era rebaixada em TODA
     re-execução: 0800466-45.2013 foi tentada 4x a ~167s — 11 minutos num
     processo só, e era o maior gasto isolado da varredura.
+
+    `id_trf` (idProcessoTrf) é guardado p/ o modo --ementa ler a sentença DIRETO
+    do cache, sem re-abrir o detalhe (senão --ementa exigia --sem-cache).
     """
     if not USAR_CACHE:
         return
     try:
         os.makedirs(CACHE_DIR, exist_ok=True)
-        if len(peticao or "") >= 200:
-            corpo = {"assunto": assunto, "orgao": orgao, "peticao": peticao}
+        prev = _cache_ler(proc) or {}
+        idt = id_trf or prev.get("id_trf", "")     # preserva se não veio agora
+        # QUALIDADE (23/07): só cacheia como PETIÇÃO o que é a inicial de fato
+        # (peticao_valida) ou um texto substancial (>=2500 chars). Antes o piso era
+        # 200 chars — congelava fragmento/cabeçalho como "petição" e o classificador
+        # cravava em cima de lixo. Fragmento cai no ramo de FALHA (retryável).
+        if peticao_valida(peticao) or len((peticao or "").strip()) >= 2500:
+            corpo = {"assunto": assunto, "orgao": orgao, "peticao": peticao, "id_trf": idt}
         else:
-            prev = _cache_ler(proc) or {}
             corpo = {"assunto": assunto or prev.get("assunto", ""),
-                     "orgao": orgao or prev.get("orgao", ""), "peticao": "",
+                     "orgao": orgao or prev.get("orgao", ""), "peticao": "", "id_trf": idt,
                      "falhou": True, "tentativas": int(prev.get("tentativas", 0)) + 1}
         with open(_cache_path(proc), "w", encoding="utf-8") as fh:
             json.dump(corpo, fh, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _cache_sentenca(proc, sentenca):
+    """Memoriza a EMENTA/sentença do julgado (imutável) no MESMO arquivo de cache.
+    Só grava NÃO-VAZIO: julgado bloqueado pelo limite diário de autos — ou processo
+    ainda sem sentença — fica de fora e é RE-TENTADO numa sessão nova (é exatamente
+    onde o orçamento de autos deve ser gasto). Com isso, `--ementa` em re-run só
+    navega o Paginador do que ainda falta; releitura de julgado confirmado custa ~0
+    (era o gargalo: 95% do tempo em leitura de autos, ~40s/peça)."""
+    if not USAR_CACHE or not (sentenca or "").strip():
+        return
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        prev = _cache_ler(proc) or {}
+        prev["sentenca"] = sentenca
+        with open(_cache_path(proc), "w", encoding="utf-8") as fh:
+            json.dump(prev, fh, ensure_ascii=False)
     except Exception:
         pass
 
@@ -1806,6 +2271,10 @@ def filtrar_teses(todos, razao):
         candidatos.append({"proc": proc, "grau": r["grau"], "classe": classe,
                            "orgao": r.get("orgao_fonte") or orgao, "situacao": situacao,
                            "peticao": r.get("peticao", ""),
+                           # a EMENTA do julgado (sinal autoritativo) é lida em r["sentenca"]
+                           # por _sentenca_pdf_1x — sem carregá-la aqui, classificar_por_ementa
+                           # recebia sempre "" e o modo --ementa nunca cravava (parecia miscalibrado).
+                           "sentenca": r.get("sentenca", ""),
                            "assunto_fonte": r.get("assunto_fonte", "")})
     return candidatos, motivos
 
@@ -1880,11 +2349,28 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
         pet = "petição lida" if it.get("peticao") else "petição NÃO lida (autos bloqueados?)"
         linha += f"\n        assunto (DataJud): {asn or '(sem assunto)'}  |  {pet}"
         if tese and it.get("corrob"):
+            # rótulo HONESTO da base: ementa/pedidos cravam por serem autoritativas
+            # (o assunto pode NEM corroborar — ex.: DataJud diz "Receitas Transferidas"
+            # e a ementa é ISS). Só rotula "assunto CORROBORA" quando de fato corrobora.
+            fnt = it.get("fonte_tese", "?")
+            if fnt in ("ementa", "pedidos"):
+                base_lbl = ("ementa autoritativa" if fnt == "ementa" else "pedidos autoritativos")
+                if assunto_corrobora(tese, asn):
+                    base_lbl += " + assunto corrobora"
+            else:
+                base_lbl = "peça + assunto corrobora"
             linha += (f"\n        => TESE: {tese.strip()} (confiança {it.get('conf')}"
-                      f", fonte: {it.get('fonte_tese','?')}, assunto CORROBORA)")
+                      f", fonte: {fnt}, {base_lbl})")
             teses_ja.setdefault(tese, []).append(it["proc"])
         elif tese:
-            linha += (f"\n        => tese SUGERIDA (assunto não confirma — revisar): {tese.strip()}")
+            if it.get("dup"):
+                motivo = "duplicata da mesma tese — mantido o processo de melhor evidência"
+            elif it.get("fonte_direto"):
+                motivo = "fonte direta não corroborada pelo assunto"
+            else:
+                motivo = "só assunto (sem fonte direta) — política exige ementa/pedidos/petição"
+            linha += (f"\n        => tese SUGERIDA (revisar): {tese.strip()}  "
+                      f"[fonte: {it.get('fonte_tese','?')} · {motivo}]")
         elif asn and objeto_administrativo(asn):
             linha += "\n        => objeto administrativo específico (CND/certidão) — NÃO é tese"
         elif asn and assunto_tributario(asn):
