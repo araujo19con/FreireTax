@@ -390,6 +390,16 @@ def regras_tese():
         ("EXCLUSÃO DO ICMS-ST DA BASE DE CÁLCULO DO PIS E DA COFINS",
          {"any": ["ICMS-ST", "ICMS ST", "SUBSTITUICAO TRIBUTARIA", "SUBSTITUIDO"],
           "hint": ["PIS", "COFINS"], "conf": "alta"}),
+        # ISS excluído da base do IRPJ/CSLL no LUCRO PRESUMIDO — DISTINTO do Tema 118
+        # (que é ISS ↔ PIS/COFINS). Objeto: o ISS destacado na NF fora da base presumida
+        # do IRPJ/CSLL. Vem ANTES do 118: a regra do 118 tem "BASE DE CALCULO" no `any`
+        # e casaria ISS+base mesmo sendo IRPJ/CSLL. `nao:[PIS,COFINS]` manda a variante
+        # PIS/COFINS pro 118. Tese do 0803962-07.2021 (PG Prime), aprovada pelo usuário.
+        ("EXCLUSÃO DO ISS DA BASE DE CÁLCULO DO IRPJ E DA CSLL (LUCRO PRESUMIDO)",
+         {"all": ["ISS"],
+          "any2": ["IRPJ", "CSLL", "LUCRO PRESUMIDO", "INCIDENCIA SOBRE LUCRO",
+                   "IMPOSTO DE RENDA", "CONTRIBUICAO SOCIAL SOBRE O LUCRO"],
+          "nao": ["PIS", "COFINS"], "conf": "alta"}),
         ("EXCLUSÃO DO ISS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 118)",
          {"all": ["ISS"], "any": ["PIS", "COFINS", "BASE DE CALCULO", "TEMA 118"], "conf": "alta"}),
         # a tese é gorjeta FORA da base do PIS/COFINS (restaurante/hotelaria — a gorjeta
