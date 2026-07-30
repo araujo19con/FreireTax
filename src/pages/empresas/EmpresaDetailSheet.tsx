@@ -1064,6 +1064,10 @@ export function EmpresaDetailSheet({
                         !!p.acoes_tributarias?.nome || (p.metadados?.teses_extras?.length ?? 0) > 0
                     );
                     if (confirmadas.length === 0) return null;
+                    // teses_extras guarda IDs de ação — resolve p/ nome via catálogo
+                    const nomePorTeseId = new Map(
+                      relations.catalogo.map((c) => [c.id, c.nome.trim()])
+                    );
                     return (
                       <div className="space-y-2 rounded-lg border border-info/30 bg-info/5 p-3">
                         <div className="flex items-center gap-2">
@@ -1096,16 +1100,20 @@ export function EmpresaDetailSheet({
                                 <span>Tese: {p.acoes_tributarias.nome.trim()}</span>
                               </p>
                             )}
-                            {/* teses_extras: um mesmo MS pode cravar +1 tese (ex.: ICMS e ISS) */}
-                            {p.metadados?.teses_extras?.map((t) => (
-                              <p
-                                key={t}
-                                className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success"
-                              >
-                                <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
-                                <span>Tese: {t.trim()}</span>
-                              </p>
-                            ))}
+                            {/* teses_extras (IDs de ação): um mesmo MS pode cravar +1 tese (ex.: ICMS e ISS) */}
+                            {p.metadados?.teses_extras?.map((teseId) => {
+                              const nome = nomePorTeseId.get(teseId);
+                              if (!nome) return null;
+                              return (
+                                <p
+                                  key={teseId}
+                                  className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success"
+                                >
+                                  <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
+                                  <span>Tese: {nome}</span>
+                                </p>
+                              );
+                            })}
                             {(p.classe || p.orgao) && (
                               <p className="ml-4 mt-0.5 text-[11px] text-muted-foreground">
                                 {[p.classe, p.orgao].filter(Boolean).join(" · ")}
