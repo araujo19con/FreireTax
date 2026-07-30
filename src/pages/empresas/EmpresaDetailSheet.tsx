@@ -1054,62 +1054,74 @@ export function EmpresaDetailSheet({
                   </div>
                 )}
 
-                {/* Processos tributários próprios detectados no PJe (por CNPJ) */}
-                {relations && relations.procTrib.length > 0 && (
-                  <div className="space-y-2 rounded-lg border border-info/30 bg-info/5 p-3">
-                    <div className="flex items-center gap-2">
-                      <ScanSearch className="h-4 w-4 text-info" />
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Processos tributários no PJe ({relations.procTrib.length}) — já ajuizados
-                      </h4>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Ações tributárias que a própria empresa já ajuizou (autora, vara fazendária),
-                      detectadas por CNPJ.
-                    </p>
-                    {relations.procTrib.map((p) => (
-                      <div
-                        key={p.id}
-                        className="rounded-md border border-border bg-background p-2 text-xs"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Gavel className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          <span className="font-mono">{p.numero}</span>
-                          {p.grau && (
-                            <Badge variant="outline" className="text-[9px]">
-                              {p.grau}
-                            </Badge>
-                          )}
+                {/* Processos tributários próprios detectados no PJe (por CNPJ).
+                    Mostra SÓ teses CONFIRMADAS (acao_id cravado ou teses_extras) —
+                    sugeridas "a revisar" e "a mapear" não são ajuizamentos confirmados. */}
+                {relations &&
+                  (() => {
+                    const confirmadas = relations.procTrib.filter(
+                      (p) =>
+                        !!p.acoes_tributarias?.nome || (p.metadados?.teses_extras?.length ?? 0) > 0
+                    );
+                    if (confirmadas.length === 0) return null;
+                    return (
+                      <div className="space-y-2 rounded-lg border border-info/30 bg-info/5 p-3">
+                        <div className="flex items-center gap-2">
+                          <ScanSearch className="h-4 w-4 text-info" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Processos tributários no PJe ({confirmadas.length}) — já ajuizados
+                          </h4>
                         </div>
-                        {p.acoes_tributarias?.nome ? (
-                          <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success">
-                            <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span>Tese: {p.acoes_tributarias.nome.trim()}</span>
-                          </p>
-                        ) : p.metadados?.tese_sugerida ? (
-                          <p className="ml-4 mt-1 text-[11px] text-warning">
-                            Tese sugerida (revisar): {p.metadados.tese_sugerida.trim()}
-                          </p>
-                        ) : (
-                          <p className="ml-4 mt-1 text-[11px] italic text-muted-foreground">
-                            Tributário — tese a mapear
-                          </p>
-                        )}
-                        {(p.classe || p.orgao) && (
-                          <p className="ml-4 mt-0.5 text-[11px] text-muted-foreground">
-                            {[p.classe, p.orgao].filter(Boolean).join(" · ")}
-                          </p>
-                        )}
-                        {p.assunto && (
-                          <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
-                        )}
-                        {p.situacao && (
-                          <p className="ml-4 text-[10px] text-muted-foreground">{p.situacao}</p>
-                        )}
+                        <p className="text-[11px] text-muted-foreground">
+                          Ações tributárias que a própria empresa já ajuizou (autora, vara
+                          fazendária), detectadas por CNPJ.
+                        </p>
+                        {confirmadas.map((p) => (
+                          <div
+                            key={p.id}
+                            className="rounded-md border border-border bg-background p-2 text-xs"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Gavel className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <span className="font-mono">{p.numero}</span>
+                              {p.grau && (
+                                <Badge variant="outline" className="text-[9px]">
+                                  {p.grau}
+                                </Badge>
+                              )}
+                            </div>
+                            {p.acoes_tributarias?.nome && (
+                              <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success">
+                                <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>Tese: {p.acoes_tributarias.nome.trim()}</span>
+                              </p>
+                            )}
+                            {/* teses_extras: um mesmo MS pode cravar +1 tese (ex.: ICMS e ISS) */}
+                            {p.metadados?.teses_extras?.map((t) => (
+                              <p
+                                key={t}
+                                className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success"
+                              >
+                                <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>Tese: {t.trim()}</span>
+                              </p>
+                            ))}
+                            {(p.classe || p.orgao) && (
+                              <p className="ml-4 mt-0.5 text-[11px] text-muted-foreground">
+                                {[p.classe, p.orgao].filter(Boolean).join(" · ")}
+                              </p>
+                            )}
+                            {p.assunto && (
+                              <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
+                            )}
+                            {p.situacao && (
+                              <p className="ml-4 text-[10px] text-muted-foreground">{p.situacao}</p>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })()}
 
                 {/* Teses do catálogo que a empresa AINDA NÃO entrou — a oferta */}
                 {relations &&
