@@ -1238,15 +1238,26 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
             # prova. Só rebaixa quando HOUVE leitura assertiva (ementa/petição, mesmo
             # do cache) e ela não confirmou. Busca o estado atual p/ comparar.
             atual = {}
+            confirmados = set()  # objeto CONFIRMADO pelo escritório -> nunca sobrescrever
             try:
                 inl = ",".join('"' + c["proc"] + '"' for c in persistir)
-                for row in sb(f"empresa_processos_tributarios?select=numero,acao_id"
+                for row in sb(f"empresa_processos_tributarios?select=numero,acao_id,metadados"
                               f"&empresa_id=eq.{empresa_id}&numero=in.({inl})"):
                     atual[row["numero"]] = row.get("acao_id")
+                    md_atual = row.get("metadados") or {}
+                    if "confirmado pelo escritorio" in _norm(
+                            json.dumps(md_atual, ensure_ascii=False)).lower():
+                        confirmados.add(row["numero"])
             except Exception:
                 atual = {}
-            body, mantidos = [], 0
+            body, mantidos, intocados = [], 0, 0
             for c in persistir:
+                # objeto confirmado pelo escritório (ex.: "é administrativo, não é
+                # tese" ou tese corrigida à mão) — NÃO sobrescreve. Mesmo respeito
+                # que o pje_reclassificar já tem; o assunto do DataJud não reverte.
+                if c["proc"] in confirmados:
+                    intocados += 1
+                    continue
                 # leu de fato hoje? (senteça/ementa não-vazia OU petição válida — o
                 # cache conta: é fonte assertiva já lida). Se não, autos bloqueados.
                 leu_hoje = bool((c.get("sentenca") or "").strip()) or peticao_valida(c.get("peticao") or "")
@@ -1275,6 +1286,8 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 sb_upsert("empresa_processos_tributarios", body, "empresa_id,numero")
                 extra = (f" ({mantidos} crava(s) preservada(s) — autos bloqueados hoje)"
                          if mantidos else "")
+                if intocados:
+                    extra += f" ({intocados} intocado(s) — confirmado pelo escritório)"
                 print(f"  [gravar] {len(body)} processo(s) tributário(s) gravado(s) no CRM.{extra}")
             except Exception as e:
                 print(f"  [gravar] falha: {e}")
@@ -1651,22 +1664,31 @@ def _abrir_detalhe_terceiros(page, ctx, proc, tentativas=3):
         try:
             with ctx.expect_page(timeout=45000) as pinfo:
                 page.query_selector_all("a")[idx].click()
-                page.wait_for_timeout(4000)
-                # modal de motivo (pode não aparecer se já consultado nesta sessão)
-                alvo = page.evaluate(
-                    """() => [...document.querySelectorAll('textarea')]
-                         .findIndex(e => /motivacao/i.test(e.id) && e.offsetParent !== null)"""
-                )
-                if alvo is not None and alvo >= 0:
-                    h = page.query_selector_all("textarea")[alvo]
+                # modal de motivo (CNJ Res 121/2010): aparece a 1ª vez por processo
+                # numa sessão nova e o tempo de render VARIA — esperar fixo 4s às vezes
+                # perdia o modal e a abertura TRAVAVA no expect_page (visto ao vivo
+                # 31/07). Poll até ~9s pela textarea VISÍVEL (id ...:motivacao).
+                h = None
+                for _ in range(18):
+                    page.wait_for_timeout(500)
+                    alvo = page.evaluate(
+                        """() => [...document.querySelectorAll('textarea')]
+                             .findIndex(e => /motivacao/i.test(e.id) && e.offsetParent !== null)"""
+                    )
+                    if alvo is not None and alvo >= 0:
+                        h = page.query_selector_all("textarea")[alvo]
+                        break
+                if h is not None:
                     h.click()                               # sem o clique não digita
-                    page.keyboard.type(MOTIVO_CONSULTA, delay=25)
+                    page.keyboard.type(MOTIVO_CONSULTA, delay=20)
+                    page.wait_for_timeout(300)
                     b = page.evaluate(
-                        """() => [...document.querySelectorAll('input[type=button]')]
-                             .findIndex(e => /gravar/i.test(e.value || '') && e.offsetParent !== null)"""
+                        """() => [...document.querySelectorAll('input[type=button],button')]
+                             .findIndex(e => /gravar/i.test((e.value || e.innerText) || '')
+                                              && e.offsetParent !== null)"""
                     )
                     if b is not None and b >= 0:
-                        page.query_selector_all("input[type=button]")[b].click()
+                        page.query_selector_all("input[type=button],button")[b].click()
             det = pinfo.value
             det.wait_for_load_state("domcontentloaded")
             det.wait_for_timeout(3500)
