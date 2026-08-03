@@ -103,6 +103,7 @@ interface ElegibilidadeRow {
   empresa_id: string;
   acao_id: string;
   elegivel: boolean;
+  ja_ajuizada: boolean;
   justificativa: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
@@ -237,7 +238,7 @@ export default function Acoes() {
         ),
         fetchAllRows<ElegibilidadeRow>(
           "elegibilidade",
-          "id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto"
+          "id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto, ja_ajuizada"
         ),
         supabase.from("pastas_empresas").select("id, nome"),
         supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
@@ -342,9 +343,21 @@ export default function Acoes() {
     status: string;
     vinculo: string;
   }) => {
+    // Nome duplicado quebra o mapeamento tese→id da detecção PJe (que casa por
+    // nome). Bloqueia case-insensitive antes de inserir.
+    const nomeTrim = data.nome.trim();
+    const { data: existente } = await supabase
+      .from("acoes_tributarias")
+      .select("id")
+      .ilike("nome", nomeTrim)
+      .limit(1);
+    if (existente && existente.length > 0) {
+      toast.error("Já existe uma tese com esse nome.");
+      return;
+    }
     const { error } = await supabase
       .from("acoes_tributarias")
-      .insert({ ...data, vinculo: data.vinculo || "", user_id: user?.id });
+      .insert({ ...data, nome: nomeTrim, vinculo: data.vinculo || "", user_id: user?.id });
     if (error) {
       toast.error("Erro ao criar ação");
     } else {
@@ -426,7 +439,7 @@ export default function Acoes() {
       .from("elegibilidade")
       .update({
         elegivel: false,
-        estado: "desqualificada",
+        status_qualificacao: "desqualificada",
         motivo_desqualificacao: motivoTrim || null,
       })
       .eq("id", elegId);

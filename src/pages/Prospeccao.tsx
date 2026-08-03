@@ -135,6 +135,7 @@ interface ElegibilidadeRow {
   empresa_id: string;
   acao_id: string;
   elegivel: boolean;
+  ja_ajuizada: boolean;
   valor_potencial_estimado: number | null;
 }
 
@@ -317,7 +318,7 @@ export default function Prospeccao() {
       fetchAllRows<Prospeccao>("prospeccoes", "*"),
       fetchAllRows<ElegibilidadeRow>(
         "elegibilidade",
-        "id, empresa_id, acao_id, elegivel, valor_potencial_estimado"
+        "id, empresa_id, acao_id, elegivel, ja_ajuizada, valor_potencial_estimado"
       ),
       supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
       supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
@@ -734,7 +735,13 @@ export default function Prospeccao() {
       prospeccoes.filter((p) => p.acao_id === createAcaoId).map((p) => p.empresa_id)
     );
     return elegibilidades
-      .filter((e) => e.acao_id === createAcaoId && e.elegivel && !prospEmpIds.has(e.empresa_id))
+      .filter(
+        (e) =>
+          e.acao_id === createAcaoId &&
+          e.elegivel &&
+          !e.ja_ajuizada &&
+          !prospEmpIds.has(e.empresa_id)
+      )
       .sort(
         (a, b) => Number(b.valor_potencial_estimado ?? 0) - Number(a.valor_potencial_estimado ?? 0)
       );
@@ -761,7 +768,11 @@ export default function Prospeccao() {
     };
     const { error } = await supabase.from("prospeccoes").insert(payload);
     if (error) {
-      toast.error("Erro ao criar prospecção");
+      if (error.code === "23505") {
+        toast.error("Já existe prospecção ativa para esta empresa nesta tese.");
+      } else {
+        toast.error("Erro ao criar prospecção");
+      }
       console.error(error);
       return;
     }

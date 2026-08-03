@@ -379,13 +379,16 @@ export function EmpresaDetailSheet({
     setDescartando(acaoId);
     try {
       const { data: auth } = await supabase.auth.getUser();
-      const { error } = await supabase.from("elegibilidade").insert({
-        empresa_id: empresa.id,
-        acao_id: acaoId,
-        elegivel: false,
-        motivo_desqualificacao: "Não se encaixa no ramo/modelo de negócio da empresa",
-        user_id: auth.user?.id ?? "",
-      });
+      const { error } = await supabase.from("elegibilidade").upsert(
+        {
+          empresa_id: empresa.id,
+          acao_id: acaoId,
+          elegivel: false,
+          motivo_desqualificacao: "Não se encaixa no ramo/modelo de negócio da empresa",
+          user_id: auth.user?.id ?? "",
+        },
+        { onConflict: "empresa_id,acao_id" }
+      );
       if (error) throw error;
       toast.success(`"${nomeTese.trim()}" removida da oferta desta empresa.`);
       void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });

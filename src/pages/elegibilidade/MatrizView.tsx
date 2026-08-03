@@ -49,12 +49,13 @@ interface ElegRow {
   empresa_id: string;
   acao_id: string;
   elegivel: boolean;
+  ja_ajuizada: boolean;
   valor_potencial_estimado: number | null;
   status_qualificacao: string | null;
   justificativa: string | null;
 }
 
-type CellState = "eleg" | "not_eleg" | "incomplete" | "none";
+type CellState = "eleg" | "not_eleg" | "ja_ajuizada" | "incomplete" | "none";
 interface Cell {
   state: CellState;
   elegibilidade_id?: string;
@@ -92,7 +93,7 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
       const { data, error } = await supabase
         .from("elegibilidade")
         .select(
-          "id, empresa_id, acao_id, elegivel, valor_potencial_estimado, status_qualificacao, justificativa"
+          "id, empresa_id, acao_id, elegivel, ja_ajuizada, valor_potencial_estimado, status_qualificacao, justificativa"
         )
         .in("empresa_id", empresaIds);
       if (error) throw error;
@@ -106,7 +107,8 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
       const key = `${el.empresa_id}|${el.acao_id}`;
       const status = (el.status_qualificacao || "").toLowerCase();
       let state: CellState = "eleg";
-      if (!el.elegivel) state = "not_eleg";
+      if (el.ja_ajuizada) state = "ja_ajuizada";
+      else if (!el.elegivel) state = "not_eleg";
       else if (status === "incompleta") state = "incomplete";
       map.set(key, {
         state,
@@ -175,6 +177,10 @@ export function MatrizView({ acoes, onOpenWizard }: MatrizViewProps) {
             <span className="flex items-center gap-1">
               <span className="h-3 w-3 rounded-sm border border-destructive/40 bg-destructive/20" />
               Não
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-3 w-3 rounded-sm border border-amber-500/40 bg-amber-500/20" />
+              Já ajuizada
             </span>
             <span className="flex items-center gap-1">
               <span className="h-3 w-3 rounded-sm border border-warning/40 bg-warning/20" />
@@ -418,6 +424,11 @@ function CellButton({ cell, onClick }: { cell: Cell; onClick: () => void }) {
       bg: "bg-destructive/20 hover:bg-destructive/30 border-destructive/40",
       icon: <XCircle className="h-3.5 w-3.5 text-destructive" />,
       label: "Não elegível",
+    },
+    ja_ajuizada: {
+      bg: "bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40",
+      icon: <Gavel className="h-3.5 w-3.5 text-amber-600" />,
+      label: "Já ajuizada",
     },
     incomplete: {
       bg: "bg-warning/20 hover:bg-warning/30 border-warning/40",

@@ -20,19 +20,19 @@ type TarefaStatus = Database["public"]["Enums"]["tarefa_status"];
 
 ## Enums
 
-| Enum                      | Valores                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `app_role`                | `admin`, `advogado`, `comercial`, `gestor`                                                             |
-| `tarefa_prioridade`       | `baixa`, `media`, `alta`, `urgente`                                                                    |
-| `tarefa_status`           | `pendente`, `em_andamento`, `concluida`, `cancelada`                                                   |
-| `reuniao_status`          | `agendada`, `realizada`, `cancelada`, `no_show`, `reagendada`                                          |
-| `situacao_cadastral_rfb`  | `ATIVA`, `BAIXADA`, `INAPTA`, `SUSPENSA`, `NULA`                                                       |
-| `porte_rfb`               | `ME`, `EPP`, `DEMAIS`, `MEI`                                                                           |
-| `qualificacao_estado`     | `nao_avaliada`, `qualificada`, `desqualificada`, `em_prospeccao`, `fechada`, `perdida`                 |
-| `papel_contato`           | `socio`, `decisor`, `financeiro`, `juridico`, `contador`, `comercial`, `operacional`, `geral`, `outro` |
-| `origem_contato`          | `driva`, `rfb`, `manual`, `importacao`, `enriquecimento`, `outro`                                      |
-| `tipo_telefone`           | `fixo`, `movel`, `desconhecido`                                                                        |
-| `telefone_status_contato` | `nao_testado`, `atendeu`, `nao_atendeu`, `caixa_postal`, `ocupado`, `numero_errado`, `nao_existe`      |
+| Enum                      | Valores                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `app_role`                | `admin`, `advogado`, `comercial`, `gestor`                                                                                      |
+| `tarefa_prioridade`       | `baixa`, `media`, `alta`, `urgente`                                                                                             |
+| `tarefa_status`           | `pendente`, `em_andamento`, `concluida`, `cancelada`                                                                            |
+| `reuniao_status`          | `agendada`, `realizada`, `cancelada`, `no_show`, `reagendada`                                                                   |
+| `situacao_cadastral_rfb`  | `ATIVA`, `BAIXADA`, `INAPTA`, `SUSPENSA`, `NULA`                                                                                |
+| `porte_rfb`               | `ME`, `EPP`, `DEMAIS`, `MEI`                                                                                                    |
+| ~~`qualificacao_estado`~~ | **NÃO EXISTE** (nunca criado). O estado da elegibilidade vem de `elegivel`+`status_qualificacao`+`ja_ajuizada`, não de um enum. |
+| `papel_contato`           | `socio`, `decisor`, `financeiro`, `juridico`, `contador`, `comercial`, `operacional`, `geral`, `outro`                          |
+| `origem_contato`          | `driva`, `rfb`, `manual`, `importacao`, `enriquecimento`, `outro`                                                               |
+| `tipo_telefone`           | `fixo`, `movel`, `desconhecido`                                                                                                 |
+| `telefone_status_contato` | `nao_testado`, `atendeu`, `nao_atendeu`, `caixa_postal`, `ocupado`, `numero_errado`, `nao_existe`                               |
 
 Status de prospecção (text, não enum): `"Não iniciado"`, `"Contato inicial"`, `"Qualificação"`, `"Proposta enviada"`, `"Negociação"`, `"Contrato assinado"`, `"Perdido"`.
 
@@ -68,7 +68,11 @@ Pessoas e canais reais de cada empresa (sócios, decisores, financeiro, contador
 
 ### `acoes_tributarias` — teses jurídicas
 
-`id`, `nome`, `descricao`, `valor_estimado` numeric, `responsavel_id`, `regras_elegibilidade` jsonb (filtra pool RFB), `ativo` bool, timestamps
+`id`, `nome`, `descricao`, `tipo` (INICIAL/RESCISÓRIA), `status` text (**gate real de visibilidade**: `"Ativa"`/`"Em análise"`/`"Inativa"`), `vinculo`, `valor_estimado` numeric, `responsavel_id`, `regras_elegibilidade` jsonb, `ativo` bool, timestamps
+
+- ⚠️ **`ativo` (bool) é MORTO** — nada lê. Quem esconde do pool/matriz/detecção é `status <> "Ativa"`. Para desativar uma tese, use `status="Inativa"` (não `ativo=false`).
+- ⚠️ **Sem UNIQUE em `nome`** — mas a detecção PJe mapeia tese→`acao_id` por NOME normalizado; nome duplicado quebra o mapeamento. Há checagem de nome duplicado na criação (front).
+- `regras_elegibilidade` (jsonb) e a RPC `pool_elegivel_por_acao` são **legado/não usados** no código — o "pool" hoje = linhas de `elegibilidade` criadas manual/em lote.
 
 Shape de `regras_elegibilidade`:
 
@@ -85,11 +89,18 @@ Shape de `regras_elegibilidade`:
 
 ### `elegibilidade` — qualificação empresa × tese
 
-`id`, `empresa_id`, `acao_id`, `elegivel` bool (legacy), `estado` (qualificacao_estado), `motivo_desqualificacao`, `qualificada_em`, `qualificada_por`, `valor_potencial_estimado` numeric, `justificativa`, `user_id`, timestamps
+`id`, `empresa_id`, `acao_id`, `elegivel` bool, `status_qualificacao` text (`nao_qualificada`/`incompleta`/`qualificada`/`desqualificada`/`legado`), `motivo_desqualificacao`, `score_elegibilidade`, `valor_calculado`, `valor_potencial_estimado` numeric, `destaque` bool, `notas_contexto`, `observacao_valor`, `justificativa`, `qualificada_em`, `qualificada_por`, `user_id`, timestamps.
+**Ajuizamento** (mig 20260713000000): `ja_ajuizada` bool, `ajuizada_por_nos` bool (null=?/true=nós/false=terceiro), `ajuizamento_notas`.
+
+- **NÃO existe coluna `estado` nem enum `qualificacao_estado`** — o "estado" da célula é derivado de `elegivel` + `status_qualificacao` + `ja_ajuizada`. (Havia código gravando `estado` — bug, corrigido.)
+- **UNIQUE(empresa_id, acao_id)** (mig 20260506000002) — use upsert `on_conflict=empresa_id,acao_id`, nunca insert cru.
+- **`ja_ajuizada=true` SAI do pool/elegível/matriz/candidatas a prospecção** (filtrado no front — `statusOf` em applyAcaoEmpresaFilters.ts devolve `"ja_ajuizada"`). A linha permanece (rastreável). Marcação é MANUAL (não há bridge automático da detecção PJe).
 
 ### `prospeccoes` — pipeline comercial (kanban)
 
 `id`, `empresa_id` (NOT NULL), `acao_id` (NOT NULL), `elegibilidade_id` (legacy, nullable), `status_prospeccao` text, `responsavel_id`, `user_id`, `ultimo_contato_em`, `proximo_contato_em`, `valor_proposta` numeric, `observacoes`, timestamps
+
+- **Índice único PARCIAL `uq_prospeccoes_empresa_acao_ativa`** (mig 20260803000000): no máximo UMA prospecção ATIVA (status_prospeccao <> 'Perdido') por (empresa_id, acao_id). Permite reabrir após "Perdido". Inserts fazem pré-check + tratam 23505 (upsert não infere índice parcial no PostgREST).
 
 ### `tarefas`
 
@@ -126,9 +137,8 @@ Templates reutilizáveis. Templates de tarefa têm `titulo_template`, `descricao
 
 ### Views úteis
 
-- `v_cobertura_teses` — KPIs de pool/qualif/prosp por ação
-- `v_funil_valor_potencial` — funil hormozi com `valor_potencial`
-- `pool_elegivel_por_acao(acao_id)` — função que retorna empresas filtradas pelas regras
+- `v_funil_valor_potencial` — funil hormozi com `valor_potencial` (mig 20260418000000; usado em FunilHormozi.tsx)
+- ~~`v_cobertura_teses`~~ e ~~`pool_elegivel_por_acao(acao_id)`~~ — **não existem no código/migrations** (só no doc antigo). O pool real = linhas de `elegibilidade`.
 
 ## RLS (padrão)
 

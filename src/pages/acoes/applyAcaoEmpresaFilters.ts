@@ -11,6 +11,7 @@ import { getCapitaisForUFs, normalizeMunicipio } from "@/lib/municipiosBrasil";
 
 export type StatusCombinadoKey =
   | "nao_elegivel"
+  | "ja_ajuizada"
   | "aguardando"
   | "Contato feito"
   | "Proposta enviada"
@@ -30,6 +31,11 @@ export const STATUS_COMBINADO_OPTIONS: StatusCombinadoOption[] = [
     key: "nao_elegivel",
     label: "Não elegível",
     color: "bg-destructive/10 text-destructive border-destructive/30",
+  },
+  {
+    key: "ja_ajuizada",
+    label: "Já ajuizada",
+    color: "bg-amber-500/10 text-amber-600 border-amber-500/30",
   },
   { key: "aguardando", label: "Aguardando", color: "bg-warning/10 text-warning border-warning/30" },
   ...PROSPECCAO_STATUSES.map<StatusCombinadoOption>((s) => ({
@@ -77,6 +83,7 @@ export interface AcaoEmpresaItem {
 // Mapeia 1 item para a chave única que representa seu estado combinado.
 // Regra: !elegivel → "nao_elegivel"; sem prosp → "aguardando"; senão → status_prospeccao.
 export function statusOf(item: AcaoEmpresaItem): StatusCombinadoKey {
+  if (item.el.ja_ajuizada) return "ja_ajuizada";
   if (!item.el.elegivel) return "nao_elegivel";
   if (!item.prosp) return "aguardando";
   return item.prosp.status_prospeccao as StatusCombinadoKey;
@@ -233,6 +240,7 @@ export function applyAcaoFilters(
 
 // Order key used by status_funil sort. Lower comes first.
 function funilOrder(item: AcaoEmpresaItem): number {
+  if (item.el.ja_ajuizada) return 100; // já ajuizadas ao fim
   if (!item.el.elegivel) return 100; // não elegíveis ao fim
   if (!item.prosp) return -1; // aguardando primeiro
   return prospStatusOrder(item.prosp.status_prospeccao);

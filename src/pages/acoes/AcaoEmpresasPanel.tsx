@@ -75,6 +75,7 @@ export interface ElegAcao {
   empresa_id: string;
   acao_id: string;
   elegivel: boolean;
+  ja_ajuizada: boolean;
   justificativa: string | null;
   created_at: string;
   valor_potencial_estimado: number | null;
@@ -127,10 +128,11 @@ interface Props {
 
 // Presets dos chips do topo. Cada um define um conjunto de StatusCombinadoKey
 // que vai pra filters.statusCombinado (ou undefined p/ "Total").
-type PresetKey = "todas" | "elegiveis" | "aguardando" | "em_prospeccao";
+type PresetKey = "todas" | "elegiveis" | "aguardando" | "em_prospeccao" | "ja_ajuizada";
 
 const PRESETS: Record<PresetKey, StatusCombinadoKey[] | undefined> = {
   todas: undefined,
+  ja_ajuizada: ["ja_ajuizada"],
   elegiveis: [
     "aguardando",
     "Contato feito",
@@ -244,11 +246,13 @@ export function AcaoEmpresasPanel({
   const stats = useMemo(
     () => ({
       total: items.length,
-      elegiveis: items.filter((i) => i.el.elegivel).length,
-      aguardando: items.filter((i) => i.el.elegivel && !i.prosp).length,
+      elegiveis: items.filter((i) => i.el.elegivel && !i.el.ja_ajuizada).length,
+      aguardando: items.filter((i) => i.el.elegivel && !i.el.ja_ajuizada && !i.prosp).length,
       emProspeccao: items.filter(
-        (i) => i.el.elegivel && !!i.prosp && i.prosp.status_prospeccao !== "Perdido"
+        (i) =>
+          i.el.elegivel && !i.el.ja_ajuizada && !!i.prosp && i.prosp.status_prospeccao !== "Perdido"
       ).length,
+      jaAjuizadas: items.filter((i) => i.el.ja_ajuizada).length,
     }),
     [items]
   );
@@ -320,7 +324,7 @@ export function AcaoEmpresasPanel({
   // IDs das empresas elegíveis (elegivel=true) desta ação. Usado pelo mapa
   // para mostrar só o pool elegível.
   const elegiveisIds = useMemo(
-    () => items.filter((i) => i.el.elegivel).map((i) => i.el.empresa_id),
+    () => items.filter((i) => i.el.elegivel && !i.el.ja_ajuizada).map((i) => i.el.empresa_id),
     [items]
   );
 
@@ -423,6 +427,13 @@ export function AcaoEmpresasPanel({
       count: stats.emProspeccao,
       base: "bg-primary/10 text-primary hover:bg-primary/20",
       active: "bg-primary/20 ring-2 ring-primary/30",
+    },
+    {
+      key: "ja_ajuizada",
+      label: "Já ajuizada",
+      count: stats.jaAjuizadas,
+      base: "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20",
+      active: "bg-amber-500/20 ring-2 ring-amber-500/30",
     },
   ];
 
@@ -736,7 +747,14 @@ export function AcaoEmpresasPanel({
                         })()}
 
                         <td className="px-2 py-2">
-                          {!el.elegivel ? (
+                          {el.ja_ajuizada ? (
+                            <Badge
+                              variant="outline"
+                              className="border-0 bg-amber-500/10 text-[10px] text-amber-600"
+                            >
+                              Já ajuizada
+                            </Badge>
+                          ) : !el.elegivel ? (
                             <Badge
                               variant="outline"
                               className="border-0 bg-destructive/10 text-[10px] text-destructive"
@@ -936,7 +954,7 @@ export function AcaoEmpresasPanel({
                                   </Popover>
                                 )}
 
-                                {el.elegivel && !prosp && (
+                                {el.elegivel && !el.ja_ajuizada && !prosp && (
                                   <Button
                                     type="button"
                                     size="sm"

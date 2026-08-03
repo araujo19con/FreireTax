@@ -20,7 +20,9 @@ export function useElegibilidades(empresaId?: string) {
     queryFn: async () => {
       const base = supabase
         .from("elegibilidade")
-        .select("id, empresa_id, acao_id, elegivel, justificativa, valor_potencial_estimado, observacao_valor");
+        .select(
+          "id, empresa_id, acao_id, elegivel, ja_ajuizada, justificativa, valor_potencial_estimado, observacao_valor"
+        );
       const { data, error } = await (empresaId ? base.eq("empresa_id", empresaId) : base);
       if (error) throw error;
       return (data || []) as ElegibilidadeRow[];
@@ -42,7 +44,7 @@ export function useCreateElegibilidade() {
     }) => {
       const { data, error } = await supabase
         .from("elegibilidade")
-        .insert({ ...input, user_id: user!.id })
+        .upsert({ ...input, user_id: user.id }, { onConflict: "empresa_id,acao_id" })
         .select()
         .single();
       if (error) throw error;
@@ -50,7 +52,11 @@ export function useCreateElegibilidade() {
         tabela: "elegibilidade",
         acao: "Criou elegibilidade",
         registro_id: data.id,
-        detalhes: { empresa_id: input.empresa_id, acao_id: input.acao_id, elegivel: input.elegivel },
+        detalhes: {
+          empresa_id: input.empresa_id,
+          acao_id: input.acao_id,
+          elegivel: input.elegivel,
+        },
       });
       return data;
     },

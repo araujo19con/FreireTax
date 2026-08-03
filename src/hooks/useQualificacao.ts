@@ -272,16 +272,54 @@ export function useCriarProspeccaoFromEleg() {
   const { user } = useAuth();
   return useMutation({
     mutationFn: async (elegibilidadeId: string) => {
+      // prospeccoes.empresa_id/acao_id são NOT NULL — puxa da elegibilidade.
+      const { data: eleg, error: elegErr } = await supabase
+        .from("elegibilidade")
+        .select("empresa_id, acao_id")
+        .eq("id", elegibilidadeId)
+        .single();
+      if (elegErr) throw elegErr;
+
+      // Pré-check: se já há prospecção ativa (status <> 'Perdido') para
+      // (empresa_id, acao_id), reutiliza em vez de duplicar.
+      const { data: existente } = await supabase
+        .from("prospeccoes")
+        .select("*")
+        .eq("empresa_id", eleg.empresa_id)
+        .eq("acao_id", eleg.acao_id)
+        .neq("status_prospeccao", "Perdido")
+        .limit(1)
+        .maybeSingle();
+      if (existente) return existente;
+
       const { data, error } = await supabase
         .from("prospeccoes")
         .insert({
           elegibilidade_id: elegibilidadeId,
+          empresa_id: eleg.empresa_id,
+          acao_id: eleg.acao_id,
           user_id: user.id,
+          responsavel_id: user.id,
           status_prospeccao: "Contato feito",
         })
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        // Índice único parcial (uma prospecção ativa por empresa+ação) —
+        // corrida: outro fluxo criou no meio. Reutiliza a existente.
+        if (error.code === "23505") {
+          const { data: jaExiste } = await supabase
+            .from("prospeccoes")
+            .select("*")
+            .eq("empresa_id", eleg.empresa_id)
+            .eq("acao_id", eleg.acao_id)
+            .neq("status_prospeccao", "Perdido")
+            .limit(1)
+            .maybeSingle();
+          if (jaExiste) return jaExiste;
+        }
+        throw error;
+      }
       await logAudit({
         tabela: "prospeccoes",
         acao: "Criou prospecção via qualificação",

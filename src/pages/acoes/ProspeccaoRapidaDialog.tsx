@@ -66,6 +66,23 @@ export function ProspeccaoRapidaDialog({
   const handleSubmit = async () => {
     setSaving(true);
     try {
+      // Pré-check: no máximo uma prospecção ativa (status <> 'Perdido') por
+      // empresa+ação. Evita duplicar e o erro 23505 do índice único parcial.
+      const { data: ativa } = await supabase
+        .from("prospeccoes")
+        .select("id")
+        .eq("empresa_id", empresaId)
+        .eq("acao_id", acaoId)
+        .neq("status_prospeccao", "Perdido")
+        .limit(1)
+        .maybeSingle();
+      if (ativa) {
+        toast.info(`Já existe prospecção ativa para ${empresaNome} nesta tese.`);
+        onSuccess();
+        handleClose(false);
+        return;
+      }
+
       const { error } = await supabase.from("prospeccoes").insert({
         empresa_id: empresaId,
         acao_id: acaoId,
@@ -76,7 +93,15 @@ export function ProspeccaoRapidaDialog({
         // Prospeccao.tsx, senão o card não aparece no "Meu trabalho" de ninguém.
         responsavel_id: user?.id,
       });
-      if (error) throw error;
+      if (error) {
+        if (error.code === "23505") {
+          toast.info(`Já existe prospecção ativa para ${empresaNome} nesta tese.`);
+          onSuccess();
+          handleClose(false);
+          return;
+        }
+        throw error;
+      }
       toast.success(`Prospecção iniciada para ${empresaNome}`);
       logAudit({
         tabela: "prospeccoes",
