@@ -80,7 +80,8 @@ TESES_SO_COM_PETICAO_RAW = (
     "LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS DA BASE DAS CONTRIBUIÇÕES DE TERCEIROS",
     "NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS",
 )
-TESE_ID = {}  # norm(nome da tese) -> acao_id; preenchido em main()
+TESE_ID = {}      # codigo da tese -> acao_id; preenchido em main()
+CAT_CODIGOS = set()  # codigos das teses ATIVAS no catálogo; preenchido em main()
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +484,51 @@ def regras_tese():
     ]
 
 
+# codigo ESTÁVEL de cada tese (contrato catálogo<->detecção). O NOME pode ser
+# renomeado/fundido no catálogo à vontade; este codigo é semeado em
+# acoes_tributarias.codigo (tools/seed_codigos_teses.py) e é a chave REAL da
+# detecção. Keyar por codigo desacopla a classificação do nome — renomear tese
+# não quebra mais em silêncio. As chaves são os NOMES atuais das teses em
+# regras_tese() (usados só como bootstrap para achar o codigo).
+TESE_CODIGO = {
+    "MANUTENÇÃO NO PERSE (PROGRAMA EMERGENCIAL DE RETOMADA DO SETOR DE EVENTOS)": "PERSE_EVENTOS",
+    "INEXIGIBILIDADE DA CONTRIBUIÇÃO SOCIAL DO FGTS (LC 110/2001)": "FGTS_LC110",
+    "RESCISÓRIA DO TEMA 985 (TERÇO DE FÉRIAS)": "RESCISORIA_TEMA985_TERCO",
+    "NÃO INCIDÊNCIA DA CONTRIBUIÇÃO PATRONAL (CPP) SOBRE VERBAS INDENIZATÓRIAS": "CPP_VERBAS_INDENIZATORIAS",
+    "LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS DA BASE DAS CONTRIBUIÇÕES DE TERCEIROS": "LIMITE_20SM_TERCEIROS",
+    "EXCLUSÃO DOS VALORES RETIDOS DO SEGURADO DA BASE DA CPP E DO RAT": "VALORES_RETIDOS_CPP_RAT",
+    "REDUÇÃO ALÍQUOTA RAT BASEADO NA ATIVIDADE PREPONDERANTE": "RAT_ATIVIDADE_PREPONDERANTE",
+    "RECUPERAÇÃO IRRF E FOLHA PARA MUNICÍPIOS": "IRRF_FOLHA_MUNICIPIOS",
+    "EQUIPARAÇÃO DE CLÍNICAS A HOSPITAIS (IRPJ/CSLL)": "EQUIPARACAO_CLINICA_HOSPITAL",
+    "NÃO TRIBUTAÇÃO DOS INCENTIVOS FISCAIS DE ICMS PELO IRPJ, CSLL, PIS E COFINS": "ICMS_INCENTIVOS_IRPJ_CSLL_PIS_COFINS",
+    "CREDITAMENTO DE PIS E COFINS SOBRE O ICMS-ST PAGO PELO SUBSTITUTO": "CREDITO_PISCOFINS_ICMSST_SUBSTITUTO",
+    "EXCLUSÃO DO ICMS-ST DA BASE DE CÁLCULO DO PIS E DA COFINS": "EXCLUSAO_ICMSST_PISCOFINS",
+    "EXCLUSÃO DO ISS DA BASE DE CÁLCULO DO IRPJ E DA CSLL (LUCRO PRESUMIDO)": "ISS_IRPJ_CSLL_LUCRO_PRESUMIDO",
+    "EXCLUSÃO DO ISS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 118)": "ISS_PISCOFINS_TEMA118",
+    "EXCLUSÃO DA GORJETA DA BASE DE CÁLCULO DO PIS E DA COFINS": "GORJETA_PISCOFINS",
+    "MANUTENÇÃO DA DEDUÇÃO DO PAT (DECRETO 10.854/2021)": "PAT_DECRETO_10854",
+    "EXCLUSÃO DOS APRENDIZES DA BASE DA CPP, TERCEIROS E RAT": "APRENDIZES_CPP_TERCEIROS_RAT",
+    "EXCLUSÃO DO ICMS DA BASE DE CÁLCULO DO PIS E DA COFINS (TEMA 69)": "ICMS_PISCOFINS_TEMA69",
+    "NÃO INCIDÊNCIA DE PIS E COFINS SOBRE RECEITAS FINANCEIRAS": "PISCOFINS_RECEITAS_FINANCEIRAS",
+    "EXCLUSÃO DA INCIDÊNCIA DO IRPJ E DA CSLL SOBRE OS CRÉDITOS PRESUMIDOS DE ICMS": "IRPJ_CSLL_CREDITO_PRESUMIDO_ICMS",
+    "CREDITAMENTO DE PIS E COFINS SOBRE O ICMS NA AQUISIÇÃO DE MERCADORIAS": "CREDITO_PISCOFINS_ICMS_AQUISICAO",
+    "EXCLUSÃO DO IPI DA BASE DE CÁLCULO DO PIS E DA COFINS": "EXCLUSAO_IPI_PISCOFINS",
+    "EXCLUSÃO DO ICMS DA PRÓPRIA BASE DE CÁLCULO (ICMS POR DENTRO)": "ICMS_POR_DENTRO",
+    "MAJORAÇÃO DE 10% SOBRE O LUCRO PRESUMIDO": "MAJORACAO_10_LUCRO_PRESUMIDO",
+    "EXCLUSÃO DO PIS E DA COFINS DA SUA BASE DE CÁLCULO": "PISCOFINS_PROPRIA_BASE",
+}
+_TESE_CODIGO_NORM = None  # cache lazy: {_norm(nome): codigo}
+
+
+def tese_codigo(nome):
+    """codigo estável da tese pelo NOME (bootstrap). None se o nome não está no
+    mapa (regra sem codigo atribuído — o self-check em main() avisa)."""
+    global _TESE_CODIGO_NORM
+    if _TESE_CODIGO_NORM is None:
+        _TESE_CODIGO_NORM = {_norm(k): v for k, v in TESE_CODIGO.items()}
+    return _TESE_CODIGO_NORM.get(_norm(nome))
+
+
 def _norm(s):
     import unicodedata
     return "".join(c for c in unicodedata.normalize("NFD", (s or "").upper())
@@ -596,8 +642,11 @@ def classificar_tese(assunto, classe, catalogo_norm, peticao=""):
     texto = _norm(assunto) + " " + _norm(classe) + " " + _norm(peticao)
     cl = _norm(classe)
     for nome, rg in regras_tese():
-        if _norm(nome) not in catalogo_norm:
-            continue  # tese não está no catálogo do escritório
+        # gate por CÓDIGO (estável), não por nome: renomear a tese no catálogo
+        # não derruba mais a regra. catalogo_norm segue sendo passado só p/ display.
+        codigo = tese_codigo(nome)
+        if codigo is None or codigo not in CAT_CODIGOS:
+            continue  # tese não está (por codigo) no catálogo do escritório
         # algumas teses só existem em certa CLASSE processual (ex.: rescisória só
         # é protocolada no 2º grau). Sem esse gate, a regra da rescisória casava
         # "1/3 de férias" e sequestrava ação de 1º grau sobre verbas indenizatórias.
@@ -762,12 +811,26 @@ def main():
     if not alvos:
         sys.exit("Nada a analisar. Passe --fila (protocolo pedido na UI), --cnpj, --cnpjs ou --acao.")
 
-    cat_rows = sb("acoes_tributarias?select=id,nome&status=eq.Ativa")
+    cat_rows = sb("acoes_tributarias?select=id,nome,codigo&status=eq.Ativa")
     catalogo = [r["nome"] for r in cat_rows]
-    catalogo_norm = {_norm(n): n for n in catalogo}          # norm(nome) -> nome (tese no catálogo)
-    global TESE_ID
-    TESE_ID = {_norm(r["nome"]): r["id"] for r in cat_rows}  # norm(nome) -> acao_id (p/ gravar)
-    print(f"{len(alvos)} empresa(s) a analisar | catálogo: {len(catalogo)} teses")
+    catalogo_norm = {_norm(n): n for n in catalogo}          # norm(nome) -> nome (só p/ display)
+    global TESE_ID, CAT_CODIGOS
+    # chave ESTÁVEL = codigo (não o nome): renomear a tese no catálogo não quebra.
+    TESE_ID = {r["codigo"]: r["id"] for r in cat_rows if r.get("codigo")}  # codigo -> acao_id
+    CAT_CODIGOS = set(TESE_ID)
+    print(f"{len(alvos)} empresa(s) a analisar | catálogo: {len(catalogo)} teses "
+          f"({len(CAT_CODIGOS)} com codigo)")
+    # self-check: pega regra morta ANTES de rodar (economiza uma varredura à toa).
+    if not CAT_CODIGOS:
+        print("[AVISO] Nenhuma tese do catálogo tem `codigo` — rode "
+              "tools/seed_codigos_teses.py antes. A detecção NÃO vai cravar nada.")
+    sem_codigo = [n for n in TESE_CODIGO if tese_codigo(n) is None]
+    if sem_codigo:
+        print(f"[AVISO] {len(sem_codigo)} nome(s) em TESE_CODIGO sem normalizar (bug de mapa): {sem_codigo}")
+    orfas = sorted(c for c in set(TESE_CODIGO.values()) if c not in CAT_CODIGOS)
+    if orfas and CAT_CODIGOS:
+        print(f"[AVISO] {len(orfas)} regra(s) de detecção sem tese ativa correspondente "
+              f"(codigo ausente/inativo no catálogo): {orfas}")
 
     from playwright.sync_api import sync_playwright
     graus_validos = set(GRAUS) | {"1x", "2x"}
@@ -1261,7 +1324,7 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 # leu de fato hoje? (senteça/ementa não-vazia OU petição válida — o
                 # cache conta: é fonte assertiva já lida). Se não, autos bloqueados.
                 leu_hoje = bool((c.get("sentenca") or "").strip()) or peticao_valida(c.get("peticao") or "")
-                novo = (TESE_ID.get(_norm(c["tese"])) if (c.get("tese") and c.get("corrob")) else None)
+                novo = (TESE_ID.get(tese_codigo(c["tese"])) if (c.get("tese") and c.get("corrob")) else None)
                 prev = atual.get(c["proc"])
                 md = {}
                 if novo is None and prev and not leu_hoje:
