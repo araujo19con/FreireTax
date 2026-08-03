@@ -18,20 +18,12 @@ interface Props {
   empresaIds: string[];
 }
 
-/** Regra de regime de cada tese: critério `select` cujas opções são os regimes.
- *  `excludeOptions` lista os regimes que DESQUALIFICAM — é assim que sabemos
- *  a que a empresa "tem direito" sem inventar heurística. */
-interface RegraRegime {
-  acao_id: string;
-  exclui: string[];
-}
-
 export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["relatorio-teses", empresaIds.join(",")],
     enabled: open && empresaIds.length > 0,
     queryFn: async () => {
-      const [empRes, procRes, catRes, elegRes, critRes] = await Promise.all([
+      const [empRes, procRes, catRes, elegRes] = await Promise.all([
         supabase
           .from("empresas")
           .select(
@@ -47,33 +39,18 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
         supabase.from("acoes_tributarias").select("id, nome").eq("status", "Ativa").order("nome"),
         // teses já vinculadas/descartadas p/ estas empresas — saem da oferta
         supabase.from("elegibilidade").select("empresa_id, acao_id").in("empresa_id", empresaIds),
-        supabase
-          .from("criterios_elegibilidade")
-          .select("acao_id, tipo_resposta, opcoes, regra_excludente")
-          .eq("tipo_resposta", "select"),
       ]);
       return {
         empresas: (empRes.data || []) as unknown as Array<Record<string, unknown>>,
         proc: (procRes.data || []) as unknown as Array<Record<string, unknown>>,
         catalogo: (catRes.data || []) as unknown as Array<{ id: string; nome: string }>,
         eleg: (elegRes.data || []) as unknown as Array<{ empresa_id: string; acao_id: string }>,
-        criterios: (critRes.data || []) as unknown as Array<Record<string, unknown>>,
       };
     },
   });
 
   const relatorio: RelatorioEmpresa[] = useMemo(() => {
     if (!data) return [];
-    const LABELS = new Set(REGIMES_TRIBUTARIOS.map((r) => r.label));
-    // só critérios de REGIME (select cujas opções são os regimes conhecidos)
-    const regras: RegraRegime[] = data.criterios
-      .map((c) => {
-        const opts = (c.opcoes as string[] | null) || [];
-        const regra = c.regra_excludente as { tipo?: string; excludeOptions?: string[] } | null;
-        if (!opts.length || !opts.every((o) => LABELS.has(o))) return null;
-        return { acao_id: c.acao_id as string, exclui: regra?.excludeOptions || [] };
-      })
-      .filter((v): v is RegraRegime => !!v);
 
     return data.empresas.map((e) => {
       const id = e.id as string;
@@ -121,15 +98,11 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
       );
       // teses vinculadas (inclui as DESCARTADAS pelo × na ficha) saem da oferta
       data.eleg.filter((x) => x.empresa_id === id).forEach((x) => jaIds.add(x.acao_id));
-      const podeEntrar = data.catalogo
-        .filter((a) => !jaIds.has(a.id))
-        .filter((a) => {
-          // sem regime conhecido -> não dá pra excluir; mostra e sinaliza
-          if (!regimeLabel) return true;
-          const r = regras.find((x) => x.acao_id === a.id);
-          return !r || !r.exclui.includes(regimeLabel);
-        })
-        .map((a) => a.nome.trim());
+      // Oferta = MESMO cálculo do painel "Teses que pode oferecer" da ficha:
+      // catálogo ativo menos as já ajuizadas/vinculadas. NÃO filtra por regime —
+      // o filtro de regime escondia teses aplicáveis (empresa com 2 saía 1 no
+      // relatório enquanto a ficha mostrava 2). A ficha é a fonte da verdade.
+      const podeEntrar = data.catalogo.filter((a) => !jaIds.has(a.id)).map((a) => a.nome.trim());
 
       return {
         nome: ((e.razao_social as string) || (e.nome as string) || "").trim(),

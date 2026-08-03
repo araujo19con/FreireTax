@@ -116,11 +116,7 @@ export function renderRelatorioTesesHTML(
         <div class="bloco oferta">
           <h4>Teses aplicáveis ainda não ajuizadas</h4>
           ${oferta}
-          ${
-            d.regimeConhecido
-              ? `<p class="nota">Filtrado pelo regime de tributação da empresa (${esc(d.regime)}).</p>`
-              : `<p class="nota">Regime tributário não informado — a lista não pôde ser filtrada por regime.</p>`
-          }
+          <p class="nota">Teses ativas do catálogo que a empresa ainda não ajuizou nem tem vinculada.</p>
         </div>
       </section>`;
     })
