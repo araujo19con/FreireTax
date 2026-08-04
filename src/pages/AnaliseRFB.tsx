@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -100,8 +101,6 @@ interface Filtros {
 }
 
 export default function AnaliseRFB() {
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filtros, setFiltros] = useState<Filtros>({
     uf: [],
     porte: [],
@@ -114,30 +113,32 @@ export default function AnaliseRFB() {
     faturamentoMax: null,
   });
 
-  const fetchEmpresas = async () => {
-    setLoading(true);
-    // Paginar via fetchAllRows pra que os agregados (capital total, enriquecidas,
-    // etc.) reflitam o universo real, não o cap de 1k linhas do PostgREST.
-    try {
-      const all = await fetchAllRows<Empresa>((from, to) =>
-        supabase
-          .from("empresas")
-          .select("*")
-          .order("valor_potencial_total", { ascending: false, nullsFirst: false })
-          .order("id", { ascending: true })
-          .range(from, to)
-      );
-      setEmpresas(all);
-    } catch {
-      toast.error("Erro ao carregar empresas");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchEmpresas();
-  }, []);
+  // useQuery => cacheado (staleTime 30s): reabrir a análise é instantâneo.
+  const {
+    data: empresas = [],
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ["analise-rfb-empresas"],
+    staleTime: 30_000,
+    queryFn: async () => {
+      // Pagina via fetchAllRows pra os agregados refletirem o universo real
+      // (não o cap de ~1k do PostgREST).
+      try {
+        return await fetchAllRows<Empresa>((from, to) =>
+          supabase
+            .from("empresas")
+            .select("*")
+            .order("valor_potencial_total", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: true })
+            .range(from, to)
+        );
+      } catch {
+        toast.error("Erro ao carregar empresas");
+        return [] as Empresa[];
+      }
+    },
+  });
 
   // ========= FILTROS =========
   const filtered = useMemo(() => {
@@ -370,7 +371,7 @@ export default function AnaliseRFB() {
               variant="outline"
               size="sm"
               onClick={() => {
-                void fetchEmpresas();
+                void refetch();
               }}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
