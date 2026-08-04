@@ -170,6 +170,20 @@ const statusProcessoOptions = [
   "Finalizado",
 ];
 
+const EMPRESA_COLS =
+  "id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados";
+
+// Busca empresas por lista de IDs (chunks paralelos de 500) — usado pra carregar
+// só as empresas REFERENCIADAS (elegibilidade/pastas), não as milhares do banco.
+async function fetchEmpresasByIds(ids: string[]): Promise<Empresa[]> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
+  const res = await Promise.all(
+    chunks.map((c) => supabase.from("empresas").select(EMPRESA_COLS).in("id", c))
+  );
+  return res.flatMap((r) => (r.data ?? []) as unknown as Empresa[]);
+}
+
 export default function Acoes() {
   const [acoes, setAcoes] = useState<Acao[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -197,6 +211,11 @@ export default function Acoes() {
   const [elegAcaoId, setElegAcaoId] = useState("");
   const [elegMode, setElegMode] = useState<"individual" | "pasta" | "planilha">("individual");
   const [elegSelectedEmpresas, setElegSelectedEmpresas] = useState<Set<string>>(new Set());
+  // Lista COMPLETA de empresas — só p/ o picker "individual". Carregada sob demanda
+  // (não no load da página) pra não puxar as milhares de empresas à toa.
+  const [allEmpresas, setAllEmpresas] = useState<Empresa[]>([]);
+  const [allEmpresasLoading, setAllEmpresasLoading] = useState(false);
+  const [empresaBusca, setEmpresaBusca] = useState("");
   const [elegSelectedPasta, setElegSelectedPasta] = useState("");
   const [elegElegivel, setElegElegivel] = useState("true");
   const [elegJustificativa, setElegJustificativa] = useState("");
@@ -230,13 +249,11 @@ export default function Acoes() {
   // fetchAllRows (src/lib/supabaseFetchAll.ts) pagina automaticamente em chunks
   // de 1000 — necessário porque PostgREST corta cada response em max-rows.
   const fetchAll = async () => {
-    const [acoesRes, empresas, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] =
+    // Não carrega as ~5.8k empresas do banco — só o que a tela usa. As empresas
+    // vêm depois, filtradas pelos IDs referenciados (elegibilidade ∪ pastas).
+    const [acoesRes, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] =
       await Promise.all([
         supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-        fetchAllRows<Empresa>(
-          "empresas",
-          "id, nome, cnpj, porte, uf, situacao_cadastral, regime_tributario, municipio, capital_social, opcao_simples, cnae_principal, cnae_principal_desc, quantidade_funcionarios, faturamento_anual, metadados"
-        ),
         fetchAllRows<ElegibilidadeRow>(
           "elegibilidade",
           "id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto, ja_ajuizada"
@@ -246,11 +263,16 @@ export default function Acoes() {
         fetchAllRows<Processo>("processos", "*"),
         fetchAllRows<Prospeccao>("prospeccoes", "*"),
       ]);
+    const items = itemsRes.data || [];
+    const refIds = Array.from(
+      new Set([...elegibilidades.map((e) => e.empresa_id), ...items.map((i) => i.empresa_id)])
+    ).filter(Boolean);
+    const empresas = refIds.length ? await fetchEmpresasByIds(refIds) : [];
     setAcoes(acoesRes.data || []);
     setEmpresas(empresas);
     setElegibilidades(elegibilidades);
     setPastas(pastasRes.data || []);
-    setPastaItems(itemsRes.data || []);
+    setPastaItems(items);
     setProcessos(processos);
     setProspeccoes(prospeccoes);
     setLoading(false);
@@ -265,6 +287,21 @@ export default function Acoes() {
     .map((a) => ({ id: a.id, nome: a.nome }));
 
   const empresasMap = useMemo(() => new Map(empresas.map((e) => [e.id, e])), [empresas]);
+
+  // Carrega a lista completa de empresas só quando o picker "individual" abre.
+  useEffect(() => {
+    if (
+      elegDialogOpen &&
+      elegMode === "individual" &&
+      allEmpresas.length === 0 &&
+      !allEmpresasLoading
+    ) {
+      setAllEmpresasLoading(true);
+      fetchAllRows<Empresa>("empresas", EMPRESA_COLS)
+        .then(setAllEmpresas)
+        .finally(() => setAllEmpresasLoading(false));
+    }
+  }, [elegDialogOpen, elegMode, allEmpresas.length, allEmpresasLoading]);
 
   // Deep-link: /acoes?acao=<id>&empresa=<id> abre a ação expandida e filtra
   // o painel pela empresa. Usado pelo "click na ação" dentro do EmpresaDetailSheet.
@@ -1109,23 +1146,63 @@ export default function Acoes() {
               </Button>
             </div>
             {elegMode === "individual" && (
-              <div className="max-h-[30vh] space-y-2 overflow-y-auto">
+              <div className="space-y-2">
                 <Label>Selecione as empresas</Label>
-                {empresas.map((e) => (
-                  <label
-                    key={e.id}
-                    className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50"
-                  >
-                    <Checkbox
-                      checked={elegSelectedEmpresas.has(e.id)}
-                      onCheckedChange={() => toggleEmpresa(e.id)}
-                    />
-                    <div>
-                      <div className="text-sm font-medium">{e.nome}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{e.cnpj}</div>
-                    </div>
-                  </label>
-                ))}
+                <Input
+                  value={empresaBusca}
+                  onChange={(e) => setEmpresaBusca(e.target.value)}
+                  placeholder="Buscar por nome ou CNPJ…"
+                  className="h-9"
+                />
+                <div className="max-h-[30vh] space-y-1 overflow-y-auto">
+                  {allEmpresasLoading ? (
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      Carregando empresas…
+                    </p>
+                  ) : (
+                    (() => {
+                      const q = empresaBusca.trim().toLowerCase();
+                      const filtered = q
+                        ? allEmpresas.filter(
+                            (e) =>
+                              (e.nome || "").toLowerCase().includes(q) || (e.cnpj || "").includes(q)
+                          )
+                        : allEmpresas;
+                      const shown = filtered.slice(0, 200);
+                      return (
+                        <>
+                          {shown.map((e) => (
+                            <label
+                              key={e.id}
+                              className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-muted/50"
+                            >
+                              <Checkbox
+                                checked={elegSelectedEmpresas.has(e.id)}
+                                onCheckedChange={() => toggleEmpresa(e.id)}
+                              />
+                              <div>
+                                <div className="text-sm font-medium">{e.nome}</div>
+                                <div className="font-mono text-xs text-muted-foreground">
+                                  {e.cnpj}
+                                </div>
+                              </div>
+                            </label>
+                          ))}
+                          {filtered.length > shown.length && (
+                            <p className="py-1 text-center text-[11px] text-muted-foreground">
+                              Mostrando {shown.length} de {filtered.length} — refine a busca.
+                            </p>
+                          )}
+                          {filtered.length === 0 && (
+                            <p className="py-4 text-center text-sm text-muted-foreground">
+                              Nenhuma empresa encontrada.
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()
+                  )}
+                </div>
               </div>
             )}
             {elegMode === "pasta" && (
