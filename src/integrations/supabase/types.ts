@@ -977,6 +977,104 @@ export type Database = {
           },
         ];
       };
+      honorarios_lancamentos: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          data_pagamento: string | null;
+          data_vencimento: string;
+          descricao: string | null;
+          empresa_id: string;
+          id: string;
+          nota: string | null;
+          prospeccao_id: string | null;
+          status: Database["public"]["Enums"]["honorario_status"];
+          tipo: Database["public"]["Enums"]["honorario_tipo"];
+          updated_at: string;
+          valor: number;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          data_pagamento?: string | null;
+          data_vencimento: string;
+          descricao?: string | null;
+          empresa_id: string;
+          id?: string;
+          nota?: string | null;
+          prospeccao_id?: string | null;
+          status?: Database["public"]["Enums"]["honorario_status"];
+          tipo?: Database["public"]["Enums"]["honorario_tipo"];
+          updated_at?: string;
+          valor: number;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          data_pagamento?: string | null;
+          data_vencimento?: string;
+          descricao?: string | null;
+          empresa_id?: string;
+          id?: string;
+          nota?: string | null;
+          prospeccao_id?: string | null;
+          status?: Database["public"]["Enums"]["honorario_status"];
+          tipo?: Database["public"]["Enums"]["honorario_tipo"];
+          updated_at?: string;
+          valor?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "honorarios_lancamentos_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "honorarios_lancamentos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "honorarios_lancamentos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "honorarios_lancamentos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "honorarios_lancamentos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "honorarios_lancamentos_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "prospeccoes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "honorarios_lancamentos_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
+          },
+        ];
+      };
       pasta_empresa_items: {
         Row: {
           created_at: string;
@@ -1060,6 +1158,124 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [];
+      };
+      prazos_processuais: {
+        Row: {
+          acao_id: string | null;
+          alerta_antecedencia_dias: number;
+          alerta_enviado_em: string | null;
+          created_at: string;
+          criado_por: string | null;
+          data_vencimento: string;
+          descricao: string | null;
+          empresa_id: string;
+          id: string;
+          observacao: string | null;
+          prospeccao_id: string | null;
+          responsavel_id: string | null;
+          status: Database["public"]["Enums"]["prazo_status"];
+          tipo: string;
+          updated_at: string;
+        };
+        Insert: {
+          acao_id?: string | null;
+          alerta_antecedencia_dias?: number;
+          alerta_enviado_em?: string | null;
+          created_at?: string;
+          criado_por?: string | null;
+          data_vencimento: string;
+          descricao?: string | null;
+          empresa_id: string;
+          id?: string;
+          observacao?: string | null;
+          prospeccao_id?: string | null;
+          responsavel_id?: string | null;
+          status?: Database["public"]["Enums"]["prazo_status"];
+          tipo: string;
+          updated_at?: string;
+        };
+        Update: {
+          acao_id?: string | null;
+          alerta_antecedencia_dias?: number;
+          alerta_enviado_em?: string | null;
+          created_at?: string;
+          criado_por?: string | null;
+          data_vencimento?: string;
+          descricao?: string | null;
+          empresa_id?: string;
+          id?: string;
+          observacao?: string | null;
+          prospeccao_id?: string | null;
+          responsavel_id?: string | null;
+          status?: Database["public"]["Enums"]["prazo_status"];
+          tipo?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prazos_processuais_acao_id_fkey";
+            columns: ["acao_id"];
+            isOneToOne: false;
+            referencedRelation: "acoes_tributarias";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_criado_por_fkey";
+            columns: ["criado_por"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "prospeccoes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
+          },
+          {
+            foreignKeyName: "prazos_processuais_responsavel_id_fkey";
+            columns: ["responsavel_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       processos: {
         Row: {
@@ -2491,6 +2707,10 @@ export type Database = {
       };
     };
     Functions: {
+      assign_user_role: {
+        Args: { p_role: Database["public"]["Enums"]["app_role"]; p_uid: string };
+        Returns: undefined;
+      };
       buscar_rfb_por_nome: {
         Args: { limite?: number; termo: string; uf_filtro?: string };
         Returns: {
@@ -2523,10 +2743,24 @@ export type Database = {
         };
         Returns: undefined;
       };
+      marcar_honorarios_atrasados: { Args: never; Returns: number };
       normaliza_cnpj: { Args: { txt: string }; Returns: string };
       normaliza_nome_contato: { Args: { p: string }; Returns: string };
       normalize_cnpj_text: { Args: { raw: string }; Returns: string };
       pode_iniciar_tarefa: { Args: { tarefa_uuid: string }; Returns: boolean };
+      prazos_a_alertar_hoje: {
+        Args: never;
+        Returns: {
+          acao_nome: string;
+          data_vencimento: string;
+          descricao: string;
+          empresa_nome: string;
+          prazo_id: string;
+          responsavel_email: string;
+          responsavel_id: string;
+          tipo: string;
+        }[];
+      };
       show_limit: { Args: never; Returns: number };
       show_trgm: { Args: { "": string }; Returns: string[] };
     };
@@ -2561,6 +2795,8 @@ export type Database = {
         | "objecao_preco"
         | "objecao_tese"
         | "objecao_timing";
+      honorario_status: "pendente" | "pago" | "atrasado" | "cancelado";
+      honorario_tipo: "retainer" | "exito" | "avulso";
       motivo_perdido:
         | "preco"
         | "desconfianca_tese"
@@ -2582,6 +2818,7 @@ export type Database = {
         | "geral"
         | "outro";
       porte_rfb: "MEI" | "ME" | "EPP" | "DEMAIS" | "NAO_INFORMADO";
+      prazo_status: "pendente" | "cumprido" | "perdido";
       reuniao_status: "agendada" | "realizada" | "cancelada" | "no_show" | "reagendada";
       situacao_cadastral_rfb: "NULA" | "ATIVA" | "SUSPENSA" | "INAPTA" | "BAIXADA";
       tarefa_prioridade: "baixa" | "media" | "alta" | "urgente";
@@ -2758,6 +2995,8 @@ export const Constants = {
         "objecao_tese",
         "objecao_timing",
       ],
+      honorario_status: ["pendente", "pago", "atrasado", "cancelado"],
+      honorario_tipo: ["retainer", "exito", "avulso"],
       motivo_perdido: [
         "preco",
         "desconfianca_tese",
@@ -2781,6 +3020,7 @@ export const Constants = {
         "outro",
       ],
       porte_rfb: ["MEI", "ME", "EPP", "DEMAIS", "NAO_INFORMADO"],
+      prazo_status: ["pendente", "cumprido", "perdido"],
       reuniao_status: ["agendada", "realizada", "cancelada", "no_show", "reagendada"],
       situacao_cadastral_rfb: ["NULA", "ATIVA", "SUSPENSA", "INAPTA", "BAIXADA"],
       tarefa_prioridade: ["baixa", "media", "alta", "urgente"],
