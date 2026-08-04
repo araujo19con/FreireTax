@@ -146,3 +146,9 @@ busca retorna lista vazia.
 1. Commit local → `git push origin main`
 2. Vercel redeploy automático (~1-2 min)
 3. Supabase: aplicar migration via `supabase db push` OU SQL Editor manual no dashboard
+
+⚠️ **Gate de integridade (após `db push`):** rode `python tools/check_schema_drift.py`
+(precisa `SUPABASE_ACCESS_TOKEN` no env). Compara os objetos das migrations com o
+banco real e falha se houver "fantasma" — migration marcada como aplicada mas cujo
+SQL nunca rodou. O histórico foi inicializado via `repair`, então "applied" ≠ objeto
+existe (em ago/2026 isso deixou 5 funções + 2 tabelas ausentes). Ver `check_schema_drift.py`.
