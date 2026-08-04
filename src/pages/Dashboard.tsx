@@ -122,8 +122,15 @@ export default function Dashboard() {
             .eq("status", "cliente"),
           supabase.from("acoes_tributarias").select("id, nome, tipo, status"),
           fetchAllRows<ElegibilidadeRow>("elegibilidade", "id, empresa_id, acao_id, elegivel"),
-          fetchAllRows<Processo>("processos", "*"),
-          fetchAllRows<Prospeccao>("prospeccoes", "*"),
+          // só as colunas que os KPIs usam (evita observacoes/numero_processo etc.)
+          fetchAllRows<Processo>(
+            "processos",
+            "id, elegibilidade_id, empresa_id, acao_id, fase, valor_estimado, valor_ganho, status, created_at, data_processo, tribunal"
+          ),
+          fetchAllRows<Prospeccao>(
+            "prospeccoes",
+            "id, elegibilidade_id, empresa_id, acao_id, status_prospeccao, valor_contrato, contato_nome, created_at"
+          ),
         ]);
       return {
         empTotal: empTotalRes.count ?? 0,

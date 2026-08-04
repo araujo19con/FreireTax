@@ -22,6 +22,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { prefetchRoute } from "@/lib/routePrefetch";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -197,6 +198,8 @@ export function AppSidebar() {
           <NavLink
             to={item.url}
             end={item.url === "/"}
+            onMouseEnter={() => prefetchRoute(item.url)}
+            onFocus={() => prefetchRoute(item.url)}
             className="hover:bg-sidebar-accent/60"
             activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
           >
