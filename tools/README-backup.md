@@ -5,12 +5,12 @@ regra **3-2-1** (3 cópias, 2 mídias, 1 off-site) com camadas independentes.
 
 ## Camadas (o que protege cada uma)
 
-| Camada                                 | Cobre                                       | Onde                               | Frequência / retenção                                    |
-| -------------------------------------- | ------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| **1. Snapshots gerenciados Supabase**  | Banco INTEIRO (public + auth + storage)     | Supabase (us-east-2)               | Diário automático (Pro, WAL-G ligado). Retenção ~7 dias. |
-| **1b. PITR** (recomendado, ver abaixo) | Banco inteiro, a QUALQUER segundo           | Supabase                           | Restaura a um ponto exato dentro da retenção             |
-| **2. Schema**                          | Estrutura (tabelas, funções, RLS, triggers) | **GitHub** (`supabase/migrations`) | A cada commit — já é off-site                            |
-| **3. Export lógico de dados**          | Dados do schema `public` (negócio)          | `tools/backup_db.py` → `.json.gz`  | Diário (Agendador) + pasta sincronizada off-site         |
+| Camada                                    | Cobre                                       | Onde                               | Frequência / retenção                                    |
+| ----------------------------------------- | ------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
+| **1. Snapshots gerenciados Supabase**     | Banco INTEIRO (public + auth + storage)     | Supabase (us-east-2)               | Diário automático (Pro, WAL-G ligado). Retenção ~7 dias. |
+| ~~1b. PITR~~ (opcional, PAGO — NÃO usado) | Banco inteiro, a QUALQUER segundo           | Supabase                           | Addon pago; dispensado (custo zero)                      |
+| **2. Schema**                             | Estrutura (tabelas, funções, RLS, triggers) | **GitHub** (`supabase/migrations`) | A cada commit — já é off-site                            |
+| **3. Export lógico de dados**             | Dados do schema `public` (negócio)          | `tools/backup_db.py` → `.json.gz`  | Diário (Agendador) + pasta sincronizada off-site         |
 
 - **Camada 1** é a recuperação principal (rápida, completa). **Camada 3** é o seguro
   INDEPENDENTE do fornecedor: se a conta Supabase for comprometida/apagada, ou o
@@ -61,14 +61,36 @@ python tools\backup_db.py --verify tools\..\backups\freiretax_public_XXXX.json.g
    script de carga faz `upsert` tabela a tabela. (Para DR completo rápido, prefira o
    snapshot gerenciado; o export é o seguro independente / recuperação seletiva.)
 
+## Custo: ZERO adicional
+
+Este modelo **não adiciona custo nenhum**: usa só o service role + REST (egress ~5 MB/dia,
+irrisório) e o seu Google Drive. Nada de addon pago.
+
+- **PITR** (recuperação a qualquer segundo) é addon PAGO e **NÃO é necessário** aqui — o
+  export diário no Drive + os snapshots diários do plano já cobrem o cenário de perda. A
+  janela máxima de perda fica em ~24h; se quiser reduzir sem custo, é só agendar o backup
+  2×/dia (o arquivo é minúsculo). NÃO ligar PITR.
+
+## Robustez (por que não vai falhar em silêncio)
+
+`backup_db.py` foi endurecido:
+
+- **Paginação por Content-Range** (`count=exact`): baixa até completar e **confere
+  `linhas == total`** por tabela — nada de página cortada silenciosamente.
+- **Retry com backoff** em erro de rede/HTTP (4 tentativas).
+- **Escrita atômica** (`.part` → rename): nunca deixa um `.gz` corrompido.
+- **Falha explícita**: se alguma tabela não baixar, salva como `*.INCOMPLETE`, **não
+  rotaciona** (preserva os bons) e sai com código ≠ 0 → a tarefa acusa erro.
+- **Auto-verificação**: relê o arquivo gerado e confere as contagens antes de dar OK.
+- **Wrapper com fallback**: se o Drive estiver offline, grava LOCAL (melhor local que
+  nenhum) e registra tudo em `backups/backup.log`.
+
 ## Recomendações de segurança (da auditoria 04/08)
 
-- **Ligar PITR** (Supabase → Database → Backups → Point in Time Recovery). É addon pago
-  no Pro (~US$/mês), mas fecha a janela de perda de até 24h dos snapshots diários. Vale
-  para um CRM jurídico (LGPD).
 - **Rotacionar segredos** já expostos: a senha do banco em `supabase/.temp/db-pw.txt`
   e o Personal Access Token (ambos apareceram em texto). Supabase → Account → Access
-  Tokens / Database → Reset password.
+  Tokens / Database → Reset password. (O backup usa o `SERVICE_ROLE_KEY`, que não muda
+  ao resetar a senha do Postgres.)
 - **RLS**: corrigido em `20260804000000_seguranca_rls_search_path.sql` (tabelas
   `contatos`/`socios_processos`/`empresas_skip_log` estavam abertas ao anon).
 - **Testar o restore 1x/mês**: `--verify` + carregar um `.json.gz` num projeto de teste.
