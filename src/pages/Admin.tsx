@@ -15,15 +15,32 @@ import { LoadingState } from "@/components/LoadingState";
 import { TemplatesAdmin } from "@/components/TemplatesAdmin";
 import TemplatesTarefaAdmin from "./tarefas/TemplatesAdmin";
 import { BackupAdmin } from "@/components/BackupAdmin";
+import { AuditLogViewer } from "@/components/AuditLogViewer";
+import { gerarCodigoUnico, nomeTeseExiste } from "@/lib/acaoCodigo";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 interface Acao {
@@ -38,10 +55,10 @@ interface Acao {
 }
 
 const TIPOS_PRAZO: { value: string; label: string }[] = [
-  { value: "rescisoria_24m",   label: "Rescisória — 24 meses (CPC 975)" },
+  { value: "rescisoria_24m", label: "Rescisória — 24 meses (CPC 975)" },
   { value: "prescricional_5a", label: "Prescricional — 5 anos" },
-  { value: "decadencial_5a",   label: "Decadencial — 5 anos" },
-  { value: "personalizado",    label: "Personalizado" },
+  { value: "decadencial_5a", label: "Decadencial — 5 anos" },
+  { value: "personalizado", label: "Personalizado" },
 ];
 
 export default function Admin() {
@@ -119,34 +136,55 @@ export default function Admin() {
       observacao_prazo: acaoObsPrazo || null,
     };
 
+    const nomeTrim = acaoNome.trim();
     if (editingAcao) {
-      const { error } = await (supabase.from("acoes_tributarias") as any).update({
-        nome: acaoNome,
-        tipo: acaoTipo,
-        status: acaoStatus,
-        vinculo: acaoTipo === "RESCISÓRIA" ? acaoVinculo : "",
-        ...prazoPayload,
-      }).eq("id", editingAcao.id);
+      const { error } = await supabase
+        .from("acoes_tributarias")
+        .update({
+          nome: nomeTrim,
+          tipo: acaoTipo,
+          status: acaoStatus,
+          vinculo: acaoTipo === "RESCISÓRIA" ? acaoVinculo : "",
+          ...prazoPayload,
+        })
+        .eq("id", editingAcao.id);
       if (error) {
         toast.error("Erro ao atualizar ação");
       } else {
         toast.success("Ação atualizada!");
-        logAudit({ tabela: "acoes_tributarias", acao: "Editou ação", registro_id: editingAcao.id, detalhes: { nome: acaoNome, tipo: acaoTipo, data_prescricao: acaoDataPrescricao } });
+        logAudit({
+          tabela: "acoes_tributarias",
+          acao: "Editou ação",
+          registro_id: editingAcao.id,
+          detalhes: { nome: nomeTrim, tipo: acaoTipo, data_prescricao: acaoDataPrescricao },
+        });
       }
     } else {
-      const { error } = await (supabase.from("acoes_tributarias") as any).insert({
-        nome: acaoNome,
+      // nome duplicado quebra o mapeamento tese→id da detecção (casa por nome no seed)
+      if (await nomeTeseExiste(nomeTrim)) {
+        toast.error("Já existe uma tese com esse nome.");
+        return;
+      }
+      // codigo estável (contrato da detecção PJe) — mesma regra do Acoes.tsx
+      const codigo = await gerarCodigoUnico(nomeTrim);
+      const { error } = await supabase.from("acoes_tributarias").insert({
+        nome: nomeTrim,
         tipo: acaoTipo,
         status: acaoStatus,
         vinculo: acaoTipo === "RESCISÓRIA" ? acaoVinculo : "",
-        user_id: user!.id,
+        user_id: user?.id,
+        codigo,
         ...prazoPayload,
       });
       if (error) {
         toast.error("Erro ao criar ação");
       } else {
         toast.success("Ação criada!");
-        logAudit({ tabela: "acoes_tributarias", acao: "Criou ação", detalhes: { nome: acaoNome, tipo: acaoTipo } });
+        logAudit({
+          tabela: "acoes_tributarias",
+          acao: "Criou ação",
+          detalhes: { nome: nomeTrim, tipo: acaoTipo, codigo },
+        });
       }
     }
     setAcaoDialogOpen(false);
@@ -160,7 +198,12 @@ export default function Admin() {
       toast.error("Erro ao remover ação");
     } else {
       toast.success("Ação removida!");
-      logAudit({ tabela: "acoes_tributarias", acao: "Removeu ação", registro_id: id, detalhes: { nome: acao?.nome } });
+      logAudit({
+        tabela: "acoes_tributarias",
+        acao: "Removeu ação",
+        registro_id: id,
+        detalhes: { nome: acao?.nome },
+      });
       fetchAcoes();
     }
   };
@@ -170,7 +213,7 @@ export default function Admin() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="animate-fade-in space-y-6">
       <PageHeader
         title="Administração"
         description="Configurações do sistema e gerenciamento"
@@ -182,9 +225,7 @@ export default function Admin() {
           <TabsTrigger value="acoes">Ações</TabsTrigger>
           <TabsTrigger value="templates-msg">Templates de Mensagem</TabsTrigger>
           <TabsTrigger value="templates-tarefa">Templates de Tarefa</TabsTrigger>
-          <TabsTrigger value="status">Status</TabsTrigger>
-          <TabsTrigger value="usuarios">Usuários</TabsTrigger>
-          <TabsTrigger value="criterios">Critérios</TabsTrigger>
+          <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
           <TabsTrigger value="backup">Backup</TabsTrigger>
         </TabsList>
 
@@ -200,11 +241,12 @@ export default function Admin() {
 
         {/* === AÇÕES TAB === */}
         <TabsContent value="acoes" className="mt-4">
-          <Card className="shadow-card p-6">
-            <div className="flex items-center justify-between mb-4">
+          <Card className="p-6 shadow-card">
+            <div className="mb-4 flex items-center justify-between">
               <h3 className="font-heading font-semibold">Ações Tributárias</h3>
               <Button size="sm" onClick={openCreateAcao}>
-                <Plus className="mr-2 h-3 w-3" />Criar Ação
+                <Plus className="mr-2 h-3 w-3" />
+                Criar Ação
               </Button>
             </div>
 
@@ -213,51 +255,90 @@ export default function Admin() {
             ) : (
               <div className="space-y-2">
                 {acoes.map((a) => (
-                  <div key={a.id} className="flex items-center justify-between p-3 rounded-md border border-border hover:bg-muted/50 transition-colors">
+                  <div
+                    key={a.id}
+                    className="flex items-center justify-between rounded-md border border-border p-3 transition-colors hover:bg-muted/50"
+                  >
                     <div className="space-y-0.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{a.nome}</span>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          a.tipo === "INICIAL" ? "bg-primary/10 text-primary" : "bg-secondary text-secondary-foreground"
-                        }`}>{a.tipo}</span>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          a.status === "Ativa" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"
-                        }`}>{a.status}</span>
-                        {a.data_limite_prescricao && (() => {
-                          const dias = Math.floor((new Date(a.data_limite_prescricao).getTime() - Date.now()) / 86400000);
-                          const cor = dias < 0 ? "bg-destructive/20 text-destructive"
-                                   : dias <= 30 ? "bg-destructive/15 text-destructive"
-                                   : dias <= 90 ? "bg-warning/15 text-warning"
-                                   : "bg-info/15 text-info";
-                          return (
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${cor}`}>
-                              {dias < 0 ? `Prescrita há ${Math.abs(dias)}d` : `${dias}d p/ prescrever`}
-                            </span>
-                          );
-                        })()}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium">{a.nome}</span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            a.tipo === "INICIAL"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-secondary text-secondary-foreground"
+                          }`}
+                        >
+                          {a.tipo}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            a.status === "Ativa"
+                              ? "bg-success/10 text-success"
+                              : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          {a.status}
+                        </span>
+                        {a.data_limite_prescricao &&
+                          (() => {
+                            const dias = Math.floor(
+                              (new Date(a.data_limite_prescricao).getTime() - Date.now()) / 86400000
+                            );
+                            const cor =
+                              dias < 0
+                                ? "bg-destructive/20 text-destructive"
+                                : dias <= 30
+                                  ? "bg-destructive/15 text-destructive"
+                                  : dias <= 90
+                                    ? "bg-warning/15 text-warning"
+                                    : "bg-info/15 text-info";
+                            return (
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${cor}`}
+                              >
+                                {dias < 0
+                                  ? `Prescrita há ${Math.abs(dias)}d`
+                                  : `${dias}d p/ prescrever`}
+                              </span>
+                            );
+                          })()}
                       </div>
                       {a.tipo === "RESCISÓRIA" && a.vinculo && (
                         <p className="text-xs text-muted-foreground">Vinculada a: {a.vinculo}</p>
                       )}
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditAcao(a)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openEditAcao(a)}
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive"
+                          >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
-                            <AlertDialogDescription>Remover "{a.nome}"? Esta ação não pode ser desfeita.</AlertDialogDescription>
+                            <AlertDialogDescription>
+                              Remover "{a.nome}"? Esta ação não pode ser desfeita.
+                            </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleDeleteAcao(a.id)}>Excluir</AlertDialogAction>
+                            <AlertDialogAction onClick={() => void handleDeleteAcao(a.id)}>
+                              Excluir
+                            </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
@@ -269,64 +350,14 @@ export default function Admin() {
           </Card>
         </TabsContent>
 
-        {/* === STATUS TAB === */}
-        <TabsContent value="status" className="mt-4">
-          <Card className="shadow-card p-6">
-            <h3 className="font-heading font-semibold mb-4">Status Disponíveis</h3>
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">Status de Empresas</h4>
-                <div className="flex flex-wrap gap-2">
-                  {["prospect", "cliente", "inativo"].map((s) => (
-                    <span key={s} className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border border-border capitalize">{s}</span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">Status de Ações</h4>
-                <div className="flex flex-wrap gap-2">
-                  {["Ativa", "Inativa", "Suspensa"].map((s) => (
-                    <span key={s} className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border border-border">{s}</span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-sm font-medium text-muted-foreground mb-2">Status de Elegibilidade</h4>
-                <div className="flex flex-wrap gap-2">
-                  {["Elegível", "Não elegível", "Em análise", "Ajuizada"].map((s) => (
-                    <span key={s} className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border border-border">{s}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Card>
-        </TabsContent>
-
-        {/* === USUÁRIOS TAB === */}
-        <TabsContent value="usuarios" className="mt-4">
-          <Card className="shadow-card p-6">
-            <h3 className="font-heading font-semibold mb-2">Gerenciamento de Usuários</h3>
-            <p className="text-sm text-muted-foreground mb-4">Usuário logado:</p>
-            <div className="p-3 rounded-md border border-border">
-              <p className="text-sm font-medium">{user?.email}</p>
-              <p className="text-xs text-muted-foreground mt-1">ID: {user?.id?.slice(0, 8)}...</p>
-            </div>
-          </Card>
+        {/* === AUDITORIA TAB === */}
+        <TabsContent value="auditoria" className="mt-4">
+          <AuditLogViewer />
         </TabsContent>
 
         {/* === BACKUP TAB === */}
         <TabsContent value="backup" className="mt-4">
           <BackupAdmin />
-        </TabsContent>
-
-        {/* === CRITÉRIOS TAB === */}
-        <TabsContent value="criterios" className="mt-4">
-          <Card className="shadow-card p-6">
-            <h3 className="font-heading font-semibold mb-2">Critérios Dinâmicos</h3>
-            <p className="text-sm text-muted-foreground">
-              Os critérios de elegibilidade são gerenciados na página de Elegibilidade, onde é possível vincular empresas a ações e definir justificativas.
-            </p>
-          </Card>
         </TabsContent>
       </Tabs>
 
@@ -334,17 +365,25 @@ export default function Admin() {
       <Dialog open={acaoDialogOpen} onOpenChange={setAcaoDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-heading">{editingAcao ? "Editar Ação" : "Nova Ação"}</DialogTitle>
+            <DialogTitle className="font-heading">
+              {editingAcao ? "Editar Ação" : "Nova Ação"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Nome</Label>
-              <Input value={acaoNome} onChange={(e) => setAcaoNome(e.target.value)} placeholder="Ex: Exclusão ICMS PIS/COFINS" />
+              <Input
+                value={acaoNome}
+                onChange={(e) => setAcaoNome(e.target.value)}
+                placeholder="Ex: Exclusão ICMS PIS/COFINS"
+              />
             </div>
             <div className="space-y-2">
               <Label>Tipo</Label>
               <Select value={acaoTipo} onValueChange={setAcaoTipo}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="INICIAL">Inicial</SelectItem>
                   <SelectItem value="RESCISÓRIA">Rescisória</SelectItem>
@@ -355,10 +394,14 @@ export default function Admin() {
               <div className="space-y-2">
                 <Label>Vinculada a (ação inicial)</Label>
                 <Select value={acaoVinculo} onValueChange={setAcaoVinculo}>
-                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
                   <SelectContent>
                     {acoesIniciais.map((a) => (
-                      <SelectItem key={a.id} value={a.nome}>{a.nome}</SelectItem>
+                      <SelectItem key={a.id} value={a.nome}>
+                        {a.nome}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -367,7 +410,9 @@ export default function Admin() {
             <div className="space-y-2">
               <Label>Status</Label>
               <Select value={acaoStatus} onValueChange={setAcaoStatus}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Ativa">Ativa</SelectItem>
                   <SelectItem value="Inativa">Inativa</SelectItem>
@@ -377,22 +422,28 @@ export default function Admin() {
             </div>
 
             {/* QW4 — Prescrição como motor de urgência */}
-            <div className="space-y-2 p-3 rounded-md border border-warning/30 bg-warning/5">
-              <Label className="text-warning flex items-center gap-1">
-                ⚠ Prazo / Prescrição
-              </Label>
+            <div className="space-y-2 rounded-md border border-warning/30 bg-warning/5 p-3">
+              <Label className="flex items-center gap-1 text-warning">⚠ Prazo / Prescrição</Label>
               <p className="text-[10px] text-muted-foreground">
-                Hormozi: urgência REAL vende. Preencher isso dispara contador regressivo nas prospecções.
+                Hormozi: urgência REAL vende. Preencher isso dispara contador regressivo nas
+                prospecções.
               </p>
 
               <div className="space-y-1.5">
                 <Label className="text-xs">Tipo de prazo</Label>
-                <Select value={acaoTipoPrazo || "none"} onValueChange={(v) => setAcaoTipoPrazo(v === "none" ? "" : v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select
+                  value={acaoTipoPrazo || "none"}
+                  onValueChange={(v) => setAcaoTipoPrazo(v === "none" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— nenhum —</SelectItem>
                     {TIPOS_PRAZO.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -418,8 +469,12 @@ export default function Admin() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAcaoDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveAcao}>{editingAcao ? "Salvar" : "Criar"}</Button>
+            <Button variant="outline" onClick={() => setAcaoDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void handleSaveAcao()}>
+              {editingAcao ? "Salvar" : "Criar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

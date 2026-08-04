@@ -43,6 +43,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAllRows } from "@/lib/supabaseFetchAll";
+import { gerarCodigoUnico, nomeTeseExiste } from "@/lib/acaoCodigo";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import {
@@ -343,35 +344,14 @@ export default function Acoes() {
     status: string;
     vinculo: string;
   }) => {
-    // Nome duplicado quebra o mapeamento tese→id da detecção PJe (que casa por
-    // nome). Bloqueia case-insensitive antes de inserir.
+    // Nome duplicado quebra o mapeamento tese→id da detecção PJe (casa por nome).
+    // `codigo` estável = contrato da detecção. Helpers compartilhados com o Admin.
     const nomeTrim = data.nome.trim();
-    const { data: existente } = await supabase
-      .from("acoes_tributarias")
-      .select("id")
-      .ilike("nome", nomeTrim)
-      .limit(1);
-    if (existente && existente.length > 0) {
+    if (await nomeTeseExiste(nomeTrim)) {
       toast.error("Já existe uma tese com esse nome.");
       return;
     }
-    // `codigo` estável (contrato da detecção — pje_teses_empresa.py): slug do nome,
-    // garantindo unicidade. O nome pode ser renomeado depois; o codigo não muda.
-    const baseSlug =
-      nomeTrim
-        .normalize("NFD")
-        .replace(/[̀-ͯ]/g, "")
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, "_")
-        .replace(/^_+|_+$/g, "")
-        .slice(0, 55) || "TESE";
-    const { data: comCodigo } = await supabase
-      .from("acoes_tributarias")
-      .select("codigo")
-      .ilike("codigo", `${baseSlug}%`);
-    const usados = new Set((comCodigo ?? []).map((r) => (r.codigo || "").toUpperCase()));
-    let codigo = baseSlug;
-    for (let i = 2; usados.has(codigo); i++) codigo = `${baseSlug}_${i}`;
+    const codigo = await gerarCodigoUnico(nomeTrim);
     const { error } = await supabase.from("acoes_tributarias").insert({
       ...data,
       nome: nomeTrim,
