@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -185,14 +185,6 @@ async function fetchEmpresasByIds(ids: string[]): Promise<Empresa[]> {
 }
 
 export default function Acoes() {
-  const [acoes, setAcoes] = useState<Acao[]>([]);
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [elegibilidades, setElegibilidades] = useState<ElegibilidadeRow[]>([]);
-  const [pastas, setPastas] = useState<Pasta[]>([]);
-  const [pastaItems, setPastaItems] = useState<PastaItem[]>([]);
-  const [processos, setProcessos] = useState<Processo[]>([]);
-  const [prospeccoes, setProspeccoes] = useState<Prospeccao[]>([]);
-  const [loading, setLoading] = useState(true);
   const [expandedAcao, setExpandedAcao] = useState<string | null>(null);
   const acaoCardRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const [searchParams, setSearchParams] = useSearchParams();
@@ -246,41 +238,53 @@ export default function Acoes() {
   const [procTribunal, setProcTribunal] = useState("");
   const [procTribunalOutro, setProcTribunalOutro] = useState("");
 
-  // fetchAllRows (src/lib/supabaseFetchAll.ts) pagina automaticamente em chunks
-  // de 1000 — necessário porque PostgREST corta cada response em max-rows.
-  const fetchAll = async () => {
-    // Não carrega as ~5.8k empresas do banco — só o que a tela usa. As empresas
-    // vêm depois, filtradas pelos IDs referenciados (elegibilidade ∪ pastas).
-    const [acoesRes, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] =
-      await Promise.all([
-        supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
-        fetchAllRows<ElegibilidadeRow>(
-          "elegibilidade",
-          "id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto, ja_ajuizada"
-        ),
-        supabase.from("pastas_empresas").select("id, nome"),
-        supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
-        fetchAllRows<Processo>("processos", "*"),
-        fetchAllRows<Prospeccao>("prospeccoes", "*"),
-      ]);
-    const items = itemsRes.data || [];
-    const refIds = Array.from(
-      new Set([...elegibilidades.map((e) => e.empresa_id), ...items.map((i) => i.empresa_id)])
-    ).filter(Boolean);
-    const empresas = refIds.length ? await fetchEmpresasByIds(refIds) : [];
-    setAcoes(acoesRes.data || []);
-    setEmpresas(empresas);
-    setElegibilidades(elegibilidades);
-    setPastas(pastasRes.data || []);
-    setPastaItems(items);
-    setProcessos(processos);
-    setProspeccoes(prospeccoes);
-    setLoading(false);
-  };
+  // useQuery => cacheado (staleTime 30s): reabrir a página é instantâneo; as
+  // mutações chamam refetch(). fetchAllRows pagina (PostgREST corta em ~1000).
+  const {
+    data,
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ["acoes-page"],
+    staleTime: 30_000,
+    queryFn: async () => {
+      // Não carrega as ~5.8k empresas — só as referenciadas (elegibilidade ∪ pastas).
+      const [acoesRes, elegibilidades, pastasRes, itemsRes, processos, prospeccoes] =
+        await Promise.all([
+          supabase.from("acoes_tributarias").select("*").order("created_at", { ascending: false }),
+          fetchAllRows<ElegibilidadeRow>(
+            "elegibilidade",
+            "id, empresa_id, acao_id, elegivel, justificativa, created_at, valor_potencial_estimado, destaque, notas_contexto, ja_ajuizada"
+          ),
+          supabase.from("pastas_empresas").select("id, nome"),
+          supabase.from("pasta_empresa_items").select("pasta_id, empresa_id"),
+          fetchAllRows<Processo>("processos", "*"),
+          fetchAllRows<Prospeccao>("prospeccoes", "*"),
+        ]);
+      const items = itemsRes.data || [];
+      const refIds = Array.from(
+        new Set([...elegibilidades.map((e) => e.empresa_id), ...items.map((i) => i.empresa_id)])
+      ).filter(Boolean);
+      const empresas = refIds.length ? await fetchEmpresasByIds(refIds) : [];
+      return {
+        acoes: (acoesRes.data || []) as Acao[],
+        empresas,
+        elegibilidades,
+        pastas: (pastasRes.data || []) as Pasta[],
+        pastaItems: items,
+        processos,
+        prospeccoes,
+      };
+    },
+  });
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  const acoes = data?.acoes ?? [];
+  const empresas = data?.empresas ?? [];
+  const elegibilidades = data?.elegibilidades ?? [];
+  const pastas = data?.pastas ?? [];
+  const pastaItems: PastaItem[] = data?.pastaItems ?? [];
+  const processos = data?.processos ?? [];
+  const prospeccoes = data?.prospeccoes ?? [];
 
   const acoesIniciais = acoes
     .filter((a) => a.tipo === "INICIAL")
@@ -404,7 +408,7 @@ export default function Acoes() {
         acao: "Criou ação",
         detalhes: { nome: data.nome, tipo: data.tipo },
       });
-      fetchAll();
+      void refetch();
     }
   };
 
@@ -426,7 +430,7 @@ export default function Acoes() {
         registro_id: id,
         detalhes: { nome: data.nome },
       });
-      fetchAll();
+      void refetch();
     }
   };
 
@@ -452,7 +456,7 @@ export default function Acoes() {
       qc.invalidateQueries({ queryKey: ["empresas"] });
       qc.invalidateQueries({ queryKey: ["prospeccoes"] });
       qc.invalidateQueries({ queryKey: ["criterios"] });
-      fetchAll();
+      void refetch();
     }
   };
 
@@ -465,7 +469,7 @@ export default function Acoes() {
     } else {
       toast.success("Removido!");
       logAudit({ tabela: "elegibilidade", acao: "Removeu elegibilidade", registro_id: id });
-      fetchAll();
+      void refetch();
     }
   };
 
@@ -491,7 +495,7 @@ export default function Acoes() {
         registro_id: elegId,
         detalhes: motivoTrim ? { motivo: motivoTrim } : undefined,
       });
-      fetchAll();
+      void refetch();
     }
   };
 
@@ -504,7 +508,7 @@ export default function Acoes() {
       toast.error("Erro ao salvar contexto");
     } else {
       toast.success(destaque ? "Empresa marcada como destaque" : "Contexto salvo");
-      fetchAll();
+      void refetch();
     }
   };
 
@@ -694,7 +698,7 @@ export default function Acoes() {
         : "";
     toast.success(`${newIds.length} elegibilidade(s) adicionada(s)!${novasEmpresasMsg}`);
     setElegDialogOpen(false);
-    fetchAll();
+    void refetch();
   };
 
   const toggleEmpresa = (id: string) => {
@@ -854,7 +858,7 @@ export default function Acoes() {
       });
     }
     setProcDialogOpen(false);
-    fetchAll();
+    void refetch();
   };
 
   // Totals
@@ -1089,7 +1093,7 @@ export default function Acoes() {
         acaoId={expandedAcao ?? ""}
         empresaNome={empresas.find((e) => e.id === prospRapidaEmpresaId)?.nome ?? ""}
         onSuccess={() => {
-          void fetchAll();
+          void refetch();
         }}
       />
 
@@ -1102,7 +1106,7 @@ export default function Acoes() {
           open={!!importProspAcao}
           onClose={() => setImportProspAcao(null)}
           onImported={() => {
-            fetchAll();
+            void refetch();
             setImportProspAcao(null);
           }}
           empresasMap={empresasMap}

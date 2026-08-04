@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Building2,
@@ -103,21 +104,15 @@ function formatCurrency(value: number) {
 }
 
 export default function Dashboard() {
-  const [acoes, setAcoes] = useState<Acao[]>([]);
-  const [empTotal, setEmpTotal] = useState(0);
-  const [empClientes, setEmpClientes] = useState(0);
-  const [elegibilidades, setElegibilidades] = useState<ElegibilidadeRow[]>([]);
-  const [processos, setProcessos] = useState<Processo[]>([]);
-  const [prospeccoes, setProspeccoes] = useState<Prospeccao[]>([]);
   const [selectedAcao, setSelectedAcao] = useState<string>("all");
   const [selectedTribunal, setSelectedTribunal] = useState<string>("all");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      // PostgREST corta cada response em max-rows (~1000). Para tenants com
-      // mais de 1k elegibilidades/processos/prospecções, `.range(0, 9999)`
-      // silenciosamente truncava o dashboard. fetchAllRows pagina até esgotar.
+  // useQuery => cacheado (staleTime 30s): reabrir o Dashboard é instantâneo.
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ["dashboard-data"],
+    staleTime: 30_000,
+    queryFn: async () => {
+      // PostgREST corta cada response em max-rows (~1000); fetchAllRows pagina.
       const [empTotalRes, empClienteRes, acoesRes, elegData, procData, prospData] =
         await Promise.all([
           supabase.from("empresas").select("*", { count: "exact", head: true }),
@@ -130,16 +125,23 @@ export default function Dashboard() {
           fetchAllRows<Processo>("processos", "*"),
           fetchAllRows<Prospeccao>("prospeccoes", "*"),
         ]);
-      setEmpTotal(empTotalRes.count ?? 0);
-      setEmpClientes(empClienteRes.count ?? 0);
-      setAcoes(acoesRes.data || []);
-      setElegibilidades(elegData);
-      setProcessos(procData);
-      setProspeccoes(prospData);
-      setLoading(false);
-    };
-    fetchData();
-  }, []);
+      return {
+        empTotal: empTotalRes.count ?? 0,
+        empClientes: empClienteRes.count ?? 0,
+        acoes: (acoesRes.data || []) as Acao[],
+        elegibilidades: elegData,
+        processos: procData,
+        prospeccoes: prospData,
+      };
+    },
+  });
+
+  const acoes = data?.acoes ?? [];
+  const empTotal = data?.empTotal ?? 0;
+  const empClientes = data?.empClientes ?? 0;
+  const elegibilidades = data?.elegibilidades ?? [];
+  const processos = data?.processos ?? [];
+  const prospeccoes = data?.prospeccoes ?? [];
 
   const stats = useMemo(() => {
     const filtEleg =
