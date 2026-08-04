@@ -36,6 +36,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { logAudit } from "@/lib/audit";
 import { fetchAllRows } from "@/lib/supabaseFetchAll";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -227,12 +228,6 @@ function prescricaoInfo(
 }
 
 export default function Prospeccao() {
-  const [prospeccoes, setProspeccoes] = useState<Prospeccao[]>([]);
-  const [elegibilidades, setElegibilidades] = useState<ElegibilidadeRow[]>([]);
-  const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [acoes, setAcoes] = useState<Acao[]>([]);
-  const [profiles, setProfiles] = useState<Array<{ id: string; nome: string; email: string }>>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterAcao, setFilterAcao] = useState("all");
   const [filterResponsavel, setFilterResponsavel] = useState("all");
@@ -308,50 +303,55 @@ export default function Prospeccao() {
   const [propostaOpen, setPropostaOpen] = useState(false);
   const [propostaProsp, setPropostaProsp] = useState<Prospeccao | null>(null);
 
-  const fetchAll = async () => {
-    // prospeccoes e elegibilidade são paginadas — o PostgREST corta respostas
-    // grandes em ~1000 linhas e empresas tem ~5k. Buscar `empresas` inteira
-    // truncava silenciosamente: prospecções cuja empresa caía fora das 1000
-    // primeiras sumiam do kanban. Aqui buscamos só as empresas referenciadas
-    // pelas elegibilidades, por id.
-    const [prospRows, elegRows, acoesRes, profsRes] = await Promise.all([
-      fetchAllRows<Prospeccao>("prospeccoes", "*"),
-      fetchAllRows<ElegibilidadeRow>(
-        "elegibilidade",
-        "id, empresa_id, acao_id, elegivel, ja_ajuizada, valor_potencial_estimado"
-      ),
-      supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
-      supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
-    ]);
+  // useQuery => cacheado (staleTime 30s): reabrir o kanban é instantâneo; as
+  // mutações chamam refetch(). Empresas: só as referenciadas (não as ~5k).
+  const {
+    data,
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: ["prospeccao-page"],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const [prospRows, elegRows, acoesRes, profsRes] = await Promise.all([
+        fetchAllRows<Prospeccao>("prospeccoes", "*"),
+        fetchAllRows<ElegibilidadeRow>(
+          "elegibilidade",
+          "id, empresa_id, acao_id, elegivel, ja_ajuizada, valor_potencial_estimado"
+        ),
+        supabase.from("acoes_tributarias").select("id, nome, data_limite_prescricao, tipo_prazo"),
+        supabase.from("profiles").select("id, nome, email").eq("ativo", true).order("nome"),
+      ]);
+      // Empresas: só as referenciadas pelas elegibilidades, em lotes de 100.
+      const empresaIds = [...new Set(elegRows.map((e) => e.empresa_id).filter(Boolean))];
+      const empresasData: Empresa[] = [];
+      for (let i = 0; i < empresaIds.length; i += 100) {
+        const { data: chunk } = await (
+          supabase.from("empresas") as never as {
+            select: (s: string) => {
+              in: (c: string, v: string[]) => Promise<{ data: Empresa[] | null }>;
+            };
+          }
+        )
+          .select("id, nome, cnpj")
+          .in("id", empresaIds.slice(i, i + 100));
+        if (chunk) empresasData.push(...chunk);
+      }
+      return {
+        prospeccoes: prospRows,
+        elegibilidades: elegRows,
+        empresas: empresasData,
+        profiles: (profsRes.data ?? []) as Array<{ id: string; nome: string; email: string }>,
+        acoes: (acoesRes.data as Acao[]) || [],
+      };
+    },
+  });
 
-    // Empresas: só as referenciadas pelas elegibilidades, buscadas por id em
-    // lotes de 100 (evita URL longa demais no filtro .in).
-    const empresaIds = [...new Set(elegRows.map((e) => e.empresa_id).filter(Boolean))];
-    const empresasData: Empresa[] = [];
-    for (let i = 0; i < empresaIds.length; i += 100) {
-      const { data } = await (
-        supabase.from("empresas") as never as {
-          select: (s: string) => {
-            in: (c: string, v: string[]) => Promise<{ data: Empresa[] | null }>;
-          };
-        }
-      )
-        .select("id, nome, cnpj")
-        .in("id", empresaIds.slice(i, i + 100));
-      if (data) empresasData.push(...data);
-    }
-
-    setProspeccoes(prospRows);
-    setElegibilidades(elegRows);
-    setEmpresas(empresasData);
-    setProfiles((profsRes.data ?? []) as Array<{ id: string; nome: string; email: string }>);
-    setAcoes((acoesRes.data as Acao[]) || []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  const prospeccoes = data?.prospeccoes ?? [];
+  const elegibilidades = data?.elegibilidades ?? [];
+  const empresas = data?.empresas ?? [];
+  const profiles = data?.profiles ?? [];
+  const acoes = data?.acoes ?? [];
 
   // prospeccoes tem empresa_id + acao_id desnormalizados (migration 20260527).
   // elegibilidade_id permanece para lookup de valor_potencial_estimado.
@@ -631,7 +631,7 @@ export default function Prospeccao() {
       editStatus === "Proposta enviada" && editProsp.status_prospeccao !== "Proposta enviada";
 
     setEditOpen(false);
-    fetchAll();
+    void refetch();
 
     if (triggerProposta) {
       // Pequeno timeout pra fechamento do dialog de edição não conflitar
@@ -662,7 +662,7 @@ export default function Prospeccao() {
     // Se a prospecção excluída estava aberta no dialog de edição, fecha também.
     if (editProsp?.id === deleteProsp.id) setEditOpen(false);
     setDeleteProsp(null);
-    fetchAll();
+    void refetch();
   };
 
   // QW1: bloqueia quick-move para Perdido (obriga passar pelo dialog)
@@ -705,7 +705,7 @@ export default function Prospeccao() {
       setTimeout(() => openProposta({ ...prosp, status_prospeccao: newStatus }), 300);
     }
 
-    fetchAll();
+    void refetch();
   };
 
   const handleDragEnd = async (result: DropResult) => {
@@ -783,7 +783,7 @@ export default function Prospeccao() {
       detalhes: { empresa_id: eleg?.empresa_id, acao_id: eleg?.acao_id },
     });
     setCreateOpen(false);
-    fetchAll();
+    void refetch();
   };
 
   // KPIs
@@ -1908,7 +1908,7 @@ export default function Prospeccao() {
         prospeccaoId={contatosProspId}
         prospeccaoLabel={contatosLabel}
         onSaved={() => {
-          void fetchAll();
+          void refetch();
         }}
       />
 
@@ -1977,9 +1977,9 @@ export default function Prospeccao() {
                   )
                     .update({ status_prospeccao: "Proposta enviada" })
                     .eq("id", propostaProsp.id)
-                    .then(() => fetchAll());
+                    .then(() => void refetch());
                 } else {
-                  fetchAll();
+                  void refetch();
                 }
               }}
             />
