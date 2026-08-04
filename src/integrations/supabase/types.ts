@@ -2514,6 +2514,15 @@ export type Database = {
         Returns: Database["public"]["Enums"]["tipo_telefone"];
       };
       is_admin: { Args: { _user_id: string }; Returns: boolean };
+      log_audit_secure: {
+        Args: {
+          p_acao: string;
+          p_detalhes?: Json;
+          p_registro_id?: string;
+          p_tabela: string;
+        };
+        Returns: undefined;
+      };
       normaliza_cnpj: { Args: { txt: string }; Returns: string };
       normaliza_nome_contato: { Args: { p: string }; Returns: string };
       normalize_cnpj_text: { Args: { raw: string }; Returns: string };
