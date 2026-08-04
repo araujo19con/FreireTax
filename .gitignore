@@ -89,3 +89,7 @@ tools/_worklist_*.json
 
 # cache local de peticoes iniciais do PJe (imutaveis, mas volumosas)
 tools/.cache/
+
+# backups locais do banco (contêm dados pessoais — NUNCA commitar)
+/backups/
+*.json.gz
