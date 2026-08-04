@@ -357,7 +357,6 @@ export default function Acoes() {
     }
     // `codigo` estável (contrato da detecção — pje_teses_empresa.py): slug do nome,
     // garantindo unicidade. O nome pode ser renomeado depois; o codigo não muda.
-    // cast até os types autogerados incluírem `codigo` (regenerar após a migration).
     const baseSlug =
       nomeTrim
         .normalize("NFD")
@@ -366,15 +365,11 @@ export default function Acoes() {
         .replace(/[^A-Z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "")
         .slice(0, 55) || "TESE";
-    const { data: comCodigo } = await (supabase
+    const { data: comCodigo } = await supabase
       .from("acoes_tributarias")
       .select("codigo")
-      .ilike("codigo", `${baseSlug}%`) as never);
-    const usados = new Set(
-      ((comCodigo as { codigo: string | null }[] | null) ?? []).map((r) =>
-        (r.codigo || "").toUpperCase()
-      )
-    );
+      .ilike("codigo", `${baseSlug}%`);
+    const usados = new Set((comCodigo ?? []).map((r) => (r.codigo || "").toUpperCase()));
     let codigo = baseSlug;
     for (let i = 2; usados.has(codigo); i++) codigo = `${baseSlug}_${i}`;
     const { error } = await supabase.from("acoes_tributarias").insert({
@@ -383,7 +378,7 @@ export default function Acoes() {
       vinculo: data.vinculo || "",
       user_id: user?.id,
       codigo,
-    } as never);
+    });
     if (error) {
       toast.error("Erro ao criar ação");
     } else {

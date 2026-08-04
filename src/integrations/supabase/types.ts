@@ -1,4 +1,4 @@
-﻿export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
   // Allows to automatically instantiate createClient with right options
@@ -6,10 +6,36 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5";
   };
+  graphql_public: {
+    Tables: {
+      [_ in never]: never;
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json;
+          operationName?: string;
+          query?: string;
+          variables?: Json;
+        };
+        Returns: Json;
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
+    };
+  };
   public: {
     Tables: {
       acoes_tributarias: {
         Row: {
+          codigo: string | null;
           created_at: string;
           data_limite_prescricao: string | null;
           id: string;
@@ -24,6 +50,7 @@ export type Database = {
           vinculo: string | null;
         };
         Insert: {
+          codigo?: string | null;
           created_at?: string;
           data_limite_prescricao?: string | null;
           id?: string;
@@ -38,6 +65,7 @@ export type Database = {
           vinculo?: string | null;
         };
         Update: {
+          codigo?: string | null;
           created_at?: string;
           data_limite_prescricao?: string | null;
           id?: string;
@@ -60,6 +88,42 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      aposrn_acompanhamento: {
+        Row: {
+          nome: string | null;
+          notas: string | null;
+          proc: string;
+          proxima_acao: string | null;
+          responsavel: string | null;
+          status: string;
+          ultima_acao: string | null;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          nome?: string | null;
+          notas?: string | null;
+          proc: string;
+          proxima_acao?: string | null;
+          responsavel?: string | null;
+          status?: string;
+          ultima_acao?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          nome?: string | null;
+          notas?: string | null;
+          proc?: string;
+          proxima_acao?: string | null;
+          responsavel?: string | null;
+          status?: string;
+          ultima_acao?: string | null;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
       };
       audit_logs: {
         Row: {
@@ -115,6 +179,51 @@ export type Database = {
           fonte?: string;
           payload?: Json;
           sucesso?: boolean;
+        };
+        Relationships: [];
+      };
+      contatos: {
+        Row: {
+          cargo: string | null;
+          data_adicionado: string | null;
+          email: string | null;
+          empresa_cnpj: string;
+          id: string;
+          linkedin_url: string | null;
+          nome_contato: string | null;
+          notas: string | null;
+          origem: string | null;
+          status: string | null;
+          telefone: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          cargo?: string | null;
+          data_adicionado?: string | null;
+          email?: string | null;
+          empresa_cnpj: string;
+          id?: string;
+          linkedin_url?: string | null;
+          nome_contato?: string | null;
+          notas?: string | null;
+          origem?: string | null;
+          status?: string | null;
+          telefone?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          cargo?: string | null;
+          data_adicionado?: string | null;
+          email?: string | null;
+          empresa_cnpj?: string;
+          id?: string;
+          linkedin_url?: string | null;
+          nome_contato?: string | null;
+          notas?: string | null;
+          origem?: string | null;
+          status?: string | null;
+          telefone?: string | null;
+          user_id?: string | null;
         };
         Relationships: [];
       };
@@ -261,6 +370,27 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "empresas";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "elegibilidade_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "elegibilidade_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "elegibilidade_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
           },
         ];
       };
@@ -421,8 +551,36 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "empresa_contatos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "empresa_contatos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "empresa_contatos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
             foreignKeyName: "empresa_contatos_telefone_invalido_por_fkey";
             columns: ["telefone_invalido_por"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "empresa_contatos_telefone_status_por_fkey";
+            columns: ["telefone_status_por"];
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
@@ -483,6 +641,20 @@ export type Database = {
         };
         Relationships: [
           {
+            foreignKeyName: "empresa_processos_tributarios_acao_id_fkey";
+            columns: ["acao_id"];
+            isOneToOne: false;
+            referencedRelation: "acoes_tributarias";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "empresa_processos_tributarios_detectado_por_fkey";
+            columns: ["detectado_por"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "empresa_processos_tributarios_empresa_id_fkey";
             columns: ["empresa_id"];
             isOneToOne: false;
@@ -490,11 +662,25 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
-            foreignKeyName: "empresa_processos_tributarios_acao_id_fkey";
-            columns: ["acao_id"];
+            foreignKeyName: "empresa_processos_tributarios_empresa_id_fkey";
+            columns: ["empresa_id"];
             isOneToOne: false;
-            referencedRelation: "acoes_tributarias";
-            referencedColumns: ["id"];
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "empresa_processos_tributarios_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "empresa_processos_tributarios_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
           },
         ];
       };
@@ -508,6 +694,13 @@ export type Database = {
           cnaes_secundarios: Json | null;
           cnpj: string | null;
           complemento: string | null;
+          contato_principal_cargo: string | null;
+          contato_principal_email: string | null;
+          contato_principal_nome: string | null;
+          contato_principal_origem: Database["public"]["Enums"]["origem_contato"] | null;
+          contato_principal_telefone: string | null;
+          contato_principal_whatsapp: boolean;
+          contatos_count: number;
           created_at: string;
           data_abertura: string | null;
           data_opcao_simples: string | null;
@@ -540,22 +733,16 @@ export type Database = {
           status: string;
           telefone_manual: boolean;
           telefone_receita: string | null;
+          telefones: Json | null;
+          teses_analisada_em: string | null;
+          teses_erro: string | null;
+          teses_solicitada_em: string | null;
+          teses_solicitada_por: string | null;
+          teses_status: string;
           uf: string | null;
           updated_at: string;
           user_id: string;
-          contatos_count: number;
-          contato_principal_cargo: string | null;
-          contato_principal_email: string | null;
-          contato_principal_nome: string | null;
-          contato_principal_origem: Database["public"]["Enums"]["origem_contato"] | null;
-          contato_principal_telefone: string | null;
-          contato_principal_whatsapp: boolean;
           valor_potencial_total: number | null;
-          teses_status: string;
-          teses_solicitada_em: string | null;
-          teses_solicitada_por: string | null;
-          teses_analisada_em: string | null;
-          teses_erro: string | null;
         };
         Insert: {
           bairro?: string | null;
@@ -566,6 +753,13 @@ export type Database = {
           cnaes_secundarios?: Json | null;
           cnpj?: string | null;
           complemento?: string | null;
+          contato_principal_cargo?: string | null;
+          contato_principal_email?: string | null;
+          contato_principal_nome?: string | null;
+          contato_principal_origem?: Database["public"]["Enums"]["origem_contato"] | null;
+          contato_principal_telefone?: string | null;
+          contato_principal_whatsapp?: boolean;
+          contatos_count?: number;
           created_at?: string;
           data_abertura?: string | null;
           data_opcao_simples?: string | null;
@@ -598,22 +792,16 @@ export type Database = {
           status?: string;
           telefone_manual?: boolean;
           telefone_receita?: string | null;
+          telefones?: Json | null;
+          teses_analisada_em?: string | null;
+          teses_erro?: string | null;
+          teses_solicitada_em?: string | null;
+          teses_solicitada_por?: string | null;
+          teses_status?: string;
           uf?: string | null;
           updated_at?: string;
           user_id: string;
-          contatos_count?: number;
-          contato_principal_cargo?: string | null;
-          contato_principal_email?: string | null;
-          contato_principal_nome?: string | null;
-          contato_principal_origem?: Database["public"]["Enums"]["origem_contato"] | null;
-          contato_principal_telefone?: string | null;
-          contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
-          teses_status?: string;
-          teses_solicitada_em?: string | null;
-          teses_solicitada_por?: string | null;
-          teses_analisada_em?: string | null;
-          teses_erro?: string | null;
         };
         Update: {
           bairro?: string | null;
@@ -624,6 +812,13 @@ export type Database = {
           cnaes_secundarios?: Json | null;
           cnpj?: string | null;
           complemento?: string | null;
+          contato_principal_cargo?: string | null;
+          contato_principal_email?: string | null;
+          contato_principal_nome?: string | null;
+          contato_principal_origem?: Database["public"]["Enums"]["origem_contato"] | null;
+          contato_principal_telefone?: string | null;
+          contato_principal_whatsapp?: boolean;
+          contatos_count?: number;
           created_at?: string;
           data_abertura?: string | null;
           data_opcao_simples?: string | null;
@@ -656,22 +851,16 @@ export type Database = {
           status?: string;
           telefone_manual?: boolean;
           telefone_receita?: string | null;
+          telefones?: Json | null;
+          teses_analisada_em?: string | null;
+          teses_erro?: string | null;
+          teses_solicitada_em?: string | null;
+          teses_solicitada_por?: string | null;
+          teses_status?: string;
           uf?: string | null;
           updated_at?: string;
           user_id?: string;
-          contatos_count?: number;
-          contato_principal_cargo?: string | null;
-          contato_principal_email?: string | null;
-          contato_principal_nome?: string | null;
-          contato_principal_origem?: Database["public"]["Enums"]["origem_contato"] | null;
-          contato_principal_telefone?: string | null;
-          contato_principal_whatsapp?: boolean;
           valor_potencial_total?: number | null;
-          teses_status?: string;
-          teses_solicitada_em?: string | null;
-          teses_solicitada_por?: string | null;
-          teses_analisada_em?: string | null;
-          teses_erro?: string | null;
         };
         Relationships: [
           {
@@ -680,6 +869,111 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "empresas_teses_solicitada_por_fkey";
+            columns: ["teses_solicitada_por"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      empresas_skip_log: {
+        Row: {
+          created_at: string | null;
+          empresa_nome: string;
+          id: string;
+          motivo: string | null;
+          primeira_tentativa: string | null;
+          tentativas: number | null;
+          uf: string;
+          ultima_tentativa: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          empresa_nome: string;
+          id?: string;
+          motivo?: string | null;
+          primeira_tentativa?: string | null;
+          tentativas?: number | null;
+          uf: string;
+          ultima_tentativa?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          empresa_nome?: string;
+          id?: string;
+          motivo?: string | null;
+          primeira_tentativa?: string | null;
+          tentativas?: number | null;
+          uf?: string;
+          ultima_tentativa?: string | null;
+        };
+        Relationships: [];
+      };
+      enriquecimento_log: {
+        Row: {
+          cnpj: string | null;
+          contatos_antes: number | null;
+          contatos_depois: number | null;
+          created_at: string;
+          empresa_id: string | null;
+          erro: string | null;
+          fonte: string | null;
+          id: string;
+          sucesso: boolean;
+        };
+        Insert: {
+          cnpj?: string | null;
+          contatos_antes?: number | null;
+          contatos_depois?: number | null;
+          created_at?: string;
+          empresa_id?: string | null;
+          erro?: string | null;
+          fonte?: string | null;
+          id?: string;
+          sucesso?: boolean;
+        };
+        Update: {
+          cnpj?: string | null;
+          contatos_antes?: number | null;
+          contatos_depois?: number | null;
+          created_at?: string;
+          empresa_id?: string | null;
+          erro?: string | null;
+          fonte?: string | null;
+          id?: string;
+          sucesso?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "enriquecimento_log_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "enriquecimento_log_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "enriquecimento_log_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "enriquecimento_log_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
           },
         ];
       };
@@ -712,6 +1006,27 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "empresas";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pasta_empresa_items_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "pasta_empresa_items_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "pasta_empresa_items_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
           },
           {
             foreignKeyName: "pasta_empresa_items_pasta_id_fkey";
@@ -819,6 +1134,27 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "empresas";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "processos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "processos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "processos_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
           },
         ];
       };
@@ -950,11 +1286,39 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "propostas_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "propostas_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "propostas_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
             foreignKeyName: "propostas_prospeccao_id_fkey";
             columns: ["prospeccao_id"];
             isOneToOne: true;
             referencedRelation: "prospeccoes";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "propostas_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: true;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
           },
           {
             foreignKeyName: "propostas_template_id_fkey";
@@ -1068,6 +1432,62 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "prospeccoes";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prospeccao_contatos_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
+          },
+        ];
+      };
+      prospeccao_historico_etapa: {
+        Row: {
+          changed_at: string;
+          changed_by: string | null;
+          id: string;
+          prospeccao_id: string;
+          status_anterior: string | null;
+          status_novo: string;
+        };
+        Insert: {
+          changed_at?: string;
+          changed_by?: string | null;
+          id?: string;
+          prospeccao_id: string;
+          status_anterior?: string | null;
+          status_novo: string;
+        };
+        Update: {
+          changed_at?: string;
+          changed_by?: string | null;
+          id?: string;
+          prospeccao_id?: string;
+          status_anterior?: string | null;
+          status_novo?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospeccao_historico_etapa_changed_by_fkey";
+            columns: ["changed_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prospeccao_historico_etapa_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "prospeccoes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prospeccao_historico_etapa_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
           },
         ];
       };
@@ -1194,6 +1614,27 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
             foreignKeyName: "prospeccoes_responsavel_id_fkey";
             columns: ["responsavel_id"];
             isOneToOne: false;
@@ -1289,11 +1730,39 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "reunioes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "reunioes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "reunioes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
             foreignKeyName: "reunioes_prospeccao_id_fkey";
             columns: ["prospeccao_id"];
             isOneToOne: false;
             referencedRelation: "prospeccoes";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reunioes_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
           },
         ];
       };
@@ -1321,6 +1790,54 @@ export type Database = {
           nome_fantasia?: string | null;
           razao_social?: string;
           uf?: string;
+        };
+        Relationships: [];
+      };
+      socios_processos: {
+        Row: {
+          comarca_tjpb: string | null;
+          data_analise: string | null;
+          empresa_cnpj: string;
+          fontes: string | null;
+          id: string;
+          municipio_domicilio: string | null;
+          obs: string | null;
+          processos_footprint: string | null;
+          socio_cargo: string | null;
+          socio_nome: string;
+          subsecao_jfpb: string | null;
+          user_id: string | null;
+          vara_trabalho_trt13: string | null;
+        };
+        Insert: {
+          comarca_tjpb?: string | null;
+          data_analise?: string | null;
+          empresa_cnpj: string;
+          fontes?: string | null;
+          id?: string;
+          municipio_domicilio?: string | null;
+          obs?: string | null;
+          processos_footprint?: string | null;
+          socio_cargo?: string | null;
+          socio_nome: string;
+          subsecao_jfpb?: string | null;
+          user_id?: string | null;
+          vara_trabalho_trt13?: string | null;
+        };
+        Update: {
+          comarca_tjpb?: string | null;
+          data_analise?: string | null;
+          empresa_cnpj?: string;
+          fontes?: string | null;
+          id?: string;
+          municipio_domicilio?: string | null;
+          obs?: string | null;
+          processos_footprint?: string | null;
+          socio_cargo?: string | null;
+          socio_nome?: string;
+          subsecao_jfpb?: string | null;
+          user_id?: string | null;
+          vara_trabalho_trt13?: string | null;
         };
         Relationships: [];
       };
@@ -1537,11 +2054,39 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "tarefas_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "tarefas_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "tarefas_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+          {
             foreignKeyName: "tarefas_prospeccao_id_fkey";
             columns: ["prospeccao_id"];
             isOneToOne: false;
             referencedRelation: "prospeccoes";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tarefas_prospeccao_id_fkey";
+            columns: ["prospeccao_id"];
+            isOneToOne: false;
+            referencedRelation: "v_prospeccao_ciclo";
+            referencedColumns: ["prospeccao_id"];
           },
           {
             foreignKeyName: "tarefas_recurrence_parent_id_fkey";
@@ -1792,6 +2337,31 @@ export type Database = {
       };
     };
     Views: {
+      v_ciclo_medio_etapa: {
+        Row: {
+          dias_medios_na_etapa: number | null;
+          etapa: string | null;
+          transicoes: number | null;
+        };
+        Relationships: [];
+      };
+      v_empresa_contato_qualidade: {
+        Row: {
+          bucket: string | null;
+          contatos_count: number | null;
+          empresa_id: string | null;
+          municipio: string | null;
+          nome: string | null;
+          score: number | null;
+          tem_decisor: boolean | null;
+          tem_email: boolean | null;
+          tem_linkedin: boolean | null;
+          tem_movel: boolean | null;
+          tem_telefone: boolean | null;
+          uf: string | null;
+        };
+        Relationships: [];
+      };
       v_empresas_enriquecidas: {
         Row: {
           ativas_rfb: number | null;
@@ -1803,6 +2373,45 @@ export type Database = {
           mei: number | null;
           simples: number | null;
           total: number | null;
+        };
+        Relationships: [];
+      };
+      v_enriquecimento_resumo: {
+        Row: {
+          bucket: string | null;
+          empresas: number | null;
+        };
+        Relationships: [];
+      };
+      v_fila_enriquecimento: {
+        Row: {
+          bucket: string | null;
+          capital_social: number | null;
+          cnpj: string | null;
+          em_pipeline: boolean | null;
+          empresa_id: string | null;
+          nome: string | null;
+          receita_atualizada_em: string | null;
+          score: number | null;
+          situacao_cadastral: Database["public"]["Enums"]["situacao_cadastral_rfb"] | null;
+          uf: string | null;
+          valor_potencial_estimado: number | null;
+        };
+        Relationships: [];
+      };
+      v_fila_telefones: {
+        Row: {
+          capital_social: number | null;
+          cnpj: string | null;
+          em_pipeline: boolean | null;
+          email_receita: string | null;
+          empresa_id: string | null;
+          municipio: string | null;
+          nome: string | null;
+          nome_fantasia: string | null;
+          razao_social: string | null;
+          uf: string | null;
+          valor_potencial_estimado: number | null;
         };
         Relationships: [];
       };
@@ -1822,6 +2431,55 @@ export type Database = {
           valor_potencial_total: number | null;
         };
         Relationships: [];
+      };
+      v_prospeccao_ciclo: {
+        Row: {
+          acao_id: string | null;
+          dias_ciclo_total: number | null;
+          dias_na_etapa_atual: number | null;
+          empresa_id: string | null;
+          entrou_etapa_em: string | null;
+          primeiro_em: string | null;
+          prospeccao_id: string | null;
+          status_prospeccao: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "prospeccoes_acao_id_fkey";
+            columns: ["acao_id"];
+            isOneToOne: false;
+            referencedRelation: "acoes_tributarias";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "empresas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_empresa_contato_qualidade";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_enriquecimento";
+            referencedColumns: ["empresa_id"];
+          },
+          {
+            foreignKeyName: "prospeccoes_empresa_id_fkey";
+            columns: ["empresa_id"];
+            isOneToOne: false;
+            referencedRelation: "v_fila_telefones";
+            referencedColumns: ["empresa_id"];
+          },
+        ];
       };
       v_rfb_busca_status: {
         Row: {
@@ -1851,8 +2509,13 @@ export type Database = {
         };
         Returns: boolean;
       };
+      infere_tipo_telefone: {
+        Args: { tel: string };
+        Returns: Database["public"]["Enums"]["tipo_telefone"];
+      };
       is_admin: { Args: { _user_id: string }; Returns: boolean };
       normaliza_cnpj: { Args: { txt: string }; Returns: string };
+      normaliza_nome_contato: { Args: { p: string }; Returns: string };
       normalize_cnpj_text: { Args: { raw: string }; Returns: string };
       pode_iniciar_tarefa: { Args: { tarefa_uuid: string }; Returns: boolean };
       show_limit: { Args: never; Returns: number };
@@ -2048,6 +2711,9 @@ export type CompositeTypes<
     : never;
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["admin", "advogado", "comercial", "gestor"],
