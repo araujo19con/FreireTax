@@ -792,7 +792,9 @@ def trecho_pedidos(peticao, maxlen=700):
     alvo = [f for f in frases
             if _PED_ABRE.search(f) and _PED_OBJ.search(f) and 40 < len(f) < 520]
     if alvo:
-        return " ".join(alvo[:2])[:maxlen].strip()
+        # ÚLTIMAS frases substantivas (mais perto do fecho = o pedido real da
+        # inicial); as primeiras podem cair em decisão/ementa transcrita no corpo.
+        return " ".join(alvo[-2:])[:maxlen].strip()
     # fallback: fim da zona de pedidos (sem a assinatura/valor da causa quando dá)
     z = zona_pedidos(peticao or "")
     z = re.sub(r"\s+", " ", z).strip()
@@ -801,9 +803,10 @@ def trecho_pedidos(peticao, maxlen=700):
 
 # início do TÓPICO de pedidos/requerimentos (para recortar a seção INTEIRA)
 _SECAO_INI = re.compile(
-    r"(D[OA]S?\s+PEDIDOS?\b|D[OA]S?\s+REQUERIMENTOS?\b|ANTE\s+O\s+EXPOSTO|"
+    r"(D[OA]S?\s+PEDIDOS?\b|PEDIDOS?\s+FINAIS|D[OA]S?\s+REQUERIMENTOS?\b|ANTE\s+O\s+EXPOSTO|"
     r"DIANTE\s+DO\s+EXPOSTO|PELO\s+EXPOSTO|ISTO\s+POSTO|EX\s+POSITIS|"
-    r"REQUER[,:]?\s+(?:a|ao|à)\s+Vossa)", re.I)
+    r"POSTULA(?:M|R)?\b|SE\s+DIGNE(?:M)?\s+de|"
+    r"REQUER(?:EM|-SE)?[,:]?\s+(?:a\b|ao\b|à\b|que\b|se\b|o\s+recebiment|portanto))", re.I)
 
 
 def secao_pedidos(peticao, maxlen=6000):
@@ -816,7 +819,12 @@ def secao_pedidos(peticao, maxlen=6000):
     fechos = list(_FECHO_RE.finditer(t))
     fim = fechos[-1].end() if fechos else len(t)
     inis = list(_SECAO_INI.finditer(t[:fim]))
-    ini = inis[0].start() if inis else max(0, fim - 2500)
+    # ÚLTIMO marcador antes do fecho — NÃO o primeiro. Peças transcrevem decisões
+    # que também abrem com "Ante o exposto, conheço do recurso…" (ementa/acórdão
+    # citado); o pedido REAL da inicial é sempre o último "DOS PEDIDOS/ANTE O
+    # EXPOSTO, requer…" imediatamente antes do "pede deferimento". Pegar inis[0]
+    # cravava a decisão citada como se fosse o pedido (bug visível no card).
+    ini = inis[-1].start() if inis else max(0, fim - 2500)
     return re.sub(r"\s+", " ", t[ini:fim]).strip()[:maxlen]
 
 
