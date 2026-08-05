@@ -56,8 +56,40 @@ def arquivar_inicial(base, proc, src):
     for nome in nomes:
         pasta = os.path.join(base, slug_empresa(nome))
         os.makedirs(pasta, exist_ok=True)
-        shutil.copy2(src, os.path.join(pasta, f"{proc}.pdf"))
+        dest = os.path.join(pasta, f"{proc}.pdf")
+        try:
+            shutil.copy2(src, dest)
+        except (PermissionError, OSError) as e:
+            # PDF aberto no visualizador (WinError 32) etc. — nao aborta o lote
+            print(f"    [arq-erro] {slug_empresa(nome)}/{proc}.pdf: {str(e)[:45]} (pulado)")
     return nomes
+
+
+# CNPJ na peca: 2-3-3-4-2. EXIGE a "/" e o "-" (assinatura do CNPJ) p/ NAO casar
+# IDs de documento do PJe (14 digitos crus). Dots/espacos tolerantes porque a
+# extracao do PDF quebra/junta ("n.º07.522.026/0001 -49"). SEM \b — o CNPJ costuma
+# vir colado no ordinal "nº" e "º" conta como caractere de palavra no Unicode.
+_CNPJ_RE = re.compile(r"\d{2}[.\s]{0,2}\d{3}[.\s]{0,2}\d{3}\s*/\s*\d{4}\s*-\s*\d{2}")
+
+
+def empresas_da_peticao(texto):
+    """Empresas AUTORAS da peca: casa os CNPJs citados na inicial com empresas do
+    CRM, por RAIZ (8 primeiros digitos) — filiais diferentes contam como a mesma
+    empresa. So considera empresas que EXISTEM no CRM; a contraparte (Uniao/Fazenda)
+    nao tem CNPJ de cliente, entao raramente da falso-positivo em MS tributario.
+    Retorna dict empresa_id -> {nome, cnpj}."""
+    raizes = set()
+    for m in _CNPJ_RE.findall(texto or ""):
+        d = re.sub(r"\D", "", m)
+        if len(d) == 14:
+            raizes.add(d[:8])
+    achadas = {}
+    for raiz in raizes:
+        pref = f"{raiz[0:2]}.{raiz[2:5]}.{raiz[5:8]}"   # formato do CRM: "12.620.867"
+        for r in M.sb(f"empresas?select=id,nome,cnpj&cnpj=like.{pref}*"):
+            if re.sub(r"\D", "", r.get("cnpj") or "")[:8] == raiz:
+                achadas[r["id"]] = {"nome": r.get("nome"), "cnpj": r.get("cnpj")}
+    return achadas
 
 
 def texto_pdf(path):
@@ -137,38 +169,72 @@ def main():
         print(f"  => TESE: {(tese or 'NENHUMA do catalogo').strip()}  [fonte: {fonte}, conf: {conf}]")
         if ped:
             print(f"  pedidos: {ped[:260]}")
-        resultados.append((proc, tese, fonte, f, ped, sec))  # f = caminho COMPLETO
+        # co-autoras: quais empresas do CRM constam como autoras (pelos CNPJs da peca)
+        emp = empresas_da_peticao(txt) if tem_banco else {}
+        if len(emp) > 1:
+            print(f"  autoras (CNPJ): {', '.join(sorted(v['nome'] for v in emp.values()))}")
+        resultados.append((proc, tese, fonte, f, ped, sec, emp))  # f = caminho COMPLETO
 
     if a.gravar:
-        print("\n" + "=" * 78 + "\nGRAVANDO (casa por numero em empresa_processos_tributarios):")
-        for proc, tese, fonte, src, ped, sec in resultados:
+        print("\n" + "=" * 78 + "\nGRAVANDO (vincula TODAS as empresas autoras da peca):")
+        for proc, tese, fonte, src, ped, sec, emp in resultados:
             if not proc:
                 print(f"  [pulado] {os.path.basename(src)}: sem numero de processo"); continue
-            existe = M.sb(f"empresa_processos_tributarios?select=numero,empresa_id,metadados&numero=eq.{proc}")
-            if not existe:
-                print(f"  [ausente] {proc}: nao esta no CRM (cadastre a empresa/rode a deteccao antes)")
+            # linhas ja existentes desse numero (qualquer empresa) — servem de template
+            # (grau/classe/orgao) e trazem os flags manuais por empresa.
+            existentes = M.sb(f"empresa_processos_tributarios?select=empresa_id,acao_id,grau,"
+                              f"classe,orgao,situacao,assunto,metadados&numero=eq.{proc}")
+            por_emp = {r["empresa_id"]: r for r in existentes}
+            # ALVOS = autoras detectadas na peca (CNPJ) UNIAO com as ja vinculadas
+            alvos = set(emp) | set(por_emp)
+            if not alvos:
+                print(f"  [ausente] {proc}: nenhum CNPJ da peca bate com empresa do CRM")
                 continue
-            md_atual = existe[0].get("metadados") or {}
-            if md_atual.get("descartado_manual"):
-                print(f"  [excluido] {proc}: excluido permanentemente no card — nao regrava")
-                continue
-            if md_atual.get("editado_manual") or md_atual.get("tese_manual"):
-                print(f"  [manual] {proc}: tese editada a mao no card — nao sobrescreve")
-                continue
-            acao_id = M.TESE_ID.get(M.tese_codigo(tese)) if tese else None
-            # trecho curto + SEÇÃO INTEIRA de pedidos vão pro metadados (card do processo)
-            md = {"pedido_excerpt": ped, "pedidos_texto": sec,
-                  "fonte_classificacao": f"inicial_disco:{fonte}", "arquivo": os.path.basename(src)}
-            if acao_id is None:
-                md["tese_sugerida"] = (tese or "").strip() or "objeto fora do catálogo (ver pedido_excerpt)"
-            M.sb_patch(f"empresa_processos_tributarios?numero=eq.{proc}",
-                       {"acao_id": acao_id, "metadados": md})
-            nota = f"-> {tese.strip()[:45]}" if acao_id else "(sem crava; trecho gravado)"
-            print(f"  [OK] {proc} {nota}")
+            # TESE autoritativa do processo: se JA existe linha manual (editado/
+            # tese_manual) — inclusive uma correcao a mao — ela manda; as co-autoras
+            # novas ESPELHAM (mesma peca = mesma tese, mesmo acao_id/rotulo). Senao,
+            # usa a classificacao automatica desta rodada.
+            manuais = [r for r in existentes
+                       if (r.get("metadados") or {}).get("editado_manual")
+                       or (r.get("metadados") or {}).get("tese_manual")]
+            aut = manuais[0] if manuais else None
+            if aut:
+                novo_acao = aut.get("acao_id")
+                novo_md = dict(aut.get("metadados") or {})   # herda rotulo + flags manuais
+            else:
+                novo_acao = M.TESE_ID.get(M.tese_codigo(tese)) if tese else None
+                novo_md = {}
+                if novo_acao is None:
+                    novo_md["tese_sugerida"] = (tese or "").strip() or "objeto fora do catálogo (ver pedido_excerpt)"
+            # pedidos SEMPRE frescos (extracao melhor) + rastro do arquivo
+            novo_md.update({"pedido_excerpt": ped, "pedidos_texto": sec,
+                            "fonte_classificacao": f"inicial_disco:{fonte}",
+                            "arquivo": os.path.basename(src)})
+            tmpl = existentes[0] if existentes else {}
+            body, pulados = [], 0
+            for eid in alvos:
+                atual = (por_emp.get(eid) or {}).get("metadados") or {}
+                # respeita edicao/exclusao manual POR EMPRESA (nao sobrescreve)
+                if (atual.get("descartado_manual") or atual.get("editado_manual")
+                        or atual.get("tese_manual")):
+                    pulados += 1; continue
+                molde = por_emp.get(eid) or tmpl
+                body.append({
+                    "empresa_id": eid, "numero": proc, "polo": "ativo", "fonte": "inicial_disco",
+                    "grau": molde.get("grau") or "1gf", "classe": molde.get("classe"),
+                    "orgao": molde.get("orgao"), "situacao": molde.get("situacao"),
+                    "assunto": molde.get("assunto"), "acao_id": novo_acao, "metadados": novo_md,
+                })
+            if body:
+                M.sb_upsert("empresa_processos_tributarios", body, "empresa_id,numero")
+            nota = ("(espelha tese manual existente)" if aut
+                    else (f"-> {tese.strip()[:38]}" if novo_acao else "(sem crava)"))
+            extra = f", {pulados} manual(is) preservada(s)" if pulados else ""
+            print(f"  [OK] {proc} {nota} | {len(body)} nova(s)/atualizada(s){extra}")
 
     if arquivar_base:
         print("\n" + "=" * 78 + f"\nARQUIVANDO iniciais por empresa em: {arquivar_base}")
-        for proc, tese, fonte, src, ped, sec in resultados:
+        for proc, tese, fonte, src, ped, sec, emp in resultados:
             if not proc:
                 print(f"  [pulado] {os.path.basename(src)}: sem numero de processo"); continue
             nomes = arquivar_inicial(arquivar_base, proc, src)
