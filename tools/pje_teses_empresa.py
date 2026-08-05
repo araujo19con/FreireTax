@@ -799,6 +799,27 @@ def trecho_pedidos(peticao, maxlen=700):
     return z[-maxlen:].strip()
 
 
+# início do TÓPICO de pedidos/requerimentos (para recortar a seção INTEIRA)
+_SECAO_INI = re.compile(
+    r"(D[OA]S?\s+PEDIDOS?\b|D[OA]S?\s+REQUERIMENTOS?\b|ANTE\s+O\s+EXPOSTO|"
+    r"DIANTE\s+DO\s+EXPOSTO|PELO\s+EXPOSTO|ISTO\s+POSTO|EX\s+POSITIS|"
+    r"REQUER[,:]?\s+(?:a|ao|à)\s+Vossa)", re.I)
+
+
+def secao_pedidos(peticao, maxlen=6000):
+    """A SEÇÃO INTEIRA de pedidos/requerimentos: do 1º marcador do tópico
+    ('DOS PEDIDOS' / 'ANTE O EXPOSTO' / 'REQUER a Vossa …') até o fecho
+    ('pede deferimento'). É o que se mostra completo ao expandir o card."""
+    t = peticao or ""
+    if not t.strip():
+        return ""
+    fechos = list(_FECHO_RE.finditer(t))
+    fim = fechos[-1].end() if fechos else len(t)
+    inis = list(_SECAO_INI.finditer(t[:fim]))
+    ini = inis[0].start() if inis else max(0, fim - 2500)
+    return re.sub(r"\s+", " ", t[ini:fim]).strip()[:maxlen]
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -1406,10 +1427,11 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 elif c.get("tese") and novo is None:
                     md = {"tese_sugerida": c["tese"], "conf": c.get("conf"),
                           "motivo_sugerida": ("refutado_fonte_direta" if leu_hoje else "autos_bloqueados")}
-                # o TRECHO DOS PEDIDOS vai pro card do processo sempre que a peça foi lida
+                # trecho curto + SEÇÃO INTEIRA de pedidos vão pro card sempre que houve peça
                 _pet = c.get("peticao") or ""
                 if peticao_valida(_pet):
                     md["pedido_excerpt"] = trecho_pedidos(_pet)
+                    md["pedidos_texto"] = secao_pedidos(_pet)
                 body.append({
                     "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
                     "classe": c.get("classe"), "orgao": c.get("orgao"),

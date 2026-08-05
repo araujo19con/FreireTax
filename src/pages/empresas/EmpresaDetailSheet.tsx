@@ -16,15 +16,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   RefreshCw,
   Pencil,
+  Check,
   Trash2,
   Building2,
   FileText,
@@ -148,6 +150,7 @@ interface ProcTribRow {
     tese_sugerida?: string;
     teses_extras?: string[];
     pedido_excerpt?: string;
+    pedidos_texto?: string;
     tese_manual?: string;
     editado_manual?: boolean;
   } | null;
@@ -394,6 +397,39 @@ export function EmpresaDetailSheet({
   const [editAcaoId, setEditAcaoId] = useState<string>("");
   const [editManual, setEditManual] = useState<string>("");
   const [savingTese, setSavingTese] = useState(false);
+  const [expandedProc, setExpandedProc] = useState<Set<string>>(new Set());
+  const [excluindoProc, setExcluindoProc] = useState<string | null>(null);
+  const toggleExpand = (id: string) =>
+    setExpandedProc((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  // Exclui um processo detectado erroneamente como tese (remove do CRM).
+  const excluirProcesso = async (proc: ProcTribRow) => {
+    if (
+      !window.confirm(
+        `Excluir o processo ${proc.numero}? Será removido dos processos tributários desta empresa.`
+      )
+    )
+      return;
+    setExcluindoProc(proc.id);
+    try {
+      const { error } = await supabase
+        .from("empresa_processos_tributarios")
+        .delete()
+        .eq("id", proc.id);
+      if (error) throw error;
+      toast.success(`Processo ${proc.numero} excluído.`);
+      if (empresa) void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+    } catch (e) {
+      toast.error("Falha ao excluir: " + ((e as Error).message ?? "erro"));
+    } finally {
+      setExcluindoProc(null);
+    }
+  };
 
   // Salva a tese de UM processo. Texto livre tem prioridade sobre o catálogo.
   // Marca editado_manual=true p/ a detecção do PJe NÃO sobrescrever depois.
@@ -500,28 +536,45 @@ export function EmpresaDetailSheet({
           Editar tese — <span className="font-mono">{p.numero}</span>
         </p>
         <div className="space-y-1">
-          <label className="text-[11px] font-medium text-muted-foreground">Tese do catálogo</label>
-          <Select
-            value={editAcaoId || "__none__"}
-            onValueChange={(v) => {
-              setEditAcaoId(v === "__none__" ? "" : v);
-              if (v !== "__none__") setEditManual("");
-            }}
-          >
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue placeholder="Selecione uma tese…" />
-            </SelectTrigger>
-            <SelectContent className="max-h-64">
-              <SelectItem value="__none__" className="text-xs">
-                — nenhuma —
-              </SelectItem>
-              {relations?.catalogo.map((c) => (
-                <SelectItem key={c.id} value={c.id} className="text-xs">
-                  {c.nome.trim()}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <label className="text-[11px] font-medium text-muted-foreground">
+            Tese do catálogo (busque por nome)
+          </label>
+          <Command className="rounded-md border">
+            <CommandInput placeholder="Buscar tese…" className="text-xs" />
+            <CommandList className="max-h-44">
+              <CommandEmpty className="py-3 text-center text-[11px] text-muted-foreground">
+                Nenhuma tese encontrada.
+              </CommandEmpty>
+              <CommandGroup>
+                <CommandItem
+                  value="— nenhuma —"
+                  onSelect={() => setEditAcaoId("")}
+                  className="text-xs"
+                >
+                  <Check className={`mr-2 h-3 w-3 ${!editAcaoId ? "opacity-100" : "opacity-0"}`} />—
+                  nenhuma —
+                </CommandItem>
+                {relations?.catalogo.map((c) => (
+                  <CommandItem
+                    key={c.id}
+                    value={c.nome.trim()}
+                    onSelect={() => {
+                      setEditAcaoId(c.id);
+                      setEditManual("");
+                    }}
+                    className="text-xs"
+                  >
+                    <Check
+                      className={`mr-2 h-3 w-3 shrink-0 ${
+                        editAcaoId === c.id ? "opacity-100" : "opacity-0"
+                      }`}
+                    />
+                    {c.nome.trim()}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
         </div>
         <div className="space-y-1">
           <label className="text-[11px] font-medium text-muted-foreground">
@@ -561,6 +614,57 @@ export function EmpresaDetailSheet({
       </PopoverContent>
     </Popover>
   );
+
+  // Botão de EXCLUIR o processo (detectado por engano como tese).
+  const deleteBtn = (p: ProcTribRow) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={excluindoProc === p.id}
+      onClick={() => void excluirProcesso(p)}
+      className="h-5 shrink-0 px-1 text-[10px] text-muted-foreground hover:text-destructive"
+      title="Excluir este processo (identificado por engano)"
+    >
+      <Trash2 className="h-3 w-3" />
+    </Button>
+  );
+
+  // Bloco dos PEDIDOS: trecho recolhido; clicar mostra a seção INTEIRA (pedidos_texto).
+  const pedidosBlock = (p: ProcTribRow) => {
+    const full = p.metadados?.pedidos_texto;
+    const excerpt = p.metadados?.pedido_excerpt;
+    if (!full && !excerpt) return null;
+    const aberto = expandedProc.has(p.id);
+    return (
+      <div className="ml-4 mt-1 text-[11px]">
+        <button
+          type="button"
+          onClick={() => toggleExpand(p.id)}
+          className="text-left text-muted-foreground hover:text-foreground"
+        >
+          <span className="font-medium text-foreground">Pedidos: </span>
+          {!aberto && (
+            <span className="italic">
+              {(excerpt || full || "").slice(0, 180)}
+              {full && <span className="ml-1 not-italic text-info">— ver completo</span>}
+            </span>
+          )}
+        </button>
+        {aberto && (
+          <div className="mt-1 max-h-56 overflow-y-auto whitespace-pre-wrap rounded bg-muted/40 p-2 leading-relaxed text-muted-foreground">
+            {full || excerpt}{" "}
+            <button
+              type="button"
+              onClick={() => toggleExpand(p.id)}
+              className="text-info hover:underline"
+            >
+              — recolher
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Atualiza ajuizamento de uma elegibilidade (empresa já tem a ação / por nós).
   const updateAjuizamento = async (
@@ -1242,6 +1346,7 @@ export function EmpresaDetailSheet({
                                 </Badge>
                               )}
                               {teseEditor(p)}
+                              {deleteBtn(p)}
                             </div>
                             {p.acoes_tributarias?.nome && (
                               <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success">
@@ -1280,14 +1385,7 @@ export function EmpresaDetailSheet({
                             {p.assunto && (
                               <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
                             )}
-                            {p.metadados?.pedido_excerpt && (
-                              <p className="ml-4 mt-1 text-[11px] italic text-muted-foreground">
-                                <span className="font-medium not-italic text-foreground">
-                                  Pedidos:{" "}
-                                </span>
-                                {p.metadados.pedido_excerpt}
-                              </p>
-                            )}
+                            {pedidosBlock(p)}
                             {p.situacao && (
                               <p className="ml-4 text-[10px] text-muted-foreground">{p.situacao}</p>
                             )}
@@ -1335,6 +1433,7 @@ export function EmpresaDetailSheet({
                                 </Badge>
                               )}
                               {teseEditor(p)}
+                              {deleteBtn(p)}
                             </div>
                             {p.metadados?.tese_sugerida && (
                               <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-warning">
@@ -1342,14 +1441,7 @@ export function EmpresaDetailSheet({
                                 <span>Possível: {p.metadados.tese_sugerida}</span>
                               </p>
                             )}
-                            {p.metadados?.pedido_excerpt && (
-                              <p className="ml-4 mt-1 text-[11px] italic text-muted-foreground">
-                                <span className="font-medium not-italic text-foreground">
-                                  Pedidos:{" "}
-                                </span>
-                                {p.metadados.pedido_excerpt}
-                              </p>
-                            )}
+                            {pedidosBlock(p)}
                             {p.assunto && (
                               <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
                             )}

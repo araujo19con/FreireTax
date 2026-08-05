@@ -86,17 +86,18 @@ def main():
         proc = num_processo(txt, os.path.basename(f))
         valida = M.peticao_valida(txt)
         tese, conf, fonte = M.classificar_por_pedidos("", "", catalogo_norm, txt)
-        ped = M.trecho_pedidos(txt)                       # trecho p/ mostrar no card
+        ped = M.trecho_pedidos(txt)                       # trecho curto (card recolhido)
+        sec = M.secao_pedidos(txt)                        # seção INTEIRA (ao expandir)
         print(f"\n{os.path.basename(f)}")
         print(f"  processo: {proc or '??'} | {len(txt)} chars | peticao_valida={valida}")
         print(f"  => TESE: {(tese or 'NENHUMA do catalogo').strip()}  [fonte: {fonte}, conf: {conf}]")
         if ped:
             print(f"  pedidos: {ped[:260]}")
-        resultados.append((proc, tese, fonte, os.path.basename(f), ped))
+        resultados.append((proc, tese, fonte, os.path.basename(f), ped, sec))
 
     if a.gravar:
         print("\n" + "=" * 78 + "\nGRAVANDO (casa por numero em empresa_processos_tributarios):")
-        for proc, tese, fonte, fname, ped in resultados:
+        for proc, tese, fonte, fname, ped, sec in resultados:
             if not proc:
                 print(f"  [pulado] {fname}: sem numero de processo"); continue
             existe = M.sb(f"empresa_processos_tributarios?select=numero,empresa_id,metadados&numero=eq.{proc}")
@@ -108,8 +109,9 @@ def main():
                 print(f"  [manual] {proc}: tese editada a mao no card — nao sobrescreve")
                 continue
             acao_id = M.TESE_ID.get(M.tese_codigo(tese)) if tese else None
-            # o TRECHO DOS PEDIDOS vai SEMPRE pro metadados (aparece no card do processo)
-            md = {"pedido_excerpt": ped, "fonte_classificacao": f"inicial_disco:{fonte}", "arquivo": fname}
+            # trecho curto + SEÇÃO INTEIRA de pedidos vão pro metadados (card do processo)
+            md = {"pedido_excerpt": ped, "pedidos_texto": sec,
+                  "fonte_classificacao": f"inicial_disco:{fonte}", "arquivo": fname}
             if acao_id is None:
                 md["tese_sugerida"] = (tese or "").strip() or "objeto fora do catálogo (ver pedido_excerpt)"
             M.sb_patch(f"empresa_processos_tributarios?numero=eq.{proc}",
