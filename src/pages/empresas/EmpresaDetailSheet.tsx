@@ -44,6 +44,7 @@ import {
   Lightbulb,
   X,
   Undo2,
+  Plus,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1467,13 +1468,26 @@ export function EmpresaDetailSheet({
                   (() => {
                     const jaTem = new Set<string>();
                     relations.eleg.forEach((e) => e.acao_id && jaTem.add(e.acao_id));
+                    // teses cobertas por um PROCESSO são ajuizadas de fato (não voltam à oferta)
+                    const ajuizadasIds = new Set<string>();
                     relations.procTrib.forEach((p) => {
-                      if (p.acao_id) jaTem.add(p.acao_id);
+                      if (p.acao_id) ajuizadasIds.add(p.acao_id);
                       // um processo pode cobrir mais de uma tese
-                      p.metadados?.teses_extras?.forEach((id) => jaTem.add(id));
+                      p.metadados?.teses_extras?.forEach((id) => ajuizadasIds.add(id));
                     });
+                    ajuizadasIds.forEach((id) => jaTem.add(id));
                     const gap = relations.catalogo.filter((c) => !jaTem.has(c.id));
-                    if (gap.length === 0) return null;
+                    // teses que SAÍRAM da oferta só por elegibilidade (descartada ou
+                    // vinculada, não ajuizada) — dá pra DEVOLVER removendo a eleg.
+                    const podeVoltar = relations.catalogo
+                      .filter((c) => jaTem.has(c.id) && !ajuizadasIds.has(c.id))
+                      .map((c) => ({
+                        ...c,
+                        elegId: relations.eleg.find((e) => e.acao_id === c.id && !e.ja_ajuizada)
+                          ?.id,
+                      }))
+                      .filter((c) => c.elegId);
+                    if (gap.length === 0 && podeVoltar.length === 0) return null;
                     return (
                       <div className="space-y-2 rounded-lg border border-success/30 bg-success/5 p-3">
                         <div className="flex items-center gap-2">
@@ -1481,40 +1495,81 @@ export function EmpresaDetailSheet({
                           <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                             Teses que pode oferecer ({gap.length})
                           </h4>
+                          {podeVoltar.length > 0 && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-success/40 bg-background px-2 py-1 text-[11px] font-medium text-success transition-colors hover:bg-success/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  title="Devolver uma tese descartada/vinculada para a oferta"
+                                >
+                                  <Plus className="h-3 w-3" /> Adicionar
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-80 p-0" align="end">
+                                <Command>
+                                  <CommandInput placeholder="Buscar tese para devolver à oferta..." />
+                                  <CommandList>
+                                    <CommandEmpty>Nenhuma tese para devolver.</CommandEmpty>
+                                    <CommandGroup heading="Fora da oferta">
+                                      {podeVoltar.map((c) => (
+                                        <CommandItem
+                                          key={c.id}
+                                          value={c.nome.trim()}
+                                          onSelect={() => void devolverAOferta(c.elegId)}
+                                        >
+                                          <Undo2 className="mr-2 h-3.5 w-3.5 text-success" />
+                                          <span className="truncate">{c.nome.trim()}</span>
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          )}
                         </div>
                         <p className="text-[11px] text-muted-foreground">
                           Teses ativas do catálogo que a empresa ainda não ajuizou nem tem
                           vinculada. Clique para abrir no painel de Ações, ou use o × para descartar
                           as que não se encaixam no ramo dela — some daqui e do relatório.
+                          {podeVoltar.length > 0 &&
+                            ' Use "+ Adicionar" para devolver uma tese à oferta.'}
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {gap.map((c) => (
-                            <span
-                              key={c.id}
-                              className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-background py-1 pl-2.5 pr-1 text-[11px] font-medium text-foreground transition-colors hover:bg-success/10"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => openAcaoForEmpresa(c.id)}
-                                className="inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title={`Abrir ${c.nome.trim()} no painel de Ações`}
+                        {gap.length === 0 ? (
+                          <p className="text-[11px] italic text-muted-foreground">
+                            Todas as teses do catálogo já estão ajuizadas ou vinculadas.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {gap.map((c) => (
+                              <span
+                                key={c.id}
+                                className="inline-flex items-center gap-1 rounded-full border border-success/30 bg-background py-1 pl-2.5 pr-1 text-[11px] font-medium text-foreground transition-colors hover:bg-success/10"
                               >
-                                <Gavel className="h-3 w-3 text-success" />
-                                <span className="max-w-[200px] truncate">{c.nome.trim()}</span>
-                              </button>
-                              <button
-                                type="button"
-                                disabled={descartando === c.id}
-                                onClick={() => void descartarTese(c.id, c.nome)}
-                                className="ml-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
-                                title="Não se encaixa nesta empresa — descartar da oferta"
-                                aria-label={`Descartar ${c.nome.trim()} da oferta`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
+                                <button
+                                  type="button"
+                                  onClick={() => openAcaoForEmpresa(c.id)}
+                                  className="inline-flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  title={`Abrir ${c.nome.trim()} no painel de Ações`}
+                                >
+                                  <Gavel className="h-3 w-3 text-success" />
+                                  <span className="max-w-[200px] truncate">{c.nome.trim()}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={descartando === c.id}
+                                  onClick={() => void descartarTese(c.id, c.nome)}
+                                  className="ml-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+                                  title="Não se encaixa nesta empresa — descartar da oferta"
+                                  aria-label={`Descartar ${c.nome.trim()} da oferta`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
