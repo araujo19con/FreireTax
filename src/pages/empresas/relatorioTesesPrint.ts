@@ -116,6 +116,31 @@ function highlightTese(texto: string, tese: string): string {
     .join("");
 }
 
+// Agrupa as ja ajuizadas por TESE: 2+ processos do MESMO tema viram UM tópico só
+// (listando os processos juntos). Pedido representado pelo 1º não-vazio do grupo.
+export interface TeseGrupo {
+  tese: string;
+  livre?: boolean;
+  processos: Array<{ numero: string; orgao: string }>;
+  pedidosTexto?: string;
+  pedidoExcerpt?: string;
+}
+export function agrupaPorTese(itens: RelatorioTese[]): TeseGrupo[] {
+  const map = new Map<string, TeseGrupo>();
+  for (const t of itens) {
+    const key = norm(t.tese);
+    let g = map.get(key);
+    if (!g) {
+      g = { tese: t.tese, livre: t.livre, processos: [] };
+      map.set(key, g);
+    }
+    g.processos.push({ numero: t.numero, orgao: t.orgao });
+    if (!g.pedidosTexto && t.pedidosTexto) g.pedidosTexto = t.pedidosTexto;
+    if (!g.pedidoExcerpt && t.pedidoExcerpt) g.pedidoExcerpt = t.pedidoExcerpt;
+  }
+  return [...map.values()];
+}
+
 export function renderRelatorioTesesHTML(
   dados: RelatorioEmpresa[],
   escritorio: Escritorio
@@ -147,7 +172,8 @@ export function renderRelatorioTesesHTML(
   });
 
   const totOfertas = dados.reduce((a, d) => a + d.podeEntrar.length, 0);
-  const totAjuizadas = dados.reduce((a, d) => a + d.jaAjuizadas.length, 0);
+  // conta TÓPICOS (teses distintas), não processos — 2 processos do mesmo tema = 1
+  const totAjuizadas = dados.reduce((a, d) => a + agrupaPorTese(d.jaAjuizadas).length, 0);
 
   // ---- DASHBOARD (primeiras páginas): panorama objetivo por empresa ----
   const dashList = (itens: string[]) =>
@@ -164,8 +190,8 @@ export function renderRelatorioTesesHTML(
           <span class="d-cnpj">${esc(d.cnpj)}${d.uf ? " · " + esc(d.uf) : ""} · ${esc(d.regime)}</span>
         </td>
         <td class="d-col">
-          <span class="d-badge ok">${d.jaAjuizadas.length}</span>
-          ${dashList(d.jaAjuizadas.map((t) => t.tese))}
+          <span class="d-badge ok">${agrupaPorTese(d.jaAjuizadas).length}</span>
+          ${dashList(agrupaPorTese(d.jaAjuizadas).map((g) => g.tese))}
         </td>
         <td class="d-col">
           <span class="d-badge of">${d.podeEntrar.length}</span>
@@ -198,16 +224,20 @@ export function renderRelatorioTesesHTML(
   // ---- DETALHAMENTO por empresa ----
   const secoes = dados
     .map((d) => {
-      const ajuizadas = d.jaAjuizadas.length
-        ? `<ul class="lista">${d.jaAjuizadas
+      // 1 tópico por TESE — processos do mesmo tema listados juntos
+      const gruposAj = agrupaPorTese(d.jaAjuizadas);
+      const ajuizadas = gruposAj.length
+        ? `<ul class="lista">${gruposAj
             .map(
-              (t) =>
+              (g) =>
                 `<li>
-                   <span class="tese">${esc(t.tese)}${t.livre ? ' <span class="tag-livre">texto livre</span>' : ""}</span>
-                   <span class="proc">${esc(t.numero)}${t.orgao ? " · " + esc(t.orgao) : ""}</span>
+                   <span class="tese">${esc(g.tese)}${g.livre ? ' <span class="tag-livre">texto livre</span>' : ""}</span>
+                   <span class="proc">${g.processos
+                     .map((p) => esc(p.numero) + (p.orgao ? " · " + esc(p.orgao) : ""))
+                     .join(" &nbsp;•&nbsp; ")}</span>
                    ${
-                     t.pedidosTexto || t.pedidoExcerpt
-                       ? `<div class="ped"><span class="ped-rot">Pedidos:</span> ${highlightTese(t.pedidosTexto || t.pedidoExcerpt || "", t.tese)}</div>`
+                     g.pedidosTexto || g.pedidoExcerpt
+                       ? `<div class="ped"><span class="ped-rot">Pedidos:</span> ${highlightTese(g.pedidosTexto || g.pedidoExcerpt || "", g.tese)}</div>`
                        : ""
                    }
                  </li>`
@@ -251,7 +281,7 @@ export function renderRelatorioTesesHTML(
         </div>
 
         <div class="numeros">
-          <div class="num"><span class="n">${d.jaAjuizadas.length}</span><span class="rot">já ajuizada(s)</span></div>
+          <div class="num"><span class="n">${gruposAj.length}</span><span class="rot">tese(s) já ajuizada(s)</span></div>
           <div class="num destaque"><span class="n">${d.podeEntrar.length}</span><span class="rot">a oferecer</span></div>
         </div>
 

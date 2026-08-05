@@ -12,6 +12,7 @@ import { getRegimeEffective, humanizeRegime, REGIMES_TRIBUTARIOS } from "@/lib/r
 import { ESCRITORIO_DEFAULT } from "@/lib/proposta";
 import {
   renderRelatorioTesesHTML,
+  agrupaPorTese,
   type RelatorioEmpresa,
   type RelatorioTese,
 } from "./relatorioTesesPrint";
@@ -201,7 +202,7 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
                           variant="outline"
                           className="border-success/30 bg-success/10 text-success"
                         >
-                          {r.jaAjuizadas.length} ajuizada(s)
+                          {agrupaPorTese(r.jaAjuizadas).length} ajuizada(s)
                         </Badge>
                         <Badge variant="outline">{r.podeEntrar.length} a oferecer</Badge>
                       </div>
@@ -209,17 +210,19 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
 
                     {r.jaAjuizadas.length > 0 && (
                       <div className="mt-2 space-y-0.5">
-                        {r.jaAjuizadas.map((t) => (
-                          <p key={t.numero} className="flex items-start gap-1 text-[11px]">
+                        {agrupaPorTese(r.jaAjuizadas).map((g) => (
+                          <p key={g.tese} className="flex items-start gap-1 text-[11px]">
                             <Gavel className="mt-0.5 h-3 w-3 shrink-0 text-success" />
                             <span>
-                              <span className="font-medium">{t.tese}</span>{" "}
-                              {t.livre && (
+                              <span className="font-medium">{g.tese}</span>{" "}
+                              {g.livre && (
                                 <span className="rounded border border-warning/40 px-1 text-[9px] uppercase tracking-wide text-warning">
                                   texto livre
                                 </span>
                               )}{" "}
-                              <span className="font-mono text-muted-foreground">({t.numero})</span>
+                              <span className="font-mono text-muted-foreground">
+                                ({g.processos.map((p) => p.numero).join(" · ")})
+                              </span>
                             </span>
                           </p>
                         ))}
