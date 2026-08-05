@@ -51,14 +51,20 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
             "empresa_id, numero, grau, classe, orgao, acao_id, metadados, acoes_tributarias(nome)"
           )
           .in("empresa_id", empresaIds),
-        supabase.from("acoes_tributarias").select("id, nome").eq("status", "Ativa").order("nome"),
+        // TODAS (não só Ativa): os nomes das teses_extras podem ser de tese Inativa
+        // (ex.: ICMS Tema 69) — precisam de nome no relatório. A oferta filtra Ativa depois.
+        supabase.from("acoes_tributarias").select("id, nome, status").order("nome"),
         // teses já vinculadas/descartadas p/ estas empresas — saem da oferta
         supabase.from("elegibilidade").select("empresa_id, acao_id").in("empresa_id", empresaIds),
       ]);
       return {
         empresas: (empRes.data || []) as unknown as Array<Record<string, unknown>>,
         proc: (procRes.data || []) as unknown as Array<Record<string, unknown>>,
-        catalogo: (catRes.data || []) as unknown as Array<{ id: string; nome: string }>,
+        catalogo: (catRes.data || []) as unknown as Array<{
+          id: string;
+          nome: string;
+          status: string;
+        }>,
         eleg: (elegRes.data || []) as unknown as Array<{ empresa_id: string; acao_id: string }>,
       };
     },
@@ -135,7 +141,10 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
       // catálogo ativo menos as já ajuizadas/vinculadas. NÃO filtra por regime —
       // o filtro de regime escondia teses aplicáveis (empresa com 2 saía 1 no
       // relatório enquanto a ficha mostrava 2). A ficha é a fonte da verdade.
-      const podeEntrar = data.catalogo.filter((a) => !jaIds.has(a.id)).map((a) => a.nome.trim());
+      // oferta = só teses ATIVAS do catálogo, menos as já ajuizadas/vinculadas
+      const podeEntrar = data.catalogo
+        .filter((a) => a.status === "Ativa" && !jaIds.has(a.id))
+        .map((a) => a.nome.trim());
 
       return {
         nome: ((e.razao_social as string) || (e.nome as string) || "").trim(),
