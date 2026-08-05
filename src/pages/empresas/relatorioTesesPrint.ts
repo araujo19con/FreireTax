@@ -131,6 +131,11 @@ export function renderRelatorioTesesHTML(
   const totAjuizadas = dados.reduce((a, d) => a + d.jaAjuizadas.length, 0);
 
   // ---- DASHBOARD (primeiras páginas): panorama objetivo por empresa ----
+  const dashList = (itens: string[]) =>
+    itens.length
+      ? `<ul class="d-list">${itens.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`
+      : '<span class="d-vazio">—</span>';
+
   const dashRows = dados
     .map(
       (d) => `
@@ -139,13 +144,14 @@ export function renderRelatorioTesesHTML(
           <strong>${esc(d.nome)}</strong>
           <span class="d-cnpj">${esc(d.cnpj)}${d.uf ? " · " + esc(d.uf) : ""} · ${esc(d.regime)}</span>
         </td>
-        <td class="d-count"><span class="d-badge ok">${d.jaAjuizadas.length}</span></td>
-        <td class="d-teses">${
-          d.jaAjuizadas.length
-            ? d.jaAjuizadas.map((t) => esc(t.tese)).join(" &nbsp;·&nbsp; ")
-            : '<span class="d-vazio">—</span>'
-        }</td>
-        <td class="d-count"><span class="d-badge of">${d.podeEntrar.length}</span></td>
+        <td class="d-col">
+          <span class="d-badge ok">${d.jaAjuizadas.length}</span>
+          ${dashList(d.jaAjuizadas.map((t) => t.tese))}
+        </td>
+        <td class="d-col">
+          <span class="d-badge of">${d.podeEntrar.length}</span>
+          ${dashList(d.podeEntrar)}
+        </td>
       </tr>`
     )
     .join("");
@@ -156,18 +162,17 @@ export function renderRelatorioTesesHTML(
       <table class="dash">
         <thead>
           <tr>
-            <th style="width:32%">Empresa</th>
-            <th style="width:8%">Ajuiz.</th>
-            <th>Teses já ajuizadas</th>
-            <th style="width:11%">A oferecer</th>
+            <th style="width:26%">Empresa</th>
+            <th style="width:37%">Teses já ajuizadas</th>
+            <th style="width:37%">Teses a oferecer</th>
           </tr>
         </thead>
         <tbody>${dashRows}</tbody>
       </table>
       <p class="dash-nota">
-        <strong>Ajuiz.</strong> = teses já ajuizadas pela empresa (confirmadas pela petição inicial).
-        <strong>A oferecer</strong> = teses aplicáveis do catálogo ainda não ajuizadas. O detalhamento de
-        cada empresa, com o trecho dos pedidos, segue nas páginas seguintes.
+        O número (selo) em cada coluna é a quantidade de teses. <strong>Já ajuizadas</strong> = confirmadas
+        pela petição inicial; <strong>a oferecer</strong> = teses aplicáveis do catálogo ainda não ajuizadas.
+        O detalhamento de cada empresa, com o trecho dos pedidos, segue nas páginas seguintes.
       </p>
     </section>`;
 
@@ -278,16 +283,16 @@ export function renderRelatorioTesesHTML(
     .dash-tit { font-size: 12pt; color: #3a3f48; margin: 0 0 3mm; border-bottom: 2px solid #3a3f48; padding-bottom: 1.5mm; }
     table.dash { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
     table.dash thead th { background: #3a3f48; color: #fff; text-align: left; padding: 2mm 2.5mm; font-size: 8pt; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
-    table.dash tbody td { padding: 2mm 2.5mm; border-bottom: 1px solid #e5e0d8; vertical-align: middle; }
+    table.dash tbody td { padding: 2.5mm 2.5mm; border-bottom: 1px solid #e5e0d8; vertical-align: top; }
     table.dash tbody tr:nth-child(even) td { background: #faf8f4; }
     .d-emp strong { display: block; color: #3a3f48; font-size: 9pt; }
     .d-emp .d-cnpj { font-size: 7.5pt; color: #8a8a8a; }
-    .d-count { text-align: center; }
-    .d-badge { display: inline-block; min-width: 7mm; padding: 0.6mm 1.6mm; border-radius: 2mm; font-weight: 700; font-size: 9pt; }
+    .d-badge { display: inline-block; min-width: 6mm; text-align: center; padding: 0.5mm 1.6mm; border-radius: 2mm; font-weight: 700; font-size: 8.5pt; }
     .d-badge.ok { background: #e3efe6; color: #4a7c59; }
     .d-badge.of { background: #fdf0e4; color: #c98253; }
-    .d-teses { font-size: 8pt; color: #3f3f3f; }
-    .d-vazio { color: #b0b0b0; }
+    ul.d-list { margin: 1.5mm 0 0; padding-left: 4mm; list-style: disc; }
+    ul.d-list li { margin-bottom: 1.2mm; font-size: 8pt; line-height: 1.3; color: #3f3f3f; }
+    .d-vazio { display: inline-block; margin-left: 2mm; color: #b0b0b0; font-size: 8pt; }
     .dash-nota { font-size: 7.5pt; color: #9a9a9a; margin: 3mm 0 0; }
 
     section.empresa { margin-bottom: 8mm; }
