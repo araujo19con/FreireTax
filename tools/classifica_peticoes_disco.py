@@ -105,6 +105,9 @@ def main():
                 print(f"  [ausente] {proc}: nao esta no CRM (cadastre a empresa/rode a deteccao antes)")
                 continue
             md_atual = existe[0].get("metadados") or {}
+            if md_atual.get("descartado_manual"):
+                print(f"  [excluido] {proc}: excluido permanentemente no card — nao regrava")
+                continue
             if md_atual.get("editado_manual") or md_atual.get("tese_manual"):
                 print(f"  [manual] {proc}: tese editada a mao no card — nao sobrescreve")
                 continue

@@ -153,6 +153,7 @@ interface ProcTribRow {
     pedidos_texto?: string;
     tese_manual?: string;
     editado_manual?: boolean;
+    descartado_manual?: boolean;
   } | null;
 }
 interface PastaLinkRow {
@@ -407,22 +408,29 @@ export function EmpresaDetailSheet({
       return n;
     });
 
-  // Exclui um processo detectado erroneamente como tese (remove do CRM).
+  // Exclui PERMANENTEMENTE um processo detectado por engano como tese: marca
+  // descartado_manual (some do card) + editado_manual (a raspagem do PJe respeita
+  // e NÃO re-crava mesmo re-rodando a detecção). Não apaga a linha — vira tombstone.
   const excluirProcesso = async (proc: ProcTribRow) => {
     if (
       !window.confirm(
-        `Excluir o processo ${proc.numero}? Será removido dos processos tributários desta empresa.`
+        `Excluir permanentemente o processo ${proc.numero}? Ele some do card e não volta mesmo se a detecção rodar de novo.`
       )
     )
       return;
     setExcluindoProc(proc.id);
     try {
+      const md = {
+        ...(proc.metadados ?? {}),
+        descartado_manual: true,
+        editado_manual: true,
+      };
       const { error } = await supabase
         .from("empresa_processos_tributarios")
-        .delete()
+        .update({ acao_id: null, metadados: md as unknown as ProcTribRow["metadados"] })
         .eq("id", proc.id);
       if (error) throw error;
-      toast.success(`Processo ${proc.numero} excluído.`);
+      toast.success(`Processo ${proc.numero} excluído (permanente).`);
       if (empresa) void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
     } catch (e) {
       toast.error("Falha ao excluir: " + ((e as Error).message ?? "erro"));
@@ -1311,9 +1319,10 @@ export function EmpresaDetailSheet({
                   (() => {
                     const confirmadas = relations.procTrib.filter(
                       (p) =>
-                        !!p.acoes_tributarias?.nome ||
-                        (p.metadados?.teses_extras?.length ?? 0) > 0 ||
-                        !!p.metadados?.tese_manual
+                        !p.metadados?.descartado_manual &&
+                        (!!p.acoes_tributarias?.nome ||
+                          (p.metadados?.teses_extras?.length ?? 0) > 0 ||
+                          !!p.metadados?.tese_manual)
                     );
                     if (confirmadas.length === 0) return null;
                     // teses_extras guarda IDs de ação — resolve p/ nome via catálogo
@@ -1403,6 +1412,7 @@ export function EmpresaDetailSheet({
                       (p) =>
                         !p.acao_id &&
                         !p.metadados?.tese_manual &&
+                        !p.metadados?.descartado_manual &&
                         (p.metadados?.teses_extras?.length ?? 0) === 0 &&
                         (p.metadados?.tese_sugerida || p.metadados?.pedido_excerpt)
                     );

@@ -1396,9 +1396,11 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                               f"&empresa_id=eq.{empresa_id}&numero=in.({inl})"):
                     atual[row["numero"]] = row.get("acao_id")
                     md_atual = row.get("metadados") or {}
-                    # NÃO sobrescrever: objeto confirmado à mão OU tese editada no card
-                    # (editado_manual / tese_manual vindos do EmpresaDetailSheet).
+                    # NÃO sobrescrever: objeto confirmado à mão, tese editada no card, OU
+                    # processo EXCLUÍDO permanentemente (descartado_manual) — todos vindos
+                    # do EmpresaDetailSheet. Excluído não pode voltar como tese.
                     if (md_atual.get("editado_manual") or md_atual.get("tese_manual")
+                            or md_atual.get("descartado_manual")
                             or "confirmado pelo escritorio" in _norm(
                                 json.dumps(md_atual, ensure_ascii=False)).lower()):
                         confirmados.add(row["numero"])
