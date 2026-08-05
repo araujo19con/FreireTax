@@ -92,7 +92,7 @@ def main():
     ap.add_argument("--arquivar", nargs="?", const="__AUTO__", default=None,
                     help="arquiva cada inicial em <base>/<empresa>/<numero>.pdf (uma pasta por "
                          "empresa; processo de varias empresas vai em TODAS). Sem valor: usa "
-                         "<dir>/../iniciais_por_empresa")
+                         "<projeto>/iniciais_por_empresa (gitignored)")
     a = ap.parse_args()
 
     tem_banco = bool(M.SUPABASE_URL and M.SERVICE_KEY)
@@ -102,9 +102,10 @@ def main():
     if a.arquivar is not None:
         if not tem_banco:
             sys.exit("--arquivar exige env (precisa achar a empresa de cada numero).")
+        # default = <raiz do projeto>/iniciais_por_empresa (HERE = tools/); esse
+        # caminho esta no .gitignore (iniciais de clientes nao vao pro repo).
         arquivar_base = (a.arquivar if a.arquivar != "__AUTO__"
-                         else os.path.join(os.path.dirname(os.path.abspath(a.dir)),
-                                            "iniciais_por_empresa"))
+                         else os.path.normpath(os.path.join(HERE, "..", "iniciais_por_empresa")))
 
     if tem_banco:
         # DETECCAO = fato historico: reconhece qualquer tese do catalogo (ativa ou nao).

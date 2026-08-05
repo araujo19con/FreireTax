@@ -93,3 +93,6 @@ tools/.cache/
 # backups locais do banco (contêm dados pessoais — NUNCA commitar)
 /backups/
 *.json.gz
+
+# Iniciais (peticoes) arquivadas por empresa — documentos de clientes, nao versionar
+iniciais_por_empresa/
