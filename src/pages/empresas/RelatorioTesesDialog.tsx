@@ -30,6 +30,7 @@ type Meta = {
   editado_manual?: boolean;
   descartado_manual?: boolean;
   pedido_excerpt?: string;
+  pedidos_texto?: string;
 };
 
 export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) {
@@ -85,6 +86,7 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
           grau: (p.grau as string) || "",
           orgao: (p.orgao as string) || "",
           pedidoExcerpt: md.pedido_excerpt || "",
+          pedidosTexto: md.pedidos_texto || "",
         };
         const rows: RelatorioTese[] = [];
         if (p.acao_id) {
@@ -115,6 +117,7 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
             tese: (md.tese_sugerida || "").trim(),
             numero: p.numero as string,
             pedidoExcerpt: md.pedido_excerpt || "",
+            pedidosTexto: md.pedidos_texto || "",
           };
         });
 

@@ -808,23 +808,35 @@ _SECAO_INI = re.compile(
     r"POSTULA(?:M|R)?\b|SE\s+DIGNE(?:M)?\s+de|"
     r"REQUER(?:EM|-SE)?[,:]?\s+(?:a\b|ao\b|à\b|que\b|se\b|o\s+recebiment|portanto))", re.I)
 
+# CABEÇALHO de seção de pedidos (título): abre o bloco INTEIRO de itens (a,b,c…).
+# Só rótulos que uma decisão citada NÃO usa — "DOS PEDIDOS", "Pedidos finais",
+# "DOS REQUERIMENTOS" (um acórdão diz "Ante o exposto, nego provimento", nunca
+# "DOS PEDIDOS"). Serve p/ achar o começo real do tópico sem cair em citação.
+_SECAO_TITULO = re.compile(
+    r"(D[OA]S?\s+PEDIDOS?\b|PEDIDOS?\s+FINAIS|D[OA]S?\s+REQUERIMENTOS?\b)", re.I)
 
-def secao_pedidos(peticao, maxlen=6000):
-    """A SEÇÃO INTEIRA de pedidos/requerimentos: do 1º marcador do tópico
-    ('DOS PEDIDOS' / 'ANTE O EXPOSTO' / 'REQUER a Vossa …') até o fecho
-    ('pede deferimento'). É o que se mostra completo ao expandir o card."""
+
+def secao_pedidos(peticao, maxlen=8000):
+    """A SEÇÃO INTEIRA de pedidos: do CABEÇALHO do tópico ('DOS PEDIDOS' / 'DO
+    PEDIDO' / 'Pedidos finais') até o fecho ('pede deferimento') — pega todos os
+    itens (a, b, c…), incluindo a declaração substantiva que enuncia a tese."""
     t = peticao or ""
     if not t.strip():
         return ""
     fechos = list(_FECHO_RE.finditer(t))
     fim = fechos[-1].end() if fechos else len(t)
-    inis = list(_SECAO_INI.finditer(t[:fim]))
-    # ÚLTIMO marcador antes do fecho — NÃO o primeiro. Peças transcrevem decisões
-    # que também abrem com "Ante o exposto, conheço do recurso…" (ementa/acórdão
-    # citado); o pedido REAL da inicial é sempre o último "DOS PEDIDOS/ANTE O
-    # EXPOSTO, requer…" imediatamente antes do "pede deferimento". Pegar inis[0]
-    # cravava a decisão citada como se fosse o pedido (bug visível no card).
-    ini = inis[-1].start() if inis else max(0, fim - 2500)
+    # 1) preferir o ÚLTIMO cabeçalho de tópico antes do fecho — ele abre o bloco
+    #    completo de itens. (O último, não o 1º: um "DO PEDIDO" só há um; se houver
+    #    mais de um título, o da conclusão é o mais próximo do fecho.)
+    titulos = list(_SECAO_TITULO.finditer(t[:fim]))
+    if titulos:
+        ini = titulos[-1].start()
+    else:
+        # 2) sem cabeçalho: 1º marcador fraco DENTRO da janela final (evita a
+        #    decisão citada lá atrás e ainda pega os itens a partir do 1º "requer").
+        janela = max(0, fim - 3500)
+        fracos = [m for m in _SECAO_INI.finditer(t[:fim]) if m.start() >= janela]
+        ini = fracos[0].start() if fracos else max(0, fim - 2500)
     return re.sub(r"\s+", " ", t[ini:fim]).strip()[:maxlen]
 
 

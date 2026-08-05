@@ -8,6 +8,7 @@ export interface RelatorioTese {
   grau: string;
   orgao: string;
   pedidoExcerpt?: string;
+  pedidosTexto?: string; // tópico INTEIRO de pedidos (mostrado no detalhamento)
   livre?: boolean; // tese de texto livre (não é do catálogo)
 }
 
@@ -19,7 +20,12 @@ export interface RelatorioEmpresa {
   regime: string;
   regimeConhecido: boolean;
   jaAjuizadas: RelatorioTese[];
-  sugeridas: Array<{ tese: string; numero: string; pedidoExcerpt?: string }>;
+  sugeridas: Array<{
+    tese: string;
+    numero: string;
+    pedidoExcerpt?: string;
+    pedidosTexto?: string;
+  }>;
   podeEntrar: string[];
 }
 
@@ -80,19 +86,32 @@ const STOP = new Set([
   "cofins", // pis/cofins aparecem em quase toda tese -> ruído
 ]);
 
-// marca-texto: destaca no trecho do pedido as palavras-chave da tese
+// marca-texto: destaca no trecho do pedido as palavras-chave da tese.
+// Casa também VARIAÇÕES morfológicas (creditamento~crédito, indenizatórias~
+// indenizado, contribuições~contribuição) por prefixo comum >= 5; siglas
+// curtas (ICMS/ISS/IPI/CPP/PIS...) casam exato.
 function highlightTese(texto: string, tese: string): string {
-  const keys = new Set(
-    norm(tese)
-      .split(/[^a-z0-9]+/)
-      .filter((w) => w.length > 2 && !STOP.has(w))
-  );
-  if (!keys.size) return esc(texto);
+  const keys = [
+    ...new Set(
+      norm(tese)
+        .split(/[^a-z0-9]+/)
+        .filter((w) => w.length > 2 && !STOP.has(w))
+    ),
+  ];
+  if (!keys.length) return esc(texto);
+  const hit = (w: string): boolean =>
+    keys.some((k) => {
+      if (k.length <= 5) return w === k;
+      let n = 0;
+      const m = Math.min(w.length, k.length);
+      while (n < m && w[n] === k[n]) n++;
+      return n >= 5;
+    });
   return esc(texto)
     .split(/(\s+)/)
     .map((tok) => {
       const w = norm(tok).replace(/[^a-z0-9]/g, "");
-      return w && keys.has(w) ? `<mark>${tok}</mark>` : tok;
+      return w && hit(w) ? `<mark>${tok}</mark>` : tok;
     })
     .join("");
 }
@@ -187,8 +206,8 @@ export function renderRelatorioTesesHTML(
                    <span class="tese">${esc(t.tese)}${t.livre ? ' <span class="tag-livre">texto livre</span>' : ""}</span>
                    <span class="proc">${esc(t.numero)}${t.orgao ? " · " + esc(t.orgao) : ""}</span>
                    ${
-                     t.pedidoExcerpt
-                       ? `<div class="ped"><span class="ped-rot">Pedido:</span> ${highlightTese(t.pedidoExcerpt, t.tese)}</div>`
+                     t.pedidosTexto || t.pedidoExcerpt
+                       ? `<div class="ped"><span class="ped-rot">Pedidos:</span> ${highlightTese(t.pedidosTexto || t.pedidoExcerpt || "", t.tese)}</div>`
                        : ""
                    }
                  </li>`
@@ -206,8 +225,8 @@ export function renderRelatorioTesesHTML(
                       <span class="tese">${esc(t.tese)}</span>
                       <span class="proc">${esc(t.numero)}</span>
                       ${
-                        t.pedidoExcerpt
-                          ? `<div class="ped"><span class="ped-rot">Pedido:</span> ${highlightTese(t.pedidoExcerpt, t.tese)}</div>`
+                        t.pedidosTexto || t.pedidoExcerpt
+                          ? `<div class="ped"><span class="ped-rot">Pedidos:</span> ${highlightTese(t.pedidosTexto || t.pedidoExcerpt || "", t.tese)}</div>`
                           : ""
                       }
                     </li>`
