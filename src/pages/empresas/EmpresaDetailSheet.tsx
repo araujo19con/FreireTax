@@ -13,6 +13,15 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   RefreshCw,
   Pencil,
@@ -135,7 +144,13 @@ interface ProcTribRow {
   // teses_extras: uma inicial pode carregar MAIS DE UMA tese (ex.: mandado que
   // pede exclusão de ICMS *e* de ISS da base do PIS/COFINS). Sem isso o sistema
   // seguiria oferecendo a segunda tese a quem já a ajuizou.
-  metadados: { tese_sugerida?: string; teses_extras?: string[] } | null;
+  metadados: {
+    tese_sugerida?: string;
+    teses_extras?: string[];
+    pedido_excerpt?: string;
+    tese_manual?: string;
+    editado_manual?: boolean;
+  } | null;
 }
 interface PastaLinkRow {
   pasta_id: string;
@@ -374,6 +389,43 @@ export function EmpresaDetailSheet({
   // Reusa `elegibilidade` como não-elegível + motivo — some do gap e fica
   // registrado como decisão, não como dado perdido. Reversível abaixo.
   const [descartando, setDescartando] = useState<string | null>(null);
+  // Edição manual da tese de um processo: catálogo (acao_id) OU texto livre.
+  const [editProc, setEditProc] = useState<string | null>(null);
+  const [editAcaoId, setEditAcaoId] = useState<string>("");
+  const [editManual, setEditManual] = useState<string>("");
+  const [savingTese, setSavingTese] = useState(false);
+
+  // Salva a tese de UM processo. Texto livre tem prioridade sobre o catálogo.
+  // Marca editado_manual=true p/ a detecção do PJe NÃO sobrescrever depois.
+  const salvarTeseProcesso = async (proc: ProcTribRow) => {
+    setSavingTese(true);
+    try {
+      const md: Record<string, unknown> = { ...(proc.metadados ?? {}), editado_manual: true };
+      let acaoId: string | null = null;
+      if (editManual.trim()) {
+        md.tese_manual = editManual.trim();
+      } else if (editAcaoId) {
+        acaoId = editAcaoId;
+        delete md.tese_manual;
+        delete md.tese_sugerida;
+      } else {
+        delete md.tese_manual; // limpou tudo → fica sem tese
+      }
+      const { error } = await supabase
+        .from("empresa_processos_tributarios")
+        .update({ acao_id: acaoId, metadados: md as unknown as ProcTribRow["metadados"] })
+        .eq("id", proc.id);
+      if (error) throw error;
+      toast.success("Tese do processo atualizada.");
+      setEditProc(null);
+      if (empresa) void qc.invalidateQueries({ queryKey: ["empresa-relations", empresa.id] });
+    } catch (e) {
+      toast.error("Falha ao salvar tese: " + ((e as Error).message ?? "erro"));
+    } finally {
+      setSavingTese(false);
+    }
+  };
+
   const descartarTese = async (acaoId: string, nomeTese: string) => {
     if (!empresa) return;
     setDescartando(acaoId);
@@ -418,6 +470,97 @@ export function EmpresaDetailSheet({
   }, [empresa?.id]);
 
   const { data: relations, isLoading: loadingRel } = useEmpresaRelations(empresa?.id);
+
+  // Popover de EDIÇÃO da tese de um processo (catálogo OU texto livre).
+  const teseEditor = (p: ProcTribRow) => (
+    <Popover
+      open={editProc === p.id}
+      onOpenChange={(o) => {
+        if (o) {
+          setEditProc(p.id);
+          setEditAcaoId(p.acao_id ?? "");
+          setEditManual(p.metadados?.tese_manual ?? "");
+        } else {
+          setEditProc(null);
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-5 shrink-0 px-1 text-[10px] text-muted-foreground hover:text-foreground"
+          title="Editar tese deste processo"
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 space-y-2.5 text-xs">
+        <p className="font-semibold">
+          Editar tese — <span className="font-mono">{p.numero}</span>
+        </p>
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-muted-foreground">Tese do catálogo</label>
+          <Select
+            value={editAcaoId || "__none__"}
+            onValueChange={(v) => {
+              setEditAcaoId(v === "__none__" ? "" : v);
+              if (v !== "__none__") setEditManual("");
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Selecione uma tese…" />
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              <SelectItem value="__none__" className="text-xs">
+                — nenhuma —
+              </SelectItem>
+              {relations?.catalogo.map((c) => (
+                <SelectItem key={c.id} value={c.id} className="text-xs">
+                  {c.nome.trim()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            ou tese específica (texto livre)
+          </label>
+          <Textarea
+            value={editManual}
+            onChange={(e) => {
+              setEditManual(e.target.value);
+              if (e.target.value.trim()) setEditAcaoId("");
+            }}
+            placeholder="Ex.: inexistência de contribuições a terceiros sobre a folha…"
+            className="min-h-[54px] text-xs"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Preencher o texto livre tem prioridade sobre o catálogo.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 pt-0.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setEditProc(null)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            disabled={savingTese}
+            onClick={() => void salvarTeseProcesso(p)}
+          >
+            Salvar
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 
   // Atualiza ajuizamento de uma elegibilidade (empresa já tem a ação / por nós).
   const updateAjuizamento = async (
@@ -1064,7 +1207,9 @@ export function EmpresaDetailSheet({
                   (() => {
                     const confirmadas = relations.procTrib.filter(
                       (p) =>
-                        !!p.acoes_tributarias?.nome || (p.metadados?.teses_extras?.length ?? 0) > 0
+                        !!p.acoes_tributarias?.nome ||
+                        (p.metadados?.teses_extras?.length ?? 0) > 0 ||
+                        !!p.metadados?.tese_manual
                     );
                     if (confirmadas.length === 0) return null;
                     // teses_extras guarda IDs de ação — resolve p/ nome via catálogo
@@ -1096,11 +1241,21 @@ export function EmpresaDetailSheet({
                                   {p.grau}
                                 </Badge>
                               )}
+                              {teseEditor(p)}
                             </div>
                             {p.acoes_tributarias?.nome && (
                               <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success">
                                 <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
                                 <span>Tese: {p.acoes_tributarias.nome.trim()}</span>
+                              </p>
+                            )}
+                            {!p.acoes_tributarias?.nome && p.metadados?.tese_manual && (
+                              <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-success">
+                                <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>Tese: {p.metadados.tese_manual}</span>
+                                <Badge variant="outline" className="ml-1 text-[8px]">
+                                  manual
+                                </Badge>
                               </p>
                             )}
                             {/* teses_extras (IDs de ação): um mesmo MS pode cravar +1 tese (ex.: ICMS e ISS) */}
@@ -1125,8 +1280,78 @@ export function EmpresaDetailSheet({
                             {p.assunto && (
                               <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
                             )}
+                            {p.metadados?.pedido_excerpt && (
+                              <p className="ml-4 mt-1 text-[11px] italic text-muted-foreground">
+                                <span className="font-medium not-italic text-foreground">
+                                  Pedidos:{" "}
+                                </span>
+                                {p.metadados.pedido_excerpt}
+                              </p>
+                            )}
                             {p.situacao && (
                               <p className="ml-4 text-[10px] text-muted-foreground">{p.situacao}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                {/* Processos tributários com tese POSSÍVEL (sem crava): o objeto está nos
+                    pedidos, mas a tese não é do catálogo ou precisa revisão manual. */}
+                {relations &&
+                  (() => {
+                    const possiveis = relations.procTrib.filter(
+                      (p) =>
+                        !p.acao_id &&
+                        !p.metadados?.tese_manual &&
+                        (p.metadados?.teses_extras?.length ?? 0) === 0 &&
+                        (p.metadados?.tese_sugerida || p.metadados?.pedido_excerpt)
+                    );
+                    if (possiveis.length === 0) return null;
+                    return (
+                      <div className="space-y-2 rounded-lg border border-warning/30 bg-warning/5 p-3">
+                        <div className="flex items-center gap-2">
+                          <Lightbulb className="h-4 w-4 text-warning" />
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            Processos a revisar ({possiveis.length}) — tese possível
+                          </h4>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Ações da empresa cujo objeto (pelos pedidos) não casou o catálogo ou
+                          precisa de revisão manual. Não contam como tese ajuizada até confirmar.
+                        </p>
+                        {possiveis.map((p) => (
+                          <div
+                            key={p.id}
+                            className="rounded-md border border-border bg-background p-2 text-xs"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <Gavel className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <span className="font-mono">{p.numero}</span>
+                              {p.grau && (
+                                <Badge variant="outline" className="text-[9px]">
+                                  {p.grau}
+                                </Badge>
+                              )}
+                              {teseEditor(p)}
+                            </div>
+                            {p.metadados?.tese_sugerida && (
+                              <p className="ml-4 mt-1 flex items-start gap-1 text-[11px] font-medium text-warning">
+                                <Lightbulb className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span>Possível: {p.metadados.tese_sugerida}</span>
+                              </p>
+                            )}
+                            {p.metadados?.pedido_excerpt && (
+                              <p className="ml-4 mt-1 text-[11px] italic text-muted-foreground">
+                                <span className="font-medium not-italic text-foreground">
+                                  Pedidos:{" "}
+                                </span>
+                                {p.metadados.pedido_excerpt}
+                              </p>
+                            )}
+                            {p.assunto && (
+                              <p className="ml-4 text-[11px] text-info">Assunto: {p.assunto}</p>
                             )}
                           </div>
                         ))}

@@ -326,12 +326,21 @@ def regras_tese():
                   "ABONO PECUNIARIO", "ABONO ASSIDUIDADE",
                   # terço de férias em 1º grau é ESTA tese, não a rescisória
                   "TERCO CONSTITUCIONAL", "TERCO DE FERIAS", "ADICIONAL DE FERIAS",
-                  "1/3 DE FERIAS"], "conf": "alta"}),
-        # LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS das contribuições de terceiros/parafiscais
+                  "1/3 DE FERIAS"],
+          # o objeto é a CPP/previdenciária; quando a BASE é o FGTS (mesmas verbas,
+          # outra contribuição) é OUTRA tese. SUPER ALTERNATIVO 0800592: excluía as
+          # verbas da base do FGTS + multa e vinha cravado como CPP. Veta FGTS.
+          "nao": ["FGTS", "FUNDO DE GARANTIA", "LC 110", "110/2001"], "conf": "alta"}),
+        # LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS das contribuições de terceiros/parafiscais.
+        # EXIGE o conceito do LIMITE ("salários mínimos") + contexto de terceiros — só
+        # o NOME das entidades (SEBRAE/SESC/INCRA) NÃO basta: um desafio GERAL à não-
+        # incidência de terceiros sobre a folha também cita as entidades e NÃO é esta
+        # tese (SUPER 0801100: pedido é inexistência de terceiros s/ folha, sem os 20 SM).
         ("LIMITAÇÃO A 20 SALÁRIOS MÍNIMOS DA BASE DAS CONTRIBUIÇÕES DE TERCEIROS",
-         {"any": ["20 SALARIOS MINIMOS", "VINTE SALARIOS MINIMOS", "CONTRIBUICOES PARAFISCAIS",
-                  "CONTRIBUICAO PARAFISCAL", "SALARIO EDUCACAO", "INCRA", "SEBRAE",
-                  "SENAI", "SENAC", "SESC", "SESI", "SENAT", "APEX", "ABDI"], "conf": "alta"}),
+         {"all": ["SALARIOS MINIMOS"],
+          "any": ["TERCEIROS", "CONTRIBUICOES PARAFISCAIS", "CONTRIBUICAO PARAFISCAL",
+                  "SALARIO EDUCACAO", "INCRA", "SEBRAE", "SENAI", "SENAC", "SESC",
+                  "SESI", "SENAT", "APEX", "ABDI"], "conf": "alta"}),
         # CPP/RAT sobre VALORES RETIDOS do segurado (contribuição do empregado + IRRF)
         ("EXCLUSÃO DOS VALORES RETIDOS DO SEGURADO DA BASE DA CPP E DO RAT",
          {"any": ["VALORES RETIDOS", "VALOR RETIDO", "RETIDOS PELA", "RETIDOS A TITULO"],
@@ -727,19 +736,67 @@ def pedido_procedimental(zona):
     return bool(_PROCED_RE.search(z)) and not _MERITO_RE.search(z)
 
 
-def classificar_por_pedidos(assunto, classe, catalogo_norm, peticao):
-    """(tese, conf, fonte) priorizando os PEDIDOS FINAIS (jurisprudência removida).
-    fonte ∈ {'pedidos','peça','assunto'}. Cai pra peça/assunto quando os pedidos
-    não decidem (peça posterior, ou nenhuma regra casou)."""
-    if peticao and peticao_valida(peticao):
-        z = zona_pedidos(peticao)
-        if not pedido_procedimental(z):
-            tese, _ = classificar_tese("", "", catalogo_norm, strip_jurisprudencia(z))
+def classificar_por_pedidos(assunto, _classe, catalogo_norm, peticao):
+    """(tese, conf, fonte) — classifica SÓ pela PETIÇÃO INICIAL, priorizando os
+    PEDIDOS FINAIS (jurisprudência removida). O assunto/classe do DataJud NÃO
+    identificam tese (04/08, do usuário: o assunto engana; a verdade é o pedido).
+    fonte ∈ {'pedidos','peça','sem_peticao'}:
+      - 'pedidos':     objeto casado na zona de pedidos finais -> CRAVA.
+      - 'peça':        casou só no corpo da inicial (pedidos não decidiram) -> SUGESTÃO.
+      - 'sem_peticao': inicial não lida -> NADA (não se identifica tese pelo assunto)."""
+    # guarda NEGATIVA (não identifica, só exclui): objeto administrativo pontual
+    # (CND/certidão) não é tese, mesmo que a peça cite um tributo.
+    if objeto_administrativo(assunto):
+        return None, None, "sem_peticao"
+    if not (peticao and peticao_valida(peticao)):
+        return None, None, "sem_peticao"
+    # 1) zona dos PEDIDOS FINAIS — o objeto real da ação, sem citação de precedente
+    z = zona_pedidos(peticao)
+    if not pedido_procedimental(z):
+        # tenta a zona COM e SEM remoção de jurisprudência. O strip evita a poluição
+        # do Tema 69 (citação no corpo), mas em pedido "run-on" (uma frase gigante)
+        # às vezes apaga o PRÓPRIO objeto — ex.: a frase que pede "excluir o ISS da
+        # base" trazia um token de citação e sumia inteira. Stripped 1º (anti-
+        # poluição); o cru recupera o objeto quando o strip zera a zona.
+        for tz in (strip_jurisprudencia(z), z):
+            tese, _ = classificar_tese("", "", catalogo_norm, tz)
             if tese:
                 return tese, "alta", "pedidos"
-    tese, conf = classificar_tese(assunto, classe, catalogo_norm, peticao)
-    fonte = "peça" if (peticao and peticao_valida(peticao)) else "assunto"
-    return tese, conf, fonte
+    # 2) corpo da inicial (sem jurisprudência): sinal mais fraco — o objeto não
+    # ficou claro nos pedidos, então NO MÁXIMO sugestão (não crava sozinho)
+    tese, _ = classificar_tese("", "", catalogo_norm, strip_jurisprudencia(peticao))
+    return (tese, "media", "peça") if tese else (None, None, "peça")
+
+
+# frase que ABRE o pedido substantivo (para recortar o trecho que enuncia a tese)
+_PED_ABRE = re.compile(
+    r"seja (?:conced|declarad|reconhec|assegur|determinad)|inexist[êe]nc|"
+    r"direito (?:de|à|a|líquido)|reconhec[ea]r|declarar|assegurar|autoriz",
+    re.I)
+# tokens tributários que confirmam que a frase é o OBJETO (não boilerplate)
+_PED_OBJ = re.compile(
+    r"compens|cumulativ|\bICMS\b|\bISS\b|\bIPI\b|PIS|COFINS|folha|terceir|CPP|"
+    r"contribui|credit|IRPJ|CSLL|verba|indeniz|sal[áa]rio|FGTS|SELIC|incentiv|"
+    r"benef[íi]cio|base de c[áa]lcul|al[íi]quota|RAT|PAT|PERSE|gorjeta|aprendiz",
+    re.I)
+
+
+def trecho_pedidos(peticao, maxlen=700):
+    """Recorta o TRECHO dos PEDIDOS que enuncia o objeto/tese — pra mostrar no card
+    do processo. Prefere as frases 'seja declarado/reconhecido o direito a … <tributo>';
+    cai na zona de pedidos final quando não acha frase substantiva."""
+    t = re.sub(r"\s+", " ", peticao or "").strip()
+    if not t:
+        return ""
+    frases = re.split(r"(?<=[.;:])\s+", t)
+    alvo = [f for f in frases
+            if _PED_ABRE.search(f) and _PED_OBJ.search(f) and 40 < len(f) < 520]
+    if alvo:
+        return " ".join(alvo[:2])[:maxlen].strip()
+    # fallback: fim da zona de pedidos (sem a assinatura/valor da causa quando dá)
+    z = zona_pedidos(peticao or "")
+    z = re.sub(r"\s+", " ", z).strip()
+    return z[-maxlen:].strip()
 
 
 # ---------------------------------------------------------------------------
@@ -811,7 +868,12 @@ def main():
     if not alvos:
         sys.exit("Nada a analisar. Passe --fila (protocolo pedido na UI), --cnpj, --cnpjs ou --acao.")
 
-    cat_rows = sb("acoes_tributarias?select=id,nome,codigo&status=eq.Ativa")
+    # DETECÇÃO = fato histórico: reconhece QUALQUER tese do catálogo que a empresa
+    # já ajuizou — inclusive teses hoje INATIVAS (ex.: ICMS Tema 69, 20 salários
+    # mínimos). O escritório pode não ofertar mais a tese, mas a empresa LITIGOU:
+    # o objeto do processo é o que é. O gate de OFERTA (status=Ativa) é SEPARADO e
+    # vive no front (pool / matriz / cálculo do gap); aqui a chave é só ter `codigo`.
+    cat_rows = sb("acoes_tributarias?select=id,nome,codigo,status")
     catalogo = [r["nome"] for r in cat_rows]
     catalogo_norm = {_norm(n): n for n in catalogo}          # norm(nome) -> nome (só p/ display)
     global TESE_ID, CAT_CODIGOS
@@ -1186,6 +1248,9 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                         # PJe 1.x TERCEIROS: postback + modal de motivo -> aba nova
                         with cron("peticao", grau=grau, proc=r["proc"], via="terceiros"):
                             det = _abrir_detalhe_terceiros(page, ctx, r["proc"])
+                            if os.environ.get("DBG_PET"):
+                                print(f"    [dbg] {r['proc']}: _abrir_detalhe_terceiros -> "
+                                      f"{'aba aberta' if det is not None else 'None (detalhe NÃO abriu)'}", flush=True)
                             if det is not None:
                                 _idt = ""
                                 try:
@@ -1242,28 +1307,30 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                     c["assunto"], classe_dj or c.get("classe") or "", catalogo_norm, c.get("peticao") or "")
             c["tese"], c["conf"] = tese, conf
         else:
-            # PADRÃO VALIDADO (~74%): classifica pela peça/assunto; fonte "petição"
-            # só com inicial válida (peticao_valida); senão assunto do DataJud.
-            tese, conf = classificar_tese(c["assunto"], classe_dj or c.get("classe") or "",
-                                          catalogo_norm, c.get("peticao", ""))
+            # PETIÇÃO-ONLY (04/08, do usuário): a análise usa SÓ a inicial, de
+            # preferência os PEDIDOS finais. O assunto CNJ não identifica tese;
+            # sem inicial lida, nada é cravado nem sugerido (fonte 'sem_peticao').
+            tese, conf, c["fonte_tese"] = classificar_por_pedidos(
+                c["assunto"], classe_dj or c.get("classe") or "",
+                catalogo_norm, c.get("peticao", ""))
             c["tese"], c["conf"] = tese, conf
-            c["fonte_tese"] = "petição" if peticao_valida(c.get("peticao") or "") else "assunto(DataJud)"
         # POLÍTICA (25/07, do usuário): NENHUMA tese é cravada só pelo ASSUNTO. O
         # assunto CNJ é genérico (engana ~1/4) e serve APENAS como COMPLEMENTO. Crava
         # (acao_id) exige FONTE DIRETA ASSERTIVA: ementa/pedidos (o juiz/o pedido
         # enunciam o objeto — autoritativas) ou a PETIÇÃO/peça (cruzada com o assunto
         # p/ conter a poluição do Tema 69). Assunto sozinho -> no máximo SUGESTÃO.
-        fonte_direto = c["fonte_tese"] in ("ementa", "pedidos", "peça", "petição")
+        # CRAVA só quando o OBJETO está enunciado numa fonte autoritativa: a ementa
+        # do juiz ou os PEDIDOS finais da inicial. Corpo da peça ('peça') e ausência
+        # de inicial ('sem_peticao') NÃO cravam — viram sugestão / nada. O assunto
+        # CNJ não entra na decisão (petição-only).
+        fonte_direto = c["fonte_tese"] in ("ementa", "pedidos", "peça")
         c["fonte_direto"] = fonte_direto
-        if not tese:
+        if tese and c["fonte_tese"] in ("ementa", "pedidos"):
+            c["corrob"] = True                                   # objeto enunciado no pedido/ementa
+        else:
             c["corrob"] = False
-        elif c["fonte_tese"] in ("ementa", "pedidos"):
-            c["corrob"] = True                                   # fonte direta autoritativa
-        elif fonte_direto:                                       # peça/petição — assunto complementa
-            c["corrob"] = assunto_corrobora(tese, c["assunto"])
-        else:                                                    # assunto/DataJud sozinho
-            c["corrob"] = False
-            c["so_datajud_risco"] = True
+            if c["fonte_tese"] not in ("ementa", "pedidos", "peça"):
+                c["so_datajud_risco"] = True
 
     # Uma empresa NÃO ajuíza a MESMA tese duas vezes (regra do escritório). Se
     # dois processos caíram na mesma tese, no máximo um está certo: mantém o de
@@ -1308,8 +1375,11 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                               f"&empresa_id=eq.{empresa_id}&numero=in.({inl})"):
                     atual[row["numero"]] = row.get("acao_id")
                     md_atual = row.get("metadados") or {}
-                    if "confirmado pelo escritorio" in _norm(
-                            json.dumps(md_atual, ensure_ascii=False)).lower():
+                    # NÃO sobrescrever: objeto confirmado à mão OU tese editada no card
+                    # (editado_manual / tese_manual vindos do EmpresaDetailSheet).
+                    if (md_atual.get("editado_manual") or md_atual.get("tese_manual")
+                            or "confirmado pelo escritorio" in _norm(
+                                json.dumps(md_atual, ensure_ascii=False)).lower()):
                         confirmados.add(row["numero"])
             except Exception:
                 atual = {}
@@ -1336,6 +1406,10 @@ def _processar_cnpj(page, ctx, cnpj_digits, graus, catalogo, catalogo_norm, insp
                 elif c.get("tese") and novo is None:
                     md = {"tese_sugerida": c["tese"], "conf": c.get("conf"),
                           "motivo_sugerida": ("refutado_fonte_direta" if leu_hoje else "autos_bloqueados")}
+                # o TRECHO DOS PEDIDOS vai pro card do processo sempre que a peça foi lida
+                _pet = c.get("peticao") or ""
+                if peticao_valida(_pet):
+                    md["pedido_excerpt"] = trecho_pedidos(_pet)
                 body.append({
                     "empresa_id": empresa_id, "numero": c["proc"], "grau": c["grau"],
                     "classe": c.get("classe"), "orgao": c.get("orgao"),
@@ -1885,11 +1959,16 @@ def _peticao_pdf_1x(ctx, base, id_processo):
         # procuração e contrato social entravam na fila de tentativas. Se nada tem
         # peso positivo, tenta os 2 melhores mesmo assim (rótulo pode estar vazio).
         positivos = [c for c in cands if c.get("peso", 0) > 0]
+        if os.environ.get("DBG_PET"):
+            print(f"    [dbg] paginator tipo_atual='{pg.evaluate(tipo_doc)}' "
+                  f"cands={[(c.get('peso'), c.get('txt')) for c in cands]}", flush=True)
         cands = positivos[:3] if positivos else cands[:2]
         if not cands:
             return ""
         import io as _io
         import pypdf
+        melhor = ""   # maior texto lido que não passou na trava (evita NameError;
+                      # a política é devolver "" se nenhum candidato é a inicial)
         for c in cands:
             urls.clear()
             try:
@@ -1912,12 +1991,17 @@ def _peticao_pdf_1x(ctx, base, id_processo):
                 txt = "\n".join((x.extract_text() or "") for x in rd.pages[:8])
             except Exception:
                 continue
+            if os.environ.get("DBG_PET"):
+                print(f"    [dbg]   cand i={c['i']} pdf={len(txt)}ch valida={peticao_valida(txt)} "
+                      f"head={txt[:90].replace(chr(10),' ')!r}", flush=True)
             if peticao_valida(txt):
                 return txt
             if len(txt) > len(melhor):
                 melhor = txt
         # nenhum candidato passou na trava: devolve vazio em vez do maior anexo —
         # classificar por anexo é pior que não classificar (dá falsa precisão).
+        if os.environ.get("DBG_PET"):
+            print(f"    [dbg] nenhum candidato passou peticao_valida (melhor={len(melhor)}ch)", flush=True)
         return ""
     except Exception:
         return ""
@@ -2096,8 +2180,12 @@ def _extrair_detalhe_1x(det, ctx, base):
     }""")
     peticao = ""
     m = re.search(r"idProcessoTrf=(\d+)", det.url or "")
+    if os.environ.get("DBG_PET"):
+        print(f"    [dbg] detalhe idProcessoTrf={m.group(1) if m else None} url={(det.url or '')[:110]}", flush=True)
     if m:
         peticao = _peticao_pdf_1x(ctx, base, m.group(1))
+        if os.environ.get("DBG_PET"):
+            print(f"    [dbg] _peticao_pdf_1x -> {len(peticao)} chars valida={peticao_valida(peticao)}", flush=True)
     return meta.get("assunto", ""), meta.get("orgao", ""), peticao
 
 
@@ -2323,22 +2411,209 @@ def _abrir_peticao(page, proc):
     try:
         autos.wait_for_load_state("domcontentloaded")
         autos.wait_for_timeout(2500)
-        try:
-            autos.click("a[title='Primeiro documento'], [aria-label='Primeiro documento']", timeout=8000)
-        except Exception:
-            pass
-        autos.wait_for_timeout(2000)
-        for k in range(16):
-            txt = autos.evaluate(r"""() => {
+        # A timeline do 2.x é LAZY e vem do mais RECENTE p/ o mais ANTIGO. A PETIÇÃO
+        # INICIAL é o doc mais antigo (fim da lista): rola até o fim p/ carregá-la e
+        # extrai o ID do rótulo "<ID> - Petição inicial". ("Primeiro documento" pegava
+        # só a CAPA de ~1KB.) O download REST desse ID dá a peça COMPLETA (todas as
+        # páginas — os pedidos ficam no fim), buscada pela sessão já autenticada.
+        for _ in range(30):
+            mudou = autos.evaluate(r"""() => {
+              const c=document.scrollingElement||document.body;
+              const a=c.scrollTop; c.scrollTop=c.scrollHeight;
+              document.querySelectorAll('div,ul,section').forEach(e=>{ if(e.scrollHeight>e.clientHeight+200) e.scrollTop=e.scrollHeight; });
+              return c.scrollTop!==a;
+            }""")
+            autos.wait_for_timeout(450)
+            if not mudou:
+                break
+        # Coleta TODOS os docs da timeline (ID :: rótulo). A "Petição inicial" costuma
+        # ser só a CAPA ("em anexo"); a PEÇA real é um "Documento de Comprovação" (às
+        # vezes nomeado com o número do processo). Ranqueia, IGNORA a prova (procuração,
+        # custas, DCTF, PIS, COFINS, certidão, despacho…) e baixa o 1º que passa em
+        # peticao_valida (tem endereçamento), pela sessão já autenticada.
+        docs = autos.evaluate(r"""() => {
+          const out=[]; const seen={};
+          document.querySelectorAll('*').forEach(e=>{
+            if(e.children && e.children.length) return;
+            const t=(e.textContent||'').replace(/\s+/g,' ').trim();
+            const m=t.match(/^(\d{6,})\s*[-–]\s*(.{3,60})$/);
+            if(m && !seen[m[1]]){ seen[m[1]]=1; out.push([m[1], m[2]]); }
+          });
+          return out;
+        }""") or []
+        _PROVA = re.compile(r"procura|substabelec|custas|comprovante de p|certid|despacho|"
+                            r"decis|intima|expediente|renunci|manifest|parecer|dctf|ccf|"
+                            r"\bpis\b|\bcofins\b|razao|conta|guia|distribu|ato ordinat|"
+                            r"contrato social|\bpgr\b|\bpfn\b|ci[êe]ncia|senten|ac[óo]rd", re.I)
+        raiz_proc = re.sub(r"\D", "", proc)[:7]
+        def _peso(lbl):
+            s = 0
+            if re.search(r"peti[çc][ãa]o inicial|inaugural|exordial|impetra[çc]", lbl, re.I): s += 8
+            if raiz_proc and raiz_proc in re.sub(r"\D", "", lbl): s += 5   # nome = nº do processo
+            if re.search(r"peti[çc][ãa]o", lbl, re.I): s += 2
+            if _PROVA.search(lbl): s -= 8
+            return s
+        cands = sorted(docs, key=lambda d: _peso(d[1]), reverse=True)
+        if os.environ.get("DBG_PET"):
+            print(f"    [dbg2x] {proc}: {len(docs)} docs; top cands="
+                  f"{[(d[0], d[1][:28], _peso(d[1])) for d in cands[:5]]}", flush=True)
+        base2 = "https://" + autos.url.split("/")[2]
+        import io as _io
+        import pypdf
+        # O download REST só serve o doc CARREGADO no viewer (outros IDs dão 404). Então
+        # p/ cada candidato: CLICA a entrada na timeline (carrega no viewer) -> lê o
+        # appUrl (resource id certo) -> baixa o PDF pela sessão -> testa peticao_valida.
+        _CLICK = r"""(did) => {
+          const alvo=[...document.querySelectorAll('*')].filter(e=>e.children.length===0 &&
+             (e.textContent||'').replace(/\s+/g,' ').trim().indexOf(did+' -')===0);
+          for(const e of alvo){
+            let n=e;
+            for(let i=0;i<8&&n;i++){
+              const oc=n.getAttribute&&n.getAttribute('onclick');
+              if(oc||n.tagName==='A'||(n.getAttribute&&n.getAttribute('role')==='button')){ try{ n.click(); return true; }catch(x){} }
+              n=n.parentElement;
+            }
+            try{ e.click(); return true; }catch(x){}
+          }
+          return false;
+        }"""
+        _APP = r"""() => { const ifr=[...document.querySelectorAll('iframe')].find(f=>/pdfjs|viewer\.html/.test(f.src||''));
+          if(!ifr) return ''; try{ const u=ifr.contentWindow&&ifr.contentWindow.PDFViewerApplication&&ifr.contentWindow.PDFViewerApplication.url; if(u) return u; }catch(e){}
+          const m=(ifr.src||'').match(/file=([^&]+)/); return m?decodeURIComponent(m[1]):''; }"""
+        prev_app = ""
+        for did, lbl in cands[:5]:
+            try:
+                if not autos.evaluate(_CLICK, did):
+                    continue
+                app = ""
+                for _ in range(12):
+                    autos.wait_for_timeout(600)
+                    app = autos.evaluate(_APP) or ""
+                    if app and app != prev_app:
+                        break
+                if not app or app == prev_app:
+                    if os.environ.get("DBG_PET"):
+                        print(f"    [dbg2x]   cand {did} ({lbl[:24]}) NAO carregou no viewer", flush=True)
+                    continue
+                prev_app = app
+                full = (base2 + app) if app.startswith("/") else app
+                data = autos.request.get(full, timeout=60000).body()
+                if data[:4] != b"%PDF":
+                    continue
+                t = "\n".join((x.extract_text() or "") for x in pypdf.PdfReader(_io.BytesIO(data)).pages)
+                # seleciona a MAIOR peça da PARTE. A inicial do 2.x vem com uma capa de
+                # índice (IFMS) ANTES do endereçamento, então peticao_valida (só o começo)
+                # falha nela — por isso olha o texto TODO p/ o endereçamento e prefere o
+                # MAIOR, excluindo manifestações da Fazenda/MPF (que também endereçam o juízo).
+                tn = _norm(t)
+                eh_fz = any(m in tn[:3000] for m in ("PROCURADORIA", "MINISTERIO PUBLICO",
+                            "PGR-MANIFESTACAO", "PGR MANIFESTACAO", "ADVOCACIA-GERAL DA UNIAO"))
+                tem_end = re.search(r"EXCELENTISSIM|\bAO JUIZO\b|JUIZO FEDERAL|\bIMPETRA", tn) is not None
+                if os.environ.get("DBG_PET"):
+                    print(f"    [dbg2x]   cand {did} ({lbl[:24]}) {len(t)}ch fz={eh_fz} end={tem_end}", flush=True)
+                if tem_end and not eh_fz and len(t) > len(txt):
+                    txt = t
+            except Exception:
+                continue
+        if os.environ.get("DBG_PET") and txt:
+            print(f"    [dbg2x] {proc}: PETIÇÃO escolhida = {len(txt)}ch", flush=True)
+            _z = zona_pedidos(txt)
+            _fr = [f for f in re.split(r"(?<=[.;])\s+", re.sub(r"\s+", " ", txt))
+                   if re.search(r"seja (conced|declarad|reconhec|assegur)|inexist|direito (de|a)", f, re.I)
+                   and re.search(r"compens|cumulativ|\bICMS\b|\bISS\b|\bIPI\b|PIS|COFINS|folha|terceir|CPP|contribui|credit|SELIC", f, re.I)
+                   and len(f) < 420]
+            for _f in _fr[:2]:
+                print(f"    [dbg2x] {proc}: PEDIDO: {_f.strip()[:330]}", flush=True)
+            if not _fr:
+                print(f"    [dbg2x] {proc}: ZONA_PED: {re.sub(chr(92)+chr(115)+'+',' ',_z[-350:]).strip()}", flush=True)
+        # FALLBACK (não achou ID ou não veio PDF): Primeiro documento + appUrl do viewer.
+        if len(txt) < 400:
+            try:
+                autos.click("a[title='Primeiro documento'], [aria-label='Primeiro documento']", timeout=8000)
+            except Exception:
+                pass
+            autos.wait_for_timeout(2000)
+        # PREFERIDO: o PDF.js do 2.x carrega o PDF de um endpoint REST de download
+        # (PDFViewerApplication.url / ?file=...). Busca o PDF COMPLETO por request da
+        # SESSÃO (os autos já estão autenticados) e extrai com pypdf — pega TODAS as
+        # páginas (os PEDIDOS ficam no fim), ao contrário do textLayer, que só tem a
+        # página visível. É o "download interno" do próprio visualizador.
+        app_url = ""
+        for _ in range(12 if len(txt) < 400 else 0):   # só se a inicial não veio pelo ID
+            app_url = autos.evaluate(r"""() => {
               const ifr=[...document.querySelectorAll('iframe')].find(f=>/pdfjs|viewer\.html/.test(f.src||''));
               if(!ifr) return '';
-              try { const d=ifr.contentDocument; if(!d) return '';
-                let t=''; d.querySelectorAll('.textLayer').forEach(l=>t+=l.innerText+'\n');
-                return t || (d.body?d.body.innerText:''); } catch(e){ return ''; }
+              try { const w=ifr.contentWindow;
+                if(w && w.PDFViewerApplication && w.PDFViewerApplication.url) return w.PDFViewerApplication.url; } catch(e){}
+              const m=(ifr.src||'').match(/file=([^&]+)/);
+              return m ? decodeURIComponent(m[1]) : '';
             }""") or ""
-            if len(txt) > 800: break
-            if k >= 7 and len(txt) < 300: break
-            autos.wait_for_timeout(900)
+            if app_url:
+                break
+            autos.wait_for_timeout(700)
+        if app_url:
+            base2 = "https://" + autos.url.split("/")[2]
+            full = (base2 + app_url) if app_url.startswith("/") else app_url
+            try:
+                data = autos.request.get(full, timeout=60000).body()
+                if data[:4] == b"%PDF":
+                    import io as _io
+                    import pypdf
+                    txt = "\n".join((x.extract_text() or "") for x in pypdf.PdfReader(_io.BytesIO(data)).pages)
+                    if os.environ.get("DBG_PET"):
+                        print(f"    [dbg2x] {proc}: PDF via appUrl -> {len(data)} bytes, {len(txt)} chars", flush=True)
+                elif os.environ.get("DBG_PET"):
+                    print(f"    [dbg2x] {proc}: fetch NAO-PDF {data[:12]!r} — cai no textLayer", flush=True)
+            except Exception as e:
+                if os.environ.get("DBG_PET"):
+                    print(f"    [dbg2x] {proc}: fetch err {str(e)[:50]}", flush=True)
+        # FALLBACK: rola o visualizador PDF.js e raspa o textLayer (só se o PDF não veio)
+        # — ele só renderiza as páginas na viewport; coleta a cada passo e fica com o maior.
+        COLETA = r"""() => {
+          const ifr=[...document.querySelectorAll('iframe')].find(f=>/pdfjs|viewer\.html/.test(f.src||''));
+          if(!ifr) return {t:'', more:false, npg:0, cont:false};
+          try {
+            const d=ifr.contentDocument; if(!d) return {t:'', more:false, npg:0, cont:false};
+            const cont=d.querySelector('#viewerContainer')||d.querySelector('.pdfViewer')||d.scrollingElement||d.body;
+            let t=''; const ls=d.querySelectorAll('.textLayer'); ls.forEach(l=>t+=l.innerText+'\n');
+            if(!t && d.body) t=d.body.innerText||'';
+            let more=false;
+            if(cont){ const atBottom=cont.scrollTop+cont.clientHeight>=cont.scrollHeight-5;
+              more=!atBottom;
+              if(!atBottom) cont.scrollTop=Math.min(cont.scrollHeight, cont.scrollTop+Math.max(400,cont.clientHeight*0.85)); }
+            return {t, more, npg: ls.length, cont: !!cont};
+          } catch(e){ return {t:'', more:false, npg:0, cont:false, err:String(e).slice(0,40)}; }
+        }"""
+        estavel = 0
+        for k in range(60 if len(txt) < 400 else 0):   # pula o scroll se o PDF já veio
+            info = autos.evaluate(COLETA) or {}
+            if info.get("t") and len(info["t"]) > len(txt):
+                txt = info["t"]; estavel = 0
+            else:
+                estavel += 1
+            if k == 0 and os.environ.get("DBG_PET"):
+                print(f"    [dbg2x] iframe pdfjs cont={info.get('cont')} npg={info.get('npg')} "
+                      f"err={info.get('err')} len0={len(info.get('t') or '')}", flush=True)
+                dump = autos.evaluate(r"""() => {
+                  const ifrs=[...document.querySelectorAll('iframe')].map(f=>(f.src||'').slice(0,90));
+                  const ifr=[...document.querySelectorAll('iframe')].find(f=>/pdfjs|viewer\.html/.test(f.src||''));
+                  let inner={};
+                  try { const d=ifr&&ifr.contentDocument;
+                    if(d){ inner={canvas:d.querySelectorAll('canvas').length,
+                      textLayer:d.querySelectorAll('.textLayer').length,
+                      pages:d.querySelectorAll('.page').length,
+                      file:(ifr.src.match(/file=([^&]+)/)||[])[1]||'',
+                      appUrl:(ifr.contentWindow&&ifr.contentWindow.PDFViewerApplication&&ifr.contentWindow.PDFViewerApplication.url)||''};
+                    } } catch(e){ inner={err:String(e).slice(0,50)}; }
+                  return {ifrs, inner};
+                }""")
+                print(f"    [dbg2x] iframes={dump.get('ifrs')}", flush=True)
+                print(f"    [dbg2x] pdfjs_inner={dump.get('inner')}", flush=True)
+            if not info.get("more") and estavel >= 3:
+                break
+            autos.wait_for_timeout(650)
+        if os.environ.get("DBG_PET"):
+            print(f"    [dbg2x] {proc}: peticao final {len(txt)} chars", flush=True)
     except Exception:
         pass
     try: autos.close()
@@ -2461,9 +2736,9 @@ def analisar(candidatos, motivos, catalogo, razao, cnpj_fmt, total, autos):
             if it.get("dup"):
                 motivo = "duplicata da mesma tese — mantido o processo de melhor evidência"
             elif it.get("fonte_direto"):
-                motivo = "fonte direta não corroborada pelo assunto"
+                motivo = "objeto casou só no corpo da inicial (não nos pedidos) — revisar"
             else:
-                motivo = "só assunto (sem fonte direta) — política exige ementa/pedidos/petição"
+                motivo = "inicial não lida — objeto não está nos pedidos/ementa (assunto não crava)"
             linha += (f"\n        => tese SUGERIDA (revisar): {tese.strip()}  "
                       f"[fonte: {it.get('fonte_tese','?')} · {motivo}]")
         elif asn and objeto_administrativo(asn):
