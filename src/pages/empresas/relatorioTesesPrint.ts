@@ -2,6 +2,15 @@
 // Mesma estratégia do PropostaDialog: <table> com thead/tfoot, que o Chrome
 // re-imprime nativamente a cada quebra de página (position:fixed só ancora na 1ª).
 
+export interface RelatorioTese {
+  tese: string;
+  numero: string;
+  grau: string;
+  orgao: string;
+  pedidoExcerpt?: string;
+  livre?: boolean; // tese de texto livre (não é do catálogo)
+}
+
 export interface RelatorioEmpresa {
   nome: string;
   cnpj: string;
@@ -9,8 +18,8 @@ export interface RelatorioEmpresa {
   municipio: string;
   regime: string;
   regimeConhecido: boolean;
-  jaAjuizadas: Array<{ tese: string; numero: string; grau: string; orgao: string }>;
-  sugeridas: Array<{ tese: string; numero: string }>;
+  jaAjuizadas: RelatorioTese[];
+  sugeridas: Array<{ tese: string; numero: string; pedidoExcerpt?: string }>;
   podeEntrar: string[];
 }
 
@@ -27,6 +36,66 @@ const esc = (s: string) =>
     /[&<>"]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]
   );
+
+// normaliza p/ comparação (minúsculo, sem acento)
+const norm = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+// palavras genéricas que não valem como marca-texto da tese
+const STOP = new Set([
+  "de",
+  "da",
+  "do",
+  "das",
+  "dos",
+  "e",
+  "a",
+  "o",
+  "na",
+  "no",
+  "nas",
+  "nos",
+  "que",
+  "com",
+  "por",
+  "para",
+  "sobre",
+  "seja",
+  "ser",
+  "os",
+  "as",
+  "um",
+  "uma",
+  "the",
+  "base",
+  "calculo",
+  "direito",
+  "sua",
+  "seu",
+  "ao",
+  "aos",
+  "nao",
+  "sem",
+  "art",
+  "pis",
+  "cofins", // pis/cofins aparecem em quase toda tese -> ruído
+]);
+
+// marca-texto: destaca no trecho do pedido as palavras-chave da tese
+function highlightTese(texto: string, tese: string): string {
+  const keys = new Set(
+    norm(tese)
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !STOP.has(w))
+  );
+  if (!keys.size) return esc(texto);
+  return esc(texto)
+    .split(/(\s+)/)
+    .map((tok) => {
+      const w = norm(tok).replace(/[^a-z0-9]/g, "");
+      return w && keys.has(w) ? `<mark>${tok}</mark>` : tok;
+    })
+    .join("");
+}
 
 export function renderRelatorioTesesHTML(
   dados: RelatorioEmpresa[],
@@ -61,14 +130,63 @@ export function renderRelatorioTesesHTML(
   const totOfertas = dados.reduce((a, d) => a + d.podeEntrar.length, 0);
   const totAjuizadas = dados.reduce((a, d) => a + d.jaAjuizadas.length, 0);
 
+  // ---- DASHBOARD (primeiras páginas): panorama objetivo por empresa ----
+  const dashRows = dados
+    .map(
+      (d) => `
+      <tr>
+        <td class="d-emp">
+          <strong>${esc(d.nome)}</strong>
+          <span class="d-cnpj">${esc(d.cnpj)}${d.uf ? " · " + esc(d.uf) : ""} · ${esc(d.regime)}</span>
+        </td>
+        <td class="d-count"><span class="d-badge ok">${d.jaAjuizadas.length}</span></td>
+        <td class="d-teses">${
+          d.jaAjuizadas.length
+            ? d.jaAjuizadas.map((t) => esc(t.tese)).join(" &nbsp;·&nbsp; ")
+            : '<span class="d-vazio">—</span>'
+        }</td>
+        <td class="d-count"><span class="d-badge of">${d.podeEntrar.length}</span></td>
+      </tr>`
+    )
+    .join("");
+
+  const dashboard = `
+    <section class="dashboard">
+      <h2 class="dash-tit">Panorama por empresa</h2>
+      <table class="dash">
+        <thead>
+          <tr>
+            <th style="width:32%">Empresa</th>
+            <th style="width:8%">Ajuiz.</th>
+            <th>Teses já ajuizadas</th>
+            <th style="width:11%">A oferecer</th>
+          </tr>
+        </thead>
+        <tbody>${dashRows}</tbody>
+      </table>
+      <p class="dash-nota">
+        <strong>Ajuiz.</strong> = teses já ajuizadas pela empresa (confirmadas pela petição inicial).
+        <strong>A oferecer</strong> = teses aplicáveis do catálogo ainda não ajuizadas. O detalhamento de
+        cada empresa, com o trecho dos pedidos, segue nas páginas seguintes.
+      </p>
+    </section>`;
+
+  // ---- DETALHAMENTO por empresa ----
   const secoes = dados
-    .map((d, i) => {
+    .map((d) => {
       const ajuizadas = d.jaAjuizadas.length
         ? `<ul class="lista">${d.jaAjuizadas
             .map(
               (t) =>
-                `<li><span class="tese">${esc(t.tese)}</span>
-                   <span class="proc">${esc(t.numero)}${t.orgao ? " · " + esc(t.orgao) : ""}</span></li>`
+                `<li>
+                   <span class="tese">${esc(t.tese)}${t.livre ? ' <span class="tag-livre">texto livre</span>' : ""}</span>
+                   <span class="proc">${esc(t.numero)}${t.orgao ? " · " + esc(t.orgao) : ""}</span>
+                   ${
+                     t.pedidoExcerpt
+                       ? `<div class="ped"><span class="ped-rot">Pedido:</span> ${highlightTese(t.pedidoExcerpt, t.tese)}</div>`
+                       : ""
+                   }
+                 </li>`
             )
             .join("")}</ul>`
         : `<p class="vazio">Nenhuma tese identificada como já ajuizada.</p>`;
@@ -79,8 +197,15 @@ export function renderRelatorioTesesHTML(
              <ul class="lista">${d.sugeridas
                .map(
                  (t) =>
-                   `<li><span class="tese">${esc(t.tese)}</span>
-                      <span class="proc">${esc(t.numero)}</span></li>`
+                   `<li>
+                      <span class="tese">${esc(t.tese)}</span>
+                      <span class="proc">${esc(t.numero)}</span>
+                      ${
+                        t.pedidoExcerpt
+                          ? `<div class="ped"><span class="ped-rot">Pedido:</span> ${highlightTese(t.pedidoExcerpt, t.tese)}</div>`
+                          : ""
+                      }
+                    </li>`
                )
                .join("")}</ul>
              <p class="nota">Processos tributários da empresa cuja tese ainda depende de confirmação documental.</p>
@@ -92,7 +217,7 @@ export function renderRelatorioTesesHTML(
         : `<p class="vazio">Nenhuma tese adicional aplicável no catálogo atual.</p>`;
 
       return `
-      <section class="empresa${i > 0 ? " quebra" : ""}">
+      <section class="empresa quebra">
         <div class="emp-head">
           <h2>${esc(d.nome)}</h2>
           <p class="emp-meta">
@@ -148,6 +273,23 @@ export function renderRelatorioTesesHTML(
     .subtitulo { font-size: 9pt; color: #7a7a7a; margin: 0 0 6mm; }
     .resumo { background: #faf7f2; border-left: 3px solid #c98253; padding: 3mm 4mm; margin-bottom: 7mm; font-size: 9.5pt; }
 
+    /* dashboard */
+    .dashboard { page-break-after: always; }
+    .dash-tit { font-size: 12pt; color: #3a3f48; margin: 0 0 3mm; border-bottom: 2px solid #3a3f48; padding-bottom: 1.5mm; }
+    table.dash { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+    table.dash thead th { background: #3a3f48; color: #fff; text-align: left; padding: 2mm 2.5mm; font-size: 8pt; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+    table.dash tbody td { padding: 2mm 2.5mm; border-bottom: 1px solid #e5e0d8; vertical-align: middle; }
+    table.dash tbody tr:nth-child(even) td { background: #faf8f4; }
+    .d-emp strong { display: block; color: #3a3f48; font-size: 9pt; }
+    .d-emp .d-cnpj { font-size: 7.5pt; color: #8a8a8a; }
+    .d-count { text-align: center; }
+    .d-badge { display: inline-block; min-width: 7mm; padding: 0.6mm 1.6mm; border-radius: 2mm; font-weight: 700; font-size: 9pt; }
+    .d-badge.ok { background: #e3efe6; color: #4a7c59; }
+    .d-badge.of { background: #fdf0e4; color: #c98253; }
+    .d-teses { font-size: 8pt; color: #3f3f3f; }
+    .d-vazio { color: #b0b0b0; }
+    .dash-nota { font-size: 7.5pt; color: #9a9a9a; margin: 3mm 0 0; }
+
     section.empresa { margin-bottom: 8mm; }
     section.quebra { page-break-before: always; padding-top: 4mm; }
     .emp-head { border-bottom: 2px solid #3a3f48; padding-bottom: 1.5mm; margin-bottom: 3mm; }
@@ -171,9 +313,13 @@ export function renderRelatorioTesesHTML(
     .bloco.oferta h4 { color: #c98253; }
 
     ul.lista, ol.lista-oferta { margin: 0; padding-left: 5mm; }
-    ul.lista li, ol.lista-oferta li { margin-bottom: 1.5mm; font-size: 9.5pt; }
+    ul.lista li, ol.lista-oferta li { margin-bottom: 2.5mm; font-size: 9.5pt; }
     .tese { font-weight: 600; }
+    .tag-livre { font-weight: 400; font-size: 7pt; text-transform: uppercase; letter-spacing: .4px; color: #9a7b0f; border: 1px solid #d9c67a; border-radius: 1.5mm; padding: 0 1mm; vertical-align: middle; }
     .proc { display: block; font-family: 'Courier New', monospace; font-size: 8pt; color: #8a8a8a; }
+    .ped { margin: 1mm 0 0; padding: 1.5mm 2.5mm; background: #fbfaf7; border-left: 2px solid #c9c2b4; border-radius: 1mm; font-size: 8.5pt; color: #3f3f3f; font-style: italic; }
+    .ped-rot { font-style: normal; font-weight: 700; font-size: 7pt; text-transform: uppercase; letter-spacing: .4px; color: #8a8a8a; margin-right: 1mm; }
+    mark { background: #ffe89a; color: inherit; padding: 0 .5px; border-radius: 1px; }
     .vazio { margin: 0; font-size: 9pt; color: #9a9a9a; font-style: italic; }
     .nota { margin: 2mm 0 0; font-size: 7.5pt; color: #9a9a9a; }
   `;
@@ -212,6 +358,7 @@ export function renderRelatorioTesesHTML(
           com validação pelo objeto da petição inicial.
         </span>
       </div>
+      ${dashboard}
       ${secoes}
     </div>
   </td></tr></tbody>

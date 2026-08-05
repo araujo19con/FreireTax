@@ -10,13 +10,27 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCNPJ } from "@/lib/format";
 import { getRegimeEffective, humanizeRegime, REGIMES_TRIBUTARIOS } from "@/lib/regimeTributario";
 import { ESCRITORIO_DEFAULT } from "@/lib/proposta";
-import { renderRelatorioTesesHTML, type RelatorioEmpresa } from "./relatorioTesesPrint";
+import {
+  renderRelatorioTesesHTML,
+  type RelatorioEmpresa,
+  type RelatorioTese,
+} from "./relatorioTesesPrint";
 
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   empresaIds: string[];
 }
+
+// metadados relevantes de empresa_processos_tributarios p/ o relatório
+type Meta = {
+  teses_extras?: string[];
+  tese_sugerida?: string;
+  tese_manual?: string;
+  editado_manual?: boolean;
+  descartado_manual?: boolean;
+  pedido_excerpt?: string;
+};
 
 export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) {
   const { data, isLoading } = useQuery({
@@ -59,34 +73,50 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
         ? (REGIMES_TRIBUTARIOS.find((r) => r.value === regime)?.label ?? null)
         : null;
 
-      const meus = data.proc.filter((p) => p.empresa_id === id);
+      // descartado_manual = processo excluído permanentemente na ficha → fora do relatório
+      const meus = data.proc.filter(
+        (p) => p.empresa_id === id && !(p.metadados as Meta | null)?.descartado_manual
+      );
       const nomePorId = new Map(data.catalogo.map((a) => [a.id, a.nome.trim()]));
-      const jaAjuizadas = meus
-        .filter((p) => p.acao_id)
-        .flatMap((p) => {
-          const base = {
-            numero: p.numero as string,
-            grau: (p.grau as string) || "",
-            orgao: (p.orgao as string) || "",
-          };
-          const extras = (p.metadados as { teses_extras?: string[] } | null)?.teses_extras || [];
-          return [
-            {
-              ...base,
-              tese: ((p.acoes_tributarias as { nome: string } | null)?.nome || "").trim(),
-            },
-            // mesma inicial, segunda tese — aparece como linha própria
-            ...extras.map((x) => ({ ...base, tese: nomePorId.get(x) || "" })),
-          ].filter((x) => x.tese);
-        });
-      const sugeridas = meus
-        .filter(
-          (p) => !p.acao_id && (p.metadados as { tese_sugerida?: string } | null)?.tese_sugerida
-        )
-        .map((p) => ({
-          tese: ((p.metadados as { tese_sugerida?: string }).tese_sugerida || "").trim(),
+      const jaAjuizadas = meus.flatMap((p) => {
+        const md = (p.metadados as Meta | null) || {};
+        const base = {
           numero: p.numero as string,
-        }));
+          grau: (p.grau as string) || "",
+          orgao: (p.orgao as string) || "",
+          pedidoExcerpt: md.pedido_excerpt || "",
+        };
+        const rows: RelatorioTese[] = [];
+        if (p.acao_id) {
+          const nome = ((p.acoes_tributarias as { nome: string } | null)?.nome || "").trim();
+          if (nome) rows.push({ ...base, tese: nome });
+        } else if (md.tese_manual || (md.editado_manual && md.tese_sugerida)) {
+          // tese de TEXTO LIVRE confirmada à mão na ficha → conta como já ajuizada
+          const nome = (md.tese_manual || md.tese_sugerida || "").trim();
+          if (nome) rows.push({ ...base, tese: nome, livre: true });
+        }
+        // mesma inicial pode cobrir teses extras do catálogo — linhas próprias
+        (md.teses_extras || []).forEach((x) => {
+          const nome = nomePorId.get(x) || "";
+          if (nome) rows.push({ ...base, tese: nome });
+        });
+        return rows;
+      });
+      // "A confirmar" = só sugestão AUTOMÁTICA da detecção ainda não confirmada
+      // (texto livre e editado à mão já subiram para "já ajuizadas" acima).
+      const sugeridas = meus
+        .filter((p) => {
+          const md = (p.metadados as Meta | null) || {};
+          return !p.acao_id && md.tese_sugerida && !md.tese_manual && !md.editado_manual;
+        })
+        .map((p) => {
+          const md = p.metadados as Meta;
+          return {
+            tese: (md.tese_sugerida || "").trim(),
+            numero: p.numero as string,
+            pedidoExcerpt: md.pedido_excerpt || "",
+          };
+        });
 
       const jaIds = new Set(meus.filter((p) => p.acao_id).map((p) => p.acao_id as string));
       // uma inicial pode cobrir MAIS DE UMA tese (ex.: ICMS *e* ISS fora da base
@@ -172,6 +202,11 @@ export function RelatorioTesesDialog({ open, onOpenChange, empresaIds }: Props) 
                             <Gavel className="mt-0.5 h-3 w-3 shrink-0 text-success" />
                             <span>
                               <span className="font-medium">{t.tese}</span>{" "}
+                              {t.livre && (
+                                <span className="rounded border border-warning/40 px-1 text-[9px] uppercase tracking-wide text-warning">
+                                  texto livre
+                                </span>
+                              )}{" "}
                               <span className="font-mono text-muted-foreground">({t.numero})</span>
                             </span>
                           </p>
