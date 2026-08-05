@@ -95,4 +95,5 @@ tools/.cache/
 *.json.gz
 
 # Iniciais (peticoes) arquivadas por empresa — documentos de clientes, nao versionar
+teses iniciais/
 iniciais_por_empresa/
