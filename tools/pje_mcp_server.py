@@ -255,60 +255,67 @@ def tool_processo_autos(args):
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(2500)
             titulo = page.title()
-            # login? o SSO do PJe leva a /sso/ ou mostra "Certificado Digital"
-            if "sso" in (page.url or "").lower() or "acesso" in (titulo or "").lower():
+            # login? PJe nao logado cai em login.seam / /sso/ ou mostra "Bem vindo".
+            # (NAO usar "sso" solto: "ConsultaProceSSO" casaria por engano.)
+            u, t = (page.url or "").lower(), (titulo or "").lower()
+            if ("login.seam" in u or "/sso/" in u or "authorization" in u
+                    or "bem vindo" in t or "certificado digital" in t):
                 return {"erro": "nao logado A3 nesta instancia", "instancia": url, "titulo": titulo}
-            # dump dos campos do form (p/ refinar seletores na 1a chamada real)
-            campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
-                .map(e => ({id:e.id||'', name:e.name||'', type:e.type||e.tagName})).filter(e => e.id||e.name)""")
-            # tenta preencher o numero: campo unico mascarado OU segmentos
-            nd = re.sub(r"\D", "", numero)
-            preenchido = page.evaluate(r"""(args) => {
-              const [num, nd] = args;
-              const ins = [...document.querySelectorAll('input[type=text],input:not([type])')];
-              // campo unico do numero unico CNJ
-              let f = ins.find(e => /numeroproc|numprocesso|numerounico|nrProcesso/i.test((e.id||'')+(e.name||'')));
-              if (f) { f.value = num; f.dispatchEvent(new Event('input',{bubbles:true})); f.dispatchEvent(new Event('change',{bubbles:true})); return 'unico'; }
-              return 'nao_achou_campo_numero';
-            }""", [numero, nd])
-            resultado = {"numero": numero, "instancia": url, "titulo": titulo,
-                         "preenchimento": preenchido}
-            if preenchido == "nao_achou_campo_numero":
-                resultado["_debug_campos"] = campos[:40]
-                resultado["nota"] = ("Nao encontrei o campo de numero nesta tela — me passe este _debug_campos "
-                                     "que eu ajusto o seletor. (v1 do tool, refinando com a sessao real.)")
-                return resultado
-            # busca
-            page.evaluate(r"""() => { const b=[...document.querySelectorAll('input[type=submit],button')]
-                .find(e => /pesquisar|consultar|buscar/i.test((e.value||'')+(e.textContent||''))); if(b) b.click(); }""")
+            # PJe 2.x (listView): numero CNJ SEGMENTADO em 6 campos fPP:numeroProcesso:*
+            mm = re.match(r"(\d{7})-(\d{2})\.(\d{4})\.(\d)\.(\d{2})\.(\d{4})", numero)
+            seg = {"numeroSequencial": mm.group(1), "numeroDigitoVerificador": mm.group(2),
+                   "Ano": mm.group(3), "ramoJustica": mm.group(4),
+                   "respectivoTribunal": mm.group(5), "NumeroOrgaoJustica": mm.group(6)}
+            achou = True
+            for k, v in seg.items():
+                el = page.query_selector(f'[id="fPP:numeroProcesso:{k}"]')
+                if el:
+                    el.fill(v)
+                else:
+                    achou = False
+            if not achou:
+                campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
+                    .map(e => ({id:e.id||'', type:e.type||e.tagName})).filter(e => e.id)""")
+                return {"erro": "campos de numero (fPP:numeroProcesso:*) nao encontrados nesta instancia "
+                        "(1.x/terceiros usa outro layout).", "titulo": titulo, "instancia": url,
+                        "_debug_campos": campos[:40]}
+            page.wait_for_timeout(400)
+            btn = page.query_selector('[id="fPP:searchProcessos"]')
+            if btn:
+                btn.click()
+            else:
+                page.evaluate(r"""() => { const b=[...document.querySelectorAll('input[type=submit],button')]
+                    .find(e => /pesquisar|consultar/i.test((e.value||'')+(e.textContent||''))); if(b) b.click(); }""")
             try:
                 M._esperar(page, timeout_s=60)
             except Exception:
                 pass
             page.wait_for_timeout(1500)
-            # extrai detalhe (labels padrao do PJe)
-            det = page.evaluate(r"""() => {
-              const T = (document.body ? document.body.innerText : '').replace(/ /g,' ');
-              const pick = (re) => { const m = T.match(re); return m ? m[1].replace(/\s+/g,' ').trim() : null; };
-              const movs = [...document.querySelectorAll('table tr')].map(tr => tr.innerText.replace(/\s+/g,' ').trim())
-                 .filter(t => /\d{2}\/\d{2}\/\d{4}/.test(t)).slice(0,8);
-              return {
-                classe: pick(/Classe\s*(?:judicial)?\s*[:\-]?\s*([^\n]{3,80})/i),
-                assunto: pick(/Assunto[s]?\s*[:\-]?\s*([^\n]{3,120})/i),
-                orgao: pick(/[Óó]rg[ãa]o\s*Julgador\s*[:\-]?\s*([^\n]{3,80})/i),
-                valor_causa: pick(/Valor\s*da\s*causa\s*[:\-]?\s*(R?\$?\s?[\d\.\,]{2,20})/i),
-                polo_ativo: pick(/Polo\s*Ativo\s*[:\-]?\s*([^\n]{3,120})/i),
-                polo_passivo: pick(/Polo\s*Passivo\s*[:\-]?\s*([^\n]{3,120})/i),
-                movimentos: movs,
-                _texto_len: T.length
-              };
-            }""")
-            resultado["detalhe"] = det
-            if not (det.get("classe") or det.get("polo_ativo") or det.get("movimentos")):
-                resultado["_debug_campos"] = campos[:40]
-                resultado["nota"] = ("Busquei mas nao extrai o detalhe — a tela pode exigir abrir o processo. "
-                                     "Me passe o retorno que eu ajusto a navegacao/extracao.")
-            return resultado
+            # a LINHA de resultado ja traz numero, orgao, autuacao, classe, polo ativo,
+            # polo passivo e ultima movimentacao (ordem padrao do 2.x).
+            cells = page.evaluate(r"""(num) => {
+              const nd = num.replace(/\D/g,'');
+              for (const tr of document.querySelectorAll('table tr')) {
+                if (tr.querySelector('tr')) continue;
+                if (!/\d{7}-\d{2}\.\d{4}/.test(tr.innerText)) continue;
+                if (!tr.innerText.replace(/\D/g,'').includes(nd)) continue;
+                return [...tr.querySelectorAll('td')].map(td => td.innerText.replace(/\s+/g,' ').trim()).filter(Boolean);
+              }
+              return null;
+            }""", numero)
+            if not cells:
+                return {"numero": numero, "instancia": url, "titulo": titulo,
+                        "nota": "busca executada, porem 0 linhas para este numero nesta instancia "
+                                "(pode estar no 1.x/JFRN ou noutro grau)."}
+            i0 = next((i for i, cc in enumerate(cells) if re.search(r"\d{7}-\d{2}\.\d{4}", cc)), 0)
+            c = cells[i0:]
+            g = lambda i: c[i] if i < len(c) else None
+            return {
+                "numero": numero, "instancia": url, "fonte": "PJe 2.x (consulta logada A3)",
+                "orgao": g(1), "autuado_em": g(2), "classe": g(3),
+                "polo_ativo": g(4), "polo_passivo": g(5), "ultima_movimentacao": g(6),
+                "_linha_bruta": " | ".join(c),
+            }
         except Exception as e:
             return {"erro": f"falha na navegacao PJe: {str(e)[:120]}", "instancia": url}
         finally:
