@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pje": {
+      "command": "python",
+      "args": ["tools/pje_mcp_server.py"]
+    }
+  }
+}
