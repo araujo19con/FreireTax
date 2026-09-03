@@ -174,6 +174,54 @@ def tool_classificar_pdf(args):
             "pedidos_texto": M.secao_pedidos(txt)[:4000]}
 
 
+def _datajud_detalhe(numero):
+    nd = re.sub(r"\D", "", numero)
+    body = json.dumps({"query": {"match": {"numeroProcesso": nd}}}).encode()
+    req = urllib.request.Request(
+        f"https://api-publica.datajud.cnj.jus.br/{M._datajud_endpoint(numero)}/_search",
+        data=body, method="POST",
+        headers={"Authorization": f"APIKey {M.DATAJUD_KEY}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    hits = d.get("hits", {}).get("hits", [])
+    if not hits:
+        return None
+    s = hits[0]["_source"]
+
+    def _dt(x):
+        x = str(x or "")
+        if not x:
+            return None
+        if "-" in x:  # ISO "2025-09-15T..." (movimentos, ultima atualizacao)
+            return x[:10]
+        return f"{x[0:4]}-{x[4:6]}-{x[6:8]}" if len(x) >= 8 else None  # compacto "20200807..."
+
+    movs = sorted((s.get("movimentos") or []), key=lambda m: str(m.get("dataHora") or ""), reverse=True)
+    return {
+        "numero": numero, "tribunal": s.get("tribunal"), "grau": s.get("grau"),
+        "classe": (s.get("classe") or {}).get("nome"),
+        "assuntos": list(dict.fromkeys(a.get("nome") for a in (s.get("assuntos") or []) if a.get("nome"))),
+        "orgao_julgador": (s.get("orgaoJulgador") or {}).get("nome"),
+        "data_ajuizamento": _dt(s.get("dataAjuizamento")),
+        "valor_causa": s.get("valorCausa"),
+        "ultima_atualizacao_datajud": _dt(s.get("dataHoraUltimaAtualizacao")),
+        "ultimos_movimentos": [{"data": _dt(m.get("dataHora")), "nome": m.get("nome")} for m in movs[:6]],
+    }
+
+
+def tool_detalhe_processo(args):
+    num = (args.get("numero") or "").strip()
+    if not re.search(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}", num):
+        return {"erro": "numero CNJ invalido (ex.: 0805087-44.2020.4.05.8400)"}
+    try:
+        det = _datajud_detalhe(num)
+    except Exception as e:
+        return {"erro": f"DataJud: {str(e)[:100]}"}
+    if not det:
+        return {"erro": "processo nao encontrado no DataJud (sigiloso ou tribunal fora da API)"}
+    return det
+
+
 TOOLS = {
     "pje_status": (tool_status,
         "Verifica se o Chrome CDP (scraper PJe) esta vivo e se ha sinal de login A3. Nao faz scraping.",
@@ -190,6 +238,10 @@ TOOLS = {
     "pje_classificar_pdf": (tool_classificar_pdf,
         "Classifica a tese de uma peticao inicial em PDF (caminho no disco) pelos pedidos. Sem scraping.",
         {"type": "object", "properties": {"caminho": {"type": "string"}}, "required": ["caminho"]}),
+    "pje_detalhe_processo": (tool_detalhe_processo,
+        "Detalhe de UM processo pelo numero CNJ via DataJud/CNJ (publico, SEM login): classe, assuntos, "
+        "orgao julgador, data de ajuizamento, valor da causa e ultimos movimentos. Util p/ circularizacao.",
+        {"type": "object", "properties": {"numero": {"type": "string", "description": "numero CNJ, ex.: 0805087-44.2020.4.05.8400"}}, "required": ["numero"]}),
 }
 
 
