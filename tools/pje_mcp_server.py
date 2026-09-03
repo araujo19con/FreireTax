@@ -222,6 +222,102 @@ def tool_detalhe_processo(args):
     return det
 
 
+def _pje_url(numero, grau):
+    """URL da consulta da instancia certa a partir do numero CNJ + grau pedido."""
+    if grau in M.GRAUS:
+        return M.GRAUS[grau]
+    if grau == "1x":
+        return M.PJE_1X.get("RN")  # default Secao RN (Oeste/RN)
+    if grau == "2x":
+        return M.PJE_1X_2G
+    # deriva pelo numero: .4.05 = federal TRF5 1o grau (2.x); .8.20 = TJRN
+    return "https://pje1g.trf5.jus.br/pje/Processo/ConsultaProcesso/listView.seam"
+
+
+def tool_processo_autos(args):
+    numero = (args.get("numero") or "").strip()
+    if not re.search(r"\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}", numero):
+        return {"erro": "numero CNJ invalido (ex.: 0805803-32.2024.4.05.8400)"}
+    grau = args.get("grau") or "1gf"
+    url = _pje_url(numero, grau)
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as e:
+        return {"erro": f"playwright indisponivel: {str(e)[:80]}"}
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}")
+        except Exception as e:
+            return {"erro": f"CDP indisponivel na porta {PORT} ({str(e)[:60]}). Rode tools/chrome-cdp.ps1 e faca login A3."}
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(2500)
+            titulo = page.title()
+            # login? o SSO do PJe leva a /sso/ ou mostra "Certificado Digital"
+            if "sso" in (page.url or "").lower() or "acesso" in (titulo or "").lower():
+                return {"erro": "nao logado A3 nesta instancia", "instancia": url, "titulo": titulo}
+            # dump dos campos do form (p/ refinar seletores na 1a chamada real)
+            campos = page.evaluate(r"""() => [...document.querySelectorAll('input,select')]
+                .map(e => ({id:e.id||'', name:e.name||'', type:e.type||e.tagName})).filter(e => e.id||e.name)""")
+            # tenta preencher o numero: campo unico mascarado OU segmentos
+            nd = re.sub(r"\D", "", numero)
+            preenchido = page.evaluate(r"""(args) => {
+              const [num, nd] = args;
+              const ins = [...document.querySelectorAll('input[type=text],input:not([type])')];
+              // campo unico do numero unico CNJ
+              let f = ins.find(e => /numeroproc|numprocesso|numerounico|nrProcesso/i.test((e.id||'')+(e.name||'')));
+              if (f) { f.value = num; f.dispatchEvent(new Event('input',{bubbles:true})); f.dispatchEvent(new Event('change',{bubbles:true})); return 'unico'; }
+              return 'nao_achou_campo_numero';
+            }""", [numero, nd])
+            resultado = {"numero": numero, "instancia": url, "titulo": titulo,
+                         "preenchimento": preenchido}
+            if preenchido == "nao_achou_campo_numero":
+                resultado["_debug_campos"] = campos[:40]
+                resultado["nota"] = ("Nao encontrei o campo de numero nesta tela — me passe este _debug_campos "
+                                     "que eu ajusto o seletor. (v1 do tool, refinando com a sessao real.)")
+                return resultado
+            # busca
+            page.evaluate(r"""() => { const b=[...document.querySelectorAll('input[type=submit],button')]
+                .find(e => /pesquisar|consultar|buscar/i.test((e.value||'')+(e.textContent||''))); if(b) b.click(); }""")
+            try:
+                M._esperar(page, timeout_s=60)
+            except Exception:
+                pass
+            page.wait_for_timeout(1500)
+            # extrai detalhe (labels padrao do PJe)
+            det = page.evaluate(r"""() => {
+              const T = (document.body ? document.body.innerText : '').replace(/ /g,' ');
+              const pick = (re) => { const m = T.match(re); return m ? m[1].replace(/\s+/g,' ').trim() : null; };
+              const movs = [...document.querySelectorAll('table tr')].map(tr => tr.innerText.replace(/\s+/g,' ').trim())
+                 .filter(t => /\d{2}\/\d{2}\/\d{4}/.test(t)).slice(0,8);
+              return {
+                classe: pick(/Classe\s*(?:judicial)?\s*[:\-]?\s*([^\n]{3,80})/i),
+                assunto: pick(/Assunto[s]?\s*[:\-]?\s*([^\n]{3,120})/i),
+                orgao: pick(/[Óó]rg[ãa]o\s*Julgador\s*[:\-]?\s*([^\n]{3,80})/i),
+                valor_causa: pick(/Valor\s*da\s*causa\s*[:\-]?\s*(R?\$?\s?[\d\.\,]{2,20})/i),
+                polo_ativo: pick(/Polo\s*Ativo\s*[:\-]?\s*([^\n]{3,120})/i),
+                polo_passivo: pick(/Polo\s*Passivo\s*[:\-]?\s*([^\n]{3,120})/i),
+                movimentos: movs,
+                _texto_len: T.length
+              };
+            }""")
+            resultado["detalhe"] = det
+            if not (det.get("classe") or det.get("polo_ativo") or det.get("movimentos")):
+                resultado["_debug_campos"] = campos[:40]
+                resultado["nota"] = ("Busquei mas nao extrai o detalhe — a tela pode exigir abrir o processo. "
+                                     "Me passe o retorno que eu ajusto a navegacao/extracao.")
+            return resultado
+        except Exception as e:
+            return {"erro": f"falha na navegacao PJe: {str(e)[:120]}", "instancia": url}
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
+
+
 TOOLS = {
     "pje_status": (tool_status,
         "Verifica se o Chrome CDP (scraper PJe) esta vivo e se ha sinal de login A3. Nao faz scraping.",
@@ -242,6 +338,11 @@ TOOLS = {
         "Detalhe de UM processo pelo numero CNJ via DataJud/CNJ (publico, SEM login): classe, assuntos, "
         "orgao julgador, data de ajuizamento, valor da causa e ultimos movimentos. Util p/ circularizacao.",
         {"type": "object", "properties": {"numero": {"type": "string", "description": "numero CNJ, ex.: 0805087-44.2020.4.05.8400"}}, "required": ["numero"]}),
+    "pje_processo_autos": (tool_processo_autos,
+        "Abre o processo DIRETO no PJe logado (Chrome CDP + A3) e extrai dados detalhados: classe, assunto, "
+        "orgao, VALOR DA CAUSA, PARTES (polo ativo/passivo) e movimentacao. Vai alem do DataJud (que nao traz "
+        "partes). Requer login A3 na instancia. grau: 1gf (TRF5 2.x, default), 2gf, 1g/2g (TJRN), 1x (JFRN 1.x).",
+        {"type": "object", "properties": {"numero": {"type": "string"}, "grau": {"type": "string", "description": "1gf|2gf|1g|2g|1x (default 1gf)"}}, "required": ["numero"]}),
 }
 
 
